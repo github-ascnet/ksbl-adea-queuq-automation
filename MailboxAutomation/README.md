@@ -138,6 +138,71 @@ powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor
 ## 14. WhatIfMode
 Schreibende AD-/Exchange-/DFS-/SQL-Operationen sind gekapselt. Bei WhatIfMode werden keine produktiven Aenderungen ausgefuehrt.
 Exchange-OnPrem, Exchange-Online und Active-Directory Write-Operationen pruefen WhatIfMode vor Cmdlet-Verfuegbarkeitspruefungen.
+
+## 15. HTML-Mail-Benachrichtigung
+
+### Zentrale Umsetzung
+
+Die gesamte Mailbenachrichtigung ist in `core/MailNotification.psm1` zentralisiert. UseCase-Handler versenden **keine** eigenen E-Mails. Die JobEngine ruft nach Abschluss jedes Jobs automatisch die passende Funktion auf.
+
+### Funktionen
+
+| Funktion | Zweck |
+|---|---|
+| `New-JobNotificationHtmlBody` | Erzeugt den vollständigen HTML-Body |
+| `New-JobNotificationSubject` | Erzeugt die Betreffzeile |
+| `Send-JobNotification` | Zentrale Versandfunktion (intern) |
+| `Send-JobSuccessNotification` | Wrapper für Succeeded-Status |
+| `Send-JobFailureNotification` | Wrapper für Failed-Status |
+| `ConvertTo-HtmlEncodedText` | HTML-Encoding aller dynamischen Werte |
+
+### Success-Mail
+
+- Status-Badge: grün (`Success`)
+- Beschreibung: "Der Auftrag wurde erfolgreich abgeschlossen."
+- Tabelle mit: Status, UseCase, Queue, JobId, Dateiname, Zielpfad, Meldung, Zeitpunkt
+- Strukturierte Output-Felder aus `JobResult.Output` (sofern vorhanden): `SuccessCount`, `FailedCount`, `AdObjectName`, `DisplayName`, `PrimarySmtpAddress`
+
+### Failure-Mail
+
+- Status-Badge: rot (`Failed`)
+- Beschreibung: "Der Auftrag konnte nicht erfolgreich abgeschlossen werden."
+- Gleiche Tabelle wie Success-Mail
+- Zusätzlicher Fehlerblock unterhalb der Tabelle mit: genauer Fehlermeldung, ErrorCode, Exception-Message
+- Wenn `JobResult.Output.FailedRows` vorhanden: Fehlertabelle mit max. 20 Zeilen (Zeile, Objekt, ErrorCode, Meldung)
+- Bei mehr als 20 Fehlerzeilen: Hinweis "Weitere Fehler wurden aus Platzgründen nicht angezeigt."
+
+### HTML-Layout
+
+- Tabellenheader: hellblauer Hintergrund (`#d9ecff`)
+- Tabellenzellen: weisser Hintergrund (`#ffffff`)
+- Klare Rahmen, lesbare Schrift (Arial/Helvetica)
+- Kein externes CSS, alles inline – kompatibel mit Standard-Mailclients
+- Alle dynamischen Werte werden HTML-encoded (`ConvertTo-HtmlEncodedText`)
+
+### Konfiguration (`config/appsettings.json`)
+
+```json
+"Notifications": {
+  "Enabled": false,
+  "SendSuccess": true,
+  "SendFailure": true,
+  "From": "noreply@example.local",
+  "To": [ "admin@example.local" ],
+  "SmtpServer": "smtp.example.local",
+  "Port": 25,
+  "UseSsl": false
+}
+```
+
+- `Enabled`: Hauptschalter – bei `false` werden keine Mails versendet
+- `SendSuccess`: bei `false` werden Success-Mails unterdrückt
+- `SendFailure`: bei `false` werden Failure-Mails unterdrückt
+- Versand über `Send-MailMessage` (PowerShell 5.1, leicht ersetzbar)
+
+### Fehlerverhalten
+
+Mailfehler beeinflussen den Jobstatus **nicht**. Wenn der Mailversand fehlschlägt, wird der Fehler nur geloggt (`Write-LogError`). Der Job bleibt `Succeeded` oder `Failed` – unabhängig vom Mailversand.
 WhatIf-Tests decken AD-, Exchange-On-Prem- und Exchange-Online-Schreiboperationen ab.
 
 ## 15. Technische Stabilitaets-Merkmale

@@ -525,12 +525,32 @@ function Invoke-JobEngine {
                     # Bei Failed kann eine Fehlerbenachrichtigung versendet werden.
                     # Die konkrete Versandlogik liegt in MailNotification.psm1.
                     if ($resultStatus -eq 'Failed') {
-                        Send-JobFailureNotification -Config $mergedConfig -UseCaseName $useCase.Name -Message $resultMessage -Logger $logger
+                        Send-JobFailureNotification `
+                            -Config      $mergedConfig `
+                            -UseCaseName $useCase.Name `
+                            -Message     $resultMessage `
+                            -JobResult   $result `
+                            -Metadata    $claimed.Metadata `
+                            -JobId       $claimed.JobId `
+                            -Queue       $useCase.Queue `
+                            -SourceFile  $claimed.SourceFile `
+                            -MovedPath   $movedPath `
+                            -Logger      $logger
                     }
                     # Bei Succeeded kann eine Erfolgsbenachrichtigung versendet werden.
                     # Skipped, Retry und Paused erzeugen hier bewusst keine Success-Mail.
                     elseif ($resultStatus -eq 'Succeeded') {
-                        Send-JobSuccessNotification -Config $mergedConfig -UseCaseName $useCase.Name -Message $resultMessage -Logger $logger
+                        Send-JobSuccessNotification `
+                            -Config      $mergedConfig `
+                            -UseCaseName $useCase.Name `
+                            -Message     $resultMessage `
+                            -JobResult   $result `
+                            -Metadata    $claimed.Metadata `
+                            -JobId       $claimed.JobId `
+                            -Queue       $useCase.Queue `
+                            -SourceFile  $claimed.SourceFile `
+                            -MovedPath   $movedPath `
+                            -Logger      $logger
                     }
                 }
                 # Fehler innerhalb einer einzelnen Datei werden abgefangen.
