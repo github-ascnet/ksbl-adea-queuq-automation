@@ -13,6 +13,9 @@ function Resolve-MailboxExecutionContext {
     $isMigrationTransient = $false
     $reason = 'No lookup completed.'
     $permissionAuthority = 'Unknown'
+    $recipientAuthority = 'Unknown'
+    $isSynchronized = $false
+    $isCloudOnly = $false
     $recommendedAction = 'Fail'
     $retryAfterMinutes = 15
 
@@ -67,18 +70,36 @@ function Resolve-MailboxExecutionContext {
         }
     }
     else {
-        $reason = "On-prem SharedMailbox found for '$Identity'. No Exchange Online lookup required."
+        $reason = "On-prem recipient found for '$Identity'. No Exchange Online lookup required."
     }
 
     # Step 4: Routing decision based on mailbox type and location
-    if ($onPrem -and $recipientType -eq 'SharedMailbox') {
-        # Classic On-Prem shared mailbox — manage permissions directly on Exchange On-Prem
+    if ($onPrem -and $recipientType -in @('UserMailbox', 'SharedMailbox')) {
+        # On-Prem mailbox — all Exchange operations (permissions, recipient attributes) go to On-Prem Exchange
         $permissionAuthority = 'OnPremExchange'
+        $recipientAuthority = 'OnPremExchange'
         $recommendedAction = 'Execute'
+        $isSynchronized = $false
+        $isCloudOnly = $false
+    }
+    elseif ($onPrem -and $recipientType -eq 'RemoteUserMailbox') {
+        # AD-synchronized user mailbox hosted in Exchange Online.
+        # Synchronized recipient attributes (PrimarySmtpAddress, proxyAddresses, etc.) are set via
+        # Set-RemoteMailbox On-Prem and synced to EXO via Entra Connect. No EXO connectivity needed.
+        $permissionAuthority = 'ExchangeOnline'
+        $recipientAuthority = 'OnPremExchange'
+        $recommendedAction = 'Execute'
+        $isSynchronized = $true
+        $isCloudOnly = $false
+        $reason = "RemoteUserMailbox found for '$Identity'. Synchronized attributes can be managed via On-Prem Exchange."
     }
     elseif ($onPrem -and $recipientType -eq 'RemoteSharedMailbox') {
-        # Mailbox was migrated to Exchange Online; on-prem object is a proxy
+        # Mailbox was migrated to Exchange Online; on-prem object is a proxy.
+        # Permission changes require EXO reachability.
+        $recipientAuthority = 'OnPremExchange'
         $permissionAuthority = 'ExchangeOnline'
+        $isSynchronized = $true
+        $isCloudOnly = $false
         if (-not $exoEnabled) {
             $recommendedAction = 'Fail'
             $reason = "RemoteSharedMailbox found on-prem for '$Identity' but Exchange Online is disabled by configuration. Enable ExchangeOnline.Enabled to manage this mailbox."
@@ -99,12 +120,18 @@ function Resolve-MailboxExecutionContext {
     elseif ($exo -and -not $onPrem) {
         # EXO-only mailbox (no on-prem proxy object)
         $permissionAuthority = 'ExchangeOnline'
+        $recipientAuthority = 'ExchangeOnline'
         $recommendedAction = 'Execute'
+        $isSynchronized = $false
+        $isCloudOnly = $true
         $reason = "EXO-only mailbox found for '$Identity'."
     }
     else {
         # Not found anywhere
         $permissionAuthority = 'Unknown'
+        $recipientAuthority = 'Unknown'
+        $isSynchronized = $false
+        $isCloudOnly = $false
         $recommendedAction = 'Fail'
         if ($reason -eq 'On-prem recipient lookup completed.' -or $reason -eq 'Checked on-prem and Exchange Online.') {
             $reason = "Identity '$Identity' not found on-prem or in Exchange Online."
@@ -116,10 +143,14 @@ function Resolve-MailboxExecutionContext {
         ExistsOnPrem           = $onPrem
         ExistsInExchangeOnline = $exo
         RecipientTypeDetails   = $recipientType
+        IdentityAuthority      = if ($onPrem) { 'OnPremAD' } elseif ($exo) { 'ExchangeOnline' } else { 'Unknown' }
         AttributeAuthority     = if ($onPrem) { 'OnPremAD' } else { 'ExchangeOnline' }
+        RecipientAuthority     = $recipientAuthority
         MailboxAuthority       = if ($exo) { 'ExchangeOnline' } elseif ($onPrem) { 'OnPremExchange' } else { 'Unknown' }
         ManagementAuthority    = $permissionAuthority
         PermissionAuthority    = $permissionAuthority
+        IsSynchronized         = $isSynchronized
+        IsCloudOnly            = $isCloudOnly
         IsMigrationTransient   = $isMigrationTransient
         RecommendedAction      = $recommendedAction
         RetryAfterMinutes      = $retryAfterMinutes

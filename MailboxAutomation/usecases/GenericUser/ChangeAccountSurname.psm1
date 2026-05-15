@@ -25,6 +25,17 @@ function Invoke-ChangeAccountSurname {
             try {
                 $result = & $Context.Services.UserProvisioning.SetSurname $Context $row
 
+                # RequiresRetry: mailbox in transient migration state — schedule job retry
+                if ($result -and $result.PSObject.Properties['RequiresRetry'] -and [bool]$result.RequiresRetry) {
+                    $retryMinutes = if ($result.PSObject.Properties['RetryAfterMinutes'] -and $result.RetryAfterMinutes) { [int]$result.RetryAfterMinutes } else { 15 }
+                    $retryAfter = (Get-Date).AddMinutes($retryMinutes)
+                    Write-LogWarn -Logger $Context.Logger -Message "Invoke-ChangeAccountSurname: transient migration state for '$($row.AdObjectName)'. Scheduling retry after $retryMinutes minutes."
+                    return New-JobRetryResult `
+                        -Message "GenericUser.ChangeSurname: transient migration state for '$($row.AdObjectName)'. $($result.Message)" `
+                        -RetryAfter $retryAfter `
+                        -Output @{ SuccessCount = $successCount; FailedCount = $failedResults.Count; SuccessResults = $successResults; FailedRows = $failedResults }
+                }
+
                 if ($result -and $result.PSObject.Properties['Success'] -and (-not [bool]$result.Success)) {
                     $failedResults += [pscustomobject]@{
                         Row          = $row

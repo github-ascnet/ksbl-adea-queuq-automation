@@ -227,6 +227,28 @@ function Remove-OnPremMailboxFolderPermissionSafe {
     Remove-MailboxFolderPermission @Parameters -ErrorAction Stop
 }
 
+function Get-OnPremRemoteMailboxSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity
+    )
+
+    Assert-OnPremCmdlet -Name 'Get-RemoteMailbox'
+    Get-RemoteMailbox -Identity $Identity -ErrorAction Stop
+}
+
+function Set-OnPremRemoteMailboxSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [bool]$WhatIfMode = $true
+    )
+
+    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Set-RemoteMailbox'; Parameters = $Parameters } }
+    Assert-OnPremCmdlet -Name 'Set-RemoteMailbox'
+    Set-RemoteMailbox @Parameters -ErrorAction Stop
+}
+
 
 Export-ModuleMember -Function @(
     'Get-OnPremMailboxSafe',
@@ -251,5 +273,7 @@ Export-ModuleMember -Function @(
     'Remove-OnPremAdPermissionSafe',
     'Get-OnPremMailboxFolderStatisticsSafe',
     'Add-OnPremMailboxFolderPermissionSafe',
-    'Remove-OnPremMailboxFolderPermissionSafe'
+    'Remove-OnPremMailboxFolderPermissionSafe',
+    'Get-OnPremRemoteMailboxSafe',
+    'Set-OnPremRemoteMailboxSafe'
 )

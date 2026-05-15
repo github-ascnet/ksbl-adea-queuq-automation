@@ -27,6 +27,17 @@ function Invoke-AddEmailNickname {
             $serviceResult = & $Context.Services.UserProvisioning.AddEmailNickname $Context $row
             $results += $serviceResult
 
+            # RequiresRetry: mailbox in transient migration state — schedule job retry
+            if ($serviceResult -and $serviceResult.PSObject.Properties['RequiresRetry'] -and [bool]$serviceResult.RequiresRetry) {
+                $retryMinutes = if ($serviceResult.PSObject.Properties['RetryAfterMinutes'] -and $serviceResult.RetryAfterMinutes) { [int]$serviceResult.RetryAfterMinutes } else { 15 }
+                $retryAfter = (Get-Date).AddMinutes($retryMinutes)
+                Write-LogWarn -Logger $Context.Logger -Message "GenericUser.AddEmailNickname: transient migration state for '$($row.AdObjectName)'. Scheduling retry after $retryMinutes minutes."
+                return New-JobRetryResult `
+                    -Message "GenericUser.AddEmailNickname: transient migration state for '$($row.AdObjectName)'. $($serviceResult.Message)" `
+                    -RetryAfter $retryAfter `
+                    -Output $results
+            }
+
             if (-not $serviceResult.Success) {
                 $failedResults += $serviceResult
                 Write-LogWarn -Logger $Context.Logger -Message "GenericUser.AddEmailNickname failed for '$($row.AdObjectName)': $($serviceResult.Message)"

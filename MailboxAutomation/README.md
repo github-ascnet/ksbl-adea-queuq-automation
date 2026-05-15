@@ -719,3 +719,118 @@ Die Datei `tests/Pester/GroupMailboxChangeManagerHybridRouting.Tests.ps1` enthä
 
 Mocks verwenden `Mock -ModuleName 'GroupMailboxService'` für alle Resolver- und Gateway-Funktionen innerhalb des Services.
 
+---
+
+## 34. Hybrid-Autoritätslogik für GenericUser (RenameAccount / ChangeSurname / AddEmailNickname)
+
+Dieser Abschnitt beschreibt die Erweiterung, die die drei GenericUser-Operationen hybrid-bewusst macht: Sie routen Exchange-Befehle automatisch an On-Prem (`Set-Mailbox` oder `Set-RemoteMailbox`) und geben bei Cloud-only-Postfächern einen definierten Fehler zurück.
+
+### Designprinzipien
+
+- **AD-Attribute** bleiben immer On-Prem (Entra Connect synchronisiert sie in die Cloud). `Set-ADUser` wird für alle Typen verwendet.
+- **`UserMailbox`** (On-Prem): Exchange-Attribute via `Set-Mailbox` On-Prem.
+- **`RemoteUserMailbox`** (Benutzerpostfach migriert nach EXO, Proxy-Objekt On-Prem): Synchronisierte Empfänger-Attribute (PrimarySmtpAddress, proxyAddresses) via `Set-RemoteMailbox` On-Prem — kein EXO-Aufruf nötig.
+- **Cloud-only** (kein On-Prem-Proxy): → `CLOUD_ONLY_NOT_SUPPORTED`. GenericUser-Operationen setzen ein AD-Objekt voraus.
+- **EXO-Lookup** wird für `RemoteUserMailbox` **nicht** ausgelöst — nur für `RemoteSharedMailbox` (GroupMailbox-Szenarien).
+
+### Neue HybridMailboxResolver-Felder
+
+`Resolve-MailboxExecutionContext` gibt nun vier zusätzliche Felder zurück:
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `IdentityAuthority` | `string` | `OnPremAD` / `ExchangeOnline` / `Unknown` — wo das Identity-Objekt lebt |
+| `RecipientAuthority` | `string` | `OnPremExchange` / `ExchangeOnline` / `Unknown` — wo die Exchange-Befehle für Empfänger-Attribute ausgeführt werden |
+| `IsSynchronized` | `bool` | `$true` bei `RemoteUserMailbox`/`RemoteSharedMailbox` (Entra-Connect-Sync) |
+| `IsCloudOnly` | `bool` | `$true` bei EXO-only-Objekten ohne On-Prem-Proxy |
+
+### Erweiterte Routing-Tabelle
+
+| `RecipientTypeDetails` | `RecipientAuthority` | `PermissionAuthority` | `IsSynchronized` | `IsCloudOnly` | `RecommendedAction` |
+|---|---|---|---|---|---|
+| `UserMailbox` (On-Prem) | `OnPremExchange` | `OnPremExchange` | `$false` | `$false` | `Execute` |
+| `RemoteUserMailbox` (On-Prem-Proxy) | `OnPremExchange` | `ExchangeOnline` | `$true` | `$false` | `Execute` |
+| `SharedMailbox` (On-Prem) | `OnPremExchange` | `OnPremExchange` | `$false` | `$false` | `Execute` |
+| `RemoteSharedMailbox` + EXO sichtbar | `OnPremExchange` | `ExchangeOnline` | `$true` | `$false` | `Execute` |
+| `RemoteSharedMailbox` + EXO unsichtbar | `OnPremExchange` | `ExchangeOnline` | `$true` | `$false` | `Retry` |
+| EXO-only (kein On-Prem-Objekt) | `ExchangeOnline` | `ExchangeOnline` | `$false` | `$true` | `Execute` |
+| Nicht gefunden | `Unknown` | `Unknown` | `$false` | `$false` | `Fail` |
+
+### Neue Gateway-Funktionen (ExchangeOnPremGateway)
+
+| Funktion | Exchange-Cmdlet | Zweck |
+|---|---|---|
+| `Get-OnPremRemoteMailboxSafe` | `Get-RemoteMailbox` | Liest RemoteUserMailbox-Objekt für Primär-SMTP-Prüfung |
+| `Set-OnPremRemoteMailboxSafe` | `Set-RemoteMailbox` | Setzt PrimarySmtpAddress / EmailAddressPolicyEnabled für RemoteUserMailbox |
+
+Beide Funktionen folgen dem bestehenden Gateway-Muster: WhatIf-Guard → `Assert-OnPremCmdlet` → Cmdlet-Aufruf mit `-ErrorAction Stop`.
+
+### Geänderte UserProvisioningService-Funktionen
+
+#### `Rename-GenericUser`
+
+1. WhatIf → simuliertes Ergebnis (kein Resolver).
+2. Falls `NewPrimaryEMailAddress` gesetzt: `Resolve-MailboxExecutionContext` → bei `IsCloudOnly` → `CLOUD_ONLY_NOT_SUPPORTED`; bei `Fail`+`Unknown` → `RECIPIENT_NOT_FOUND`.
+3. AD-Objekt per `Get-AdUserBySamAccountNameSafe` laden. Nicht gefunden → `AD_OBJECT_NOT_FOUND`.
+4. Optionales AD-Rename via `Rename-AdObjectSafe`.
+5. AD-Attribute via `Set-AdUserSafe` (GivenName, Surname, DisplayName, SamAccountName, EmailAddress, UPN).
+6. Exchange-Attribute: `RecipientTypeDetails = 'RemoteUserMailbox'` → `Set-OnPremRemoteMailboxSafe`; sonst → `Set-OnPremMailboxSafe`.
+
+#### `Set-GenericUserSurname`
+
+Gleiche Struktur wie `Rename-GenericUser`, ohne AD-Rename-Schritt.
+
+#### `Add-GenericUserEmailNickname`
+
+1. WhatIf → simuliertes Ergebnis.
+2. `Resolve-MailboxExecutionContext` → `IsCloudOnly` → `CLOUD_ONLY_NOT_SUPPORTED`; `Retry` → `RequiresRetry=$true`; `Fail` → `EXO_REQUIRED_BUT_DISABLED` oder `RECIPIENT_NOT_FOUND`.
+3. Postfach abrufen: `RemoteUserMailbox` → `Get-OnPremRemoteMailboxSafe`; sonst → `Get-OnPremMailboxSafe`.
+4. **No-Change-Prüfung**: `$currentPrimary -eq $newPrimaryEmailAddress` → `Success=$true`, `Changed=$false`, kein Set-Aufruf.
+5. PrimarySmtpAddress setzen: `RemoteUserMailbox` → `Set-OnPremRemoteMailboxSafe`; sonst → `Set-OnPremMailboxSafe`.
+
+### Handler — RequiresRetry-Propagation
+
+Alle drei Handler (`RenameUserAccount.psm1`, `ChangeAccountSurname.psm1`, `AddEmailNickname.psm1`) prüfen nach dem Service-Aufruf das Feld `RequiresRetry`. Bei `$true` wird sofort `New-JobRetryResult` zurückgegeben. Für GenericUser-Operationen ist `RequiresRetry` aktuell immer `$false` (RemoteUserMailbox-Attribute gehen via On-Prem Exchange ohne EXO-Sichtbarkeitsprüfung), aber der Handler ist für zukünftige Erweiterungen vorbereitet.
+
+### Fehlercodes
+
+| ErrorCode | Bedeutung |
+|---|---|
+| `CLOUD_ONLY_NOT_SUPPORTED` | EXO-only-Postfach; GenericUser-Operationen erfordern ein AD-Objekt |
+| `RECIPIENT_NOT_FOUND` | Postfach weder On-Prem noch in EXO gefunden |
+| `EXO_REQUIRED_BUT_DISABLED` | RemoteSharedMailbox, aber EXO-Verbindung nicht konfiguriert |
+| `MAILBOX_MIGRATION_TRANSIENT` | Postfach in Migrationstransiente (Retry-Zustand) |
+| `AD_OBJECT_NOT_FOUND` | AD-Benutzer nicht gefunden |
+| `MAILBOX_GET_FAILED` | Resolver- oder Mailbox-Abruf-Fehler |
+| `RENAME_GENERIC_USER_FAILED` | Ausnahme in Rename-GenericUser |
+| `CHANGE_SURNAME_FAILED` | Ausnahme in Set-GenericUserSurname |
+| `SET_PRIMARY_SMTP_FAILED` | Ausnahme beim Setzen der PrimarySmtpAddress |
+
+### Tests
+
+Die Datei `tests/Pester/GenericUserHybridAuthority.Tests.ps1` enthält Pester-5.7.1-kompatible Tests. Die Describe-Blöcke decken ab:
+
+1. **`HybridMailboxResolver` — GenericUser-Typen** (4 Contexts, 6 Tests):
+   - `UserMailbox`: `RecipientAuthority=OnPremExchange`, `Execute`, `IsSynchronized=$false`
+   - `RemoteUserMailbox`: `RecipientAuthority=OnPremExchange`, `Execute`, `IsSynchronized=$true`, kein EXO-Lookup
+   - EXO-only: `IsCloudOnly=$true`, `IdentityAuthority=ExchangeOnline`
+   - Nicht gefunden: `Unknown`, `Fail`, `IdentityAuthority=Unknown`
+
+2. **`Rename-GenericUser`** (6 Contexts, 7 Tests):
+   - WhatIf, UserMailbox→Set-Mailbox, RemoteUserMailbox→Set-RemoteMailbox, Cloud-only, Nicht gefunden, AD nicht gefunden
+
+3. **`Set-GenericUserSurname`** (5 Contexts, 6 Tests):
+   - WhatIf, UserMailbox, RemoteUserMailbox, Cloud-only, Nicht gefunden
+
+4. **`Add-GenericUserEmailNickname`** (7 Contexts, 8 Tests):
+   - WhatIf, UserMailbox, RemoteUserMailbox, No-Change, Cloud-only, EXO disabled, Retry, Nicht gefunden
+
+5. **Handler `Invoke-RenameUserAccount`** (4 Contexts, 4 Tests):
+   - RequiresRetry→Retry, Success→Succeeded, Failure→Failed, Validierungsfehler→USECASE_ERROR
+
+6. **Handler `Invoke-ChangeAccountSurname`** (2 Contexts, 2 Tests):
+   - RequiresRetry→Retry, Success→Succeeded
+
+7. **Handler `Invoke-AddEmailNickname`** (4 Contexts, 4 Tests):
+   - RequiresRetry→Retry, Success→Succeeded, No-Change→Succeeded, Failure→Failed
+

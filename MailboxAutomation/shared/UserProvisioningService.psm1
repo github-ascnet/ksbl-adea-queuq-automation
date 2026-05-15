@@ -26,14 +26,16 @@ function New-UserProvisioningResult {
     )
 
     [pscustomobject]@{
-        Success      = $Success
-        Changed      = $Changed
-        Simulated    = $Simulated
-        Action       = $Action
-        AdObjectName = $AdObjectName
-        Message      = $Message
-        ErrorCode    = $ErrorCode
-        Output       = $Output
+        Success        = $Success
+        Changed        = $Changed
+        Simulated      = $Simulated
+        RequiresRetry  = $false
+        RetryAfterMinutes = 0
+        Action         = $Action
+        AdObjectName   = $AdObjectName
+        Message        = $Message
+        ErrorCode      = $ErrorCode
+        Output         = $Output
     }
 }
 
@@ -367,6 +369,35 @@ function Rename-GenericUser {
     }
 
     try {
+        # Step 1: Resolve mailbox/recipient type for hybrid routing (only when email change requested)
+        $resolution = $null
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            try {
+                $resolution = Resolve-MailboxExecutionContext -Identity $currentUserId -Config $Context.Config
+            }
+            catch {
+                Write-LogWarn -Logger $Context.Logger -Message "Resolve-MailboxExecutionContext failed for '$currentUserId': $($_.Exception.Message). Proceeding with AD-only operations."
+            }
+
+            if ($resolution) {
+                if ($resolution.IsCloudOnly) {
+                    return New-UserProvisioningResult `
+                        -Success $false -Changed $false `
+                        -Action 'RenameUserAccount' -AdObjectName $currentUserId `
+                        -Message "Cloud-only recipient '$currentUserId' is not supported by GenericUser.RenameAccount." `
+                        -ErrorCode 'CLOUD_ONLY_NOT_SUPPORTED'
+                }
+                if ($resolution.RecommendedAction -eq 'Fail' -and $resolution.PermissionAuthority -eq 'Unknown') {
+                    return New-UserProvisioningResult `
+                        -Success $false -Changed $false `
+                        -Action 'RenameUserAccount' -AdObjectName $currentUserId `
+                        -Message "Recipient '$currentUserId' not found on-prem or in Exchange Online. Cannot update mail attributes." `
+                        -ErrorCode 'RECIPIENT_NOT_FOUND'
+                }
+            }
+        }
+
+        # Step 2: Get AD user
         $user = Get-AdUserBySamAccountNameSafe -SamAccountName $currentUserId -Properties @(
             'mail',
             'displayName',
@@ -385,6 +416,7 @@ function Rename-GenericUser {
         $actions = @()
         $identityForSet = $currentUserId
 
+        # Step 3: Rename AD object if target name differs
         if (-not [string]::IsNullOrWhiteSpace($targetAdObjectName) -and $targetAdObjectName -ne 'skip' -and $targetAdObjectName -ne $currentUserId) {
             $renameIdentity = if ($user.PSObject.Properties['DistinguishedName'] -and -not [string]::IsNullOrWhiteSpace([string]$user.DistinguishedName)) {
                 [string]$user.DistinguishedName
@@ -402,11 +434,12 @@ function Rename-GenericUser {
             $actions += 'AdObjectRenamed'
         }
 
+        # Step 4: Update AD attributes
         $displayName = ("$givenName $surName").Trim()
         $setParams = @{
-            Identity = $identityForSet
-            GivenName = $givenName
-            Surname = $surName
+            Identity    = $identityForSet
+            GivenName   = $givenName
+            Surname     = $surName
             DisplayName = $displayName
         }
 
@@ -424,13 +457,26 @@ function Rename-GenericUser {
         Set-AdUserSafe -Parameters $setParams -WhatIfMode:$false | Out-Null
         $actions += 'AdAttributesUpdated'
 
+        # Step 5: Update Exchange recipient attributes if email change requested
         if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
-            Set-OnPremMailboxSafe -Parameters @{
+            $mailboxParams = @{
                 Identity                  = $identityForSet
                 PrimarySmtpAddress        = $newPrimaryEmail
                 EmailAddressPolicyEnabled = $false
-            } -WhatIfMode:$false | Out-Null
-            $actions += 'MailboxPrimarySmtpUpdated'
+            }
+
+            $recipientType = if ($resolution -and $resolution.RecipientTypeDetails) { [string]$resolution.RecipientTypeDetails } else { '' }
+
+            if ($recipientType -eq 'RemoteUserMailbox') {
+                # Synchronized mailbox: set recipient attributes via Set-RemoteMailbox On-Prem
+                Set-OnPremRemoteMailboxSafe -Parameters $mailboxParams -WhatIfMode:$false | Out-Null
+                $actions += 'RemoteMailboxPrimarySmtpUpdated'
+            }
+            else {
+                # On-Prem UserMailbox or SharedMailbox: set via Set-Mailbox
+                Set-OnPremMailboxSafe -Parameters $mailboxParams -WhatIfMode:$false | Out-Null
+                $actions += 'MailboxPrimarySmtpUpdated'
+            }
         }
 
         # TODO: Migrate SQL user-id counter update, DFS/homeDirectory rename and notification logic from current-scripts/Process-UserGenericJobs.ps1.
@@ -483,6 +529,34 @@ function Set-GenericUserSurname {
     }
 
     try {
+        # Resolve mailbox type for hybrid routing of Exchange operations (only when email change requested)
+        $resolution = $null
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            try {
+                $resolution = Resolve-MailboxExecutionContext -Identity $adObjectName -Config $Context.Config
+            }
+            catch {
+                Write-LogWarn -Logger $Context.Logger -Message "Resolve-MailboxExecutionContext failed for '$adObjectName': $($_.Exception.Message). Proceeding with AD-only changes."
+            }
+
+            if ($resolution) {
+                if ($resolution.IsCloudOnly) {
+                    return New-UserProvisioningResult `
+                        -Success $false -Changed $false `
+                        -Action 'ChangeAccountSurname' -AdObjectName $adObjectName `
+                        -Message "Cloud-only recipient '$adObjectName' is not supported by GenericUser.ChangeSurname." `
+                        -ErrorCode 'CLOUD_ONLY_NOT_SUPPORTED'
+                }
+                if ($resolution.RecommendedAction -eq 'Fail' -and $resolution.PermissionAuthority -eq 'Unknown') {
+                    return New-UserProvisioningResult `
+                        -Success $false -Changed $false `
+                        -Action 'ChangeAccountSurname' -AdObjectName $adObjectName `
+                        -Message "Recipient '$adObjectName' not found on-prem or in Exchange Online. Cannot update mail attributes." `
+                        -ErrorCode 'RECIPIENT_NOT_FOUND'
+                }
+            }
+        }
+
         $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('SamAccountName','mail','displayName','sn','givenName')
         if (-not $user) {
             return New-UserProvisioningResult -Success $false -Changed $false -Action 'ChangeAccountSurname' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
@@ -492,21 +566,35 @@ function Set-GenericUserSurname {
         if ([string]::IsNullOrWhiteSpace($sam)) { $sam = $adObjectName }
 
         $displayName = ("$givenName $surName").Trim()
-        Set-AdUserSafe -Parameters @{
-            Identity = $sam
-            GivenName = $givenName
-            Surname = $surName
-            DisplayName = $displayName
-            EmailAddress = $newPrimaryEmail
-            UserPrincipalName = $newPrimaryEmail
-        } -WhatIfMode:$false | Out-Null
+        $setAdParams = @{
+            Identity          = $sam
+            GivenName         = $givenName
+            Surname           = $surName
+            DisplayName       = $displayName
+        }
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            $setAdParams['EmailAddress']      = $newPrimaryEmail
+            $setAdParams['UserPrincipalName'] = $newPrimaryEmail
+        }
+        Set-AdUserSafe -Parameters $setAdParams -WhatIfMode:$false | Out-Null
 
         if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
-            Set-OnPremMailboxSafe -Parameters @{
+            $mailboxParams = @{
                 Identity                  = $sam
                 PrimarySmtpAddress        = $newPrimaryEmail
                 EmailAddressPolicyEnabled = $false
-            } -WhatIfMode:$false | Out-Null
+            }
+
+            $recipientType = if ($resolution -and $resolution.RecipientTypeDetails) { [string]$resolution.RecipientTypeDetails } else { '' }
+
+            if ($recipientType -eq 'RemoteUserMailbox') {
+                # Synchronized mailbox: set recipient attributes via Set-RemoteMailbox On-Prem
+                Set-OnPremRemoteMailboxSafe -Parameters $mailboxParams -WhatIfMode:$false | Out-Null
+            }
+            else {
+                # On-Prem UserMailbox or SharedMailbox: set via Set-Mailbox
+                Set-OnPremMailboxSafe -Parameters $mailboxParams -WhatIfMode:$false | Out-Null
+            }
         }
 
         # TODO: Migrate notification text from current-scripts/Process-UserGenericJobs.ps1.
@@ -544,50 +632,106 @@ function Add-GenericUserEmailNickname {
     Write-LogInfo -Logger $Context.Logger -Message "Adding email nickname for '$adObjectName'. RequestedBy='$requestedByDomain\$requestedBy' NewPrimarySmtpAddress='$newPrimaryEmailAddress'."
 
     # Legacy source: current-scripts/Process-UserGenericJobs.ps1, block '*AddEMailNickName*_pshjob_.csv'.
-    # The legacy process reads the mailbox by AdObjectName, remembers the current PrimarySmtpAddress,
-    # then calls Set-Mailbox <Alias> -PrimarySmtpAddress <NewPrimaryEMailAddress> -EmailAddressPolicyEnabled $false.
-    # Hybrid / Exchange Online routing is intentionally not implemented in this first migration step.
-    # TODO: Extend this operation for Exchange Online / RemoteMailbox scenario in a later migration step.
+    # The legacy process calls Set-Mailbox <Alias> -PrimarySmtpAddress <NewPrimaryEMailAddress>.
+    # Hybrid routing: UserMailbox uses Set-Mailbox On-Prem; RemoteUserMailbox uses Set-RemoteMailbox On-Prem.
+    # Cloud-only recipients return CLOUD_ONLY_NOT_SUPPORTED.
 
     if ($Context.WhatIfMode) {
-        $params = @{
-            Identity                  = $adObjectName
-            PrimarySmtpAddress        = $newPrimaryEmailAddress
-            EmailAddressPolicyEnabled = $false
-        }
-
         return [pscustomobject]@{
-            Success                 = $true
-            Changed                 = $true
-            Simulated               = $true
-            Action                  = 'Set-Mailbox'
-            AdObjectName            = $adObjectName
-            NewPrimaryEMailAddress  = $newPrimaryEmailAddress
-            RequestedBy             = $requestedBy
-            RequestedByDomain       = $requestedByDomain
-            RequestedByEmail        = $requestedByEmail
-            Parameters              = $params
-            Message                 = "WhatIf: would set primary SMTP address for '$adObjectName' to '$newPrimaryEmailAddress'."
-            ErrorCode               = $null
-        }
-    }
-
-    $mailbox = $null
-    try {
-        $mailbox = Get-OnPremMailboxSafe -Identity $adObjectName
-    }
-    catch {
-        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-LogError -Logger $Context.Logger -Message "Error getting mailbox for '$adObjectName'." -Exception $_.Exception
-
-        return [pscustomobject]@{
-            Success                = $false
-            Changed                = $false
+            Success                = $true
+            Changed                = $true
+            Simulated              = $true
+            RequiresRetry          = $false
+            RetryAfterMinutes      = 0
+            Action                 = 'Set-Mailbox'
             AdObjectName           = $adObjectName
             NewPrimaryEMailAddress = $newPrimaryEmailAddress
             RequestedBy            = $requestedBy
             RequestedByDomain      = $requestedByDomain
             RequestedByEmail       = $requestedByEmail
+            Parameters             = @{
+                Identity                  = $adObjectName
+                PrimarySmtpAddress        = $newPrimaryEmailAddress
+                EmailAddressPolicyEnabled = $false
+            }
+            Message                = "WhatIf: would set primary SMTP address for '$adObjectName' to '$newPrimaryEmailAddress'."
+            ErrorCode              = $null
+        }
+    }
+
+    # Resolve mailbox location and type for hybrid routing
+    $resolution = $null
+    try {
+        $resolution = Resolve-MailboxExecutionContext -Identity $adObjectName -Config $Context.Config
+    }
+    catch {
+        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        Write-LogError -Logger $Context.Logger -Message "Error resolving mailbox context for '$adObjectName'." -Exception $_.Exception
+        return [pscustomobject]@{
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
+            Message                = "Failed to resolve mailbox context for '$adObjectName'. $message"
+            ErrorCode              = 'MAILBOX_GET_FAILED'
+        }
+    }
+
+    # Handle non-Execute resolution states
+    if ($resolution.IsCloudOnly) {
+        return [pscustomobject]@{
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
+            Message                = "Cloud-only recipient '$adObjectName' is not supported by GenericUser.AddEmailNickname."
+            ErrorCode              = 'CLOUD_ONLY_NOT_SUPPORTED'
+        }
+    }
+
+    if ($resolution.RecommendedAction -eq 'Retry') {
+        return [pscustomobject]@{
+            Success                = $false; Changed = $false
+            RequiresRetry          = $true; RetryAfterMinutes = $resolution.RetryAfterMinutes
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
+            Message                = $resolution.Reason
+            ErrorCode              = 'MAILBOX_MIGRATION_TRANSIENT'
+        }
+    }
+
+    if ($resolution.RecommendedAction -eq 'Fail') {
+        $errorCode = if ($resolution.PermissionAuthority -eq 'ExchangeOnline' -and -not $resolution.IsCloudOnly) {
+            'EXO_REQUIRED_BUT_DISABLED'
+        }
+        else {
+            'RECIPIENT_NOT_FOUND'
+        }
+        return [pscustomobject]@{
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
+            Message                = $resolution.Reason
+            ErrorCode              = $errorCode
+        }
+    }
+
+    # Execute: retrieve the mailbox object to check the current primary address
+    $recipientType = if ($resolution.RecipientTypeDetails) { [string]$resolution.RecipientTypeDetails } else { '' }
+    $mailbox = $null
+    try {
+        if ($recipientType -eq 'RemoteUserMailbox') {
+            $mailbox = Get-OnPremRemoteMailboxSafe -Identity $adObjectName
+        }
+        else {
+            $mailbox = Get-OnPremMailboxSafe -Identity $adObjectName
+        }
+    }
+    catch {
+        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        Write-LogError -Logger $Context.Logger -Message "Error getting mailbox for '$adObjectName'." -Exception $_.Exception
+        return [pscustomobject]@{
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
             Message                = "Target mailbox '$adObjectName' could not be found or read. $message"
             ErrorCode              = 'MAILBOX_GET_FAILED'
         }
@@ -595,13 +739,9 @@ function Add-GenericUserEmailNickname {
 
     if (-not $mailbox) {
         return [pscustomobject]@{
-            Success                = $false
-            Changed                = $false
-            AdObjectName           = $adObjectName
-            NewPrimaryEMailAddress = $newPrimaryEmailAddress
-            RequestedBy            = $requestedBy
-            RequestedByDomain      = $requestedByDomain
-            RequestedByEmail       = $requestedByEmail
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
             Message                = "Target mailbox '$adObjectName' not found."
             ErrorCode              = 'MAILBOX_NOT_FOUND'
         }
@@ -614,15 +754,22 @@ function Add-GenericUserEmailNickname {
 
     if ([string]::IsNullOrWhiteSpace($currentPrimary)) {
         return [pscustomobject]@{
-            Success                = $false
-            Changed                = $false
-            AdObjectName           = $adObjectName
-            NewPrimaryEMailAddress = $newPrimaryEmailAddress
-            RequestedBy            = $requestedBy
-            RequestedByDomain      = $requestedByDomain
-            RequestedByEmail       = $requestedByEmail
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
             Message                = "Mailbox '$adObjectName' has no current PrimarySmtpAddress."
             ErrorCode              = 'PRIMARY_SMTP_MISSING'
+        }
+    }
+
+    # No-change: new address is already the current primary
+    if ($currentPrimary -eq $newPrimaryEmailAddress) {
+        return [pscustomobject]@{
+            Success                = $true; Changed = $false; Simulated = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; CurrentPrimaryAddress = $currentPrimary; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
+            Message                = "Primary SMTP address '$newPrimaryEmailAddress' is already set for '$adObjectName'. No change required."
+            ErrorCode              = $null
         }
     }
 
@@ -640,36 +787,29 @@ function Add-GenericUserEmailNickname {
     }
 
     try {
-        Set-OnPremMailboxSafe -Parameters $setParams -WhatIfMode:$false | Out-Null
+        if ($recipientType -eq 'RemoteUserMailbox') {
+            Set-OnPremRemoteMailboxSafe -Parameters $setParams -WhatIfMode:$false | Out-Null
+        }
+        else {
+            Set-OnPremMailboxSafe -Parameters $setParams -WhatIfMode:$false | Out-Null
+        }
     }
     catch {
         $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
         Write-LogError -Logger $Context.Logger -Message "Error setting PrimarySmtpAddress for '$adObjectName'." -Exception $_.Exception
-
         return [pscustomobject]@{
-            Success                = $false
-            Changed                = $false
-            AdObjectName           = $adObjectName
-            CurrentPrimaryAddress  = $currentPrimary
-            NewPrimaryEMailAddress = $newPrimaryEmailAddress
-            RequestedBy            = $requestedBy
-            RequestedByDomain      = $requestedByDomain
-            RequestedByEmail       = $requestedByEmail
+            Success                = $false; Changed = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+            AdObjectName           = $adObjectName; CurrentPrimaryAddress = $currentPrimary; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+            RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
             Message                = "Error while setting PrimarySmtpAddress on mailbox '$adObjectName'. $message"
             ErrorCode              = 'SET_PRIMARY_SMTP_FAILED'
         }
     }
 
     return [pscustomobject]@{
-        Success                = $true
-        Changed                = $true
-        Simulated              = $false
-        AdObjectName           = $adObjectName
-        CurrentPrimaryAddress  = $currentPrimary
-        NewPrimaryEMailAddress = $newPrimaryEmailAddress
-        RequestedBy            = $requestedBy
-        RequestedByDomain      = $requestedByDomain
-        RequestedByEmail       = $requestedByEmail
+        Success                = $true; Changed = $true; Simulated = $false; RequiresRetry = $false; RetryAfterMinutes = 0
+        AdObjectName           = $adObjectName; CurrentPrimaryAddress = $currentPrimary; NewPrimaryEMailAddress = $newPrimaryEmailAddress
+        RequestedBy            = $requestedBy; RequestedByDomain = $requestedByDomain; RequestedByEmail = $requestedByEmail
         Message                = "Primary SMTP address changed from '$currentPrimary' to '$newPrimaryEmailAddress' for mailbox '$adObjectName'."
         ErrorCode              = $null
     }
