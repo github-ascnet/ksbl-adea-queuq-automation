@@ -261,83 +261,153 @@ function Set-GroupMailboxManager {
     )
 
     $adObjectName = [string]$Data.AdObjectName
-    $manager = [string]$Data.ManagerAdObjectName
+    $manager      = [string]$Data.ManagerAdObjectName
 
-    Write-LogInfo -Logger $Context.Logger -Message "Migrated legacy logic: changing manager on group mailbox '$adObjectName' to '$manager'."
+    Write-LogInfo -Logger $Context.Logger -Message "Processing GroupMailbox.ChangeManager for '$adObjectName' (new manager: '$manager')."
 
+    # WhatIf: simulate without calling resolver, Exchange or AD cmdlets
     if ($Context.WhatIfMode) {
         return [pscustomobject]@{
-            Success      = $true
-            Changed      = $true
-            Simulated    = $true
-            AdObjectName = $adObjectName
-            Manager      = $manager
-            Operations   = @('Add FullAccess', 'Add SendAs', 'Set AD user manager')
-            Message      = "WhatIf: would add manager permissions and set AD manager for group mailbox '$adObjectName'."
-            ErrorCode    = $null
+            Success             = $true
+            Changed             = $true
+            Simulated           = $true
+            RequiresRetry       = $false
+            RetryAfterMinutes   = 0
+            AdObjectName        = $adObjectName
+            ManagerAdObjectName = $manager
+            Authority           = 'WhatIf'
+            Operations          = @('Add FullAccess (WhatIf)', 'Add SendAs (WhatIf)', 'Set AD manager (WhatIf)')
+            Message             = "WhatIf: would add manager permissions and set AD manager for group mailbox '$adObjectName'."
+            ErrorCode           = $null
         }
     }
 
-    $mailbox = $null
-    try {
-        $mailbox = Get-OnPremMailboxSafe -Identity $adObjectName
-    }
-    catch {
-        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-LogError -Logger $Context.Logger -Message "Error getting group mailbox '$adObjectName'." -Exception $_.Exception
+    # Resolve mailbox location via HybridMailboxResolver
+    $resolution = Resolve-MailboxExecutionContext -Identity $adObjectName -Config $Context.Config
+
+    # Retry: mailbox is being migrated to EXO and not yet visible there
+    if ($resolution.RecommendedAction -eq 'Retry') {
+        Write-LogWarn -Logger $Context.Logger -Message "GroupMailbox.ChangeManager: transient migration state for '$adObjectName'. Reason: $($resolution.Reason)"
         return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Manager      = $manager
-            Message      = "Group mailbox '$adObjectName' could not be found or read. $message"
-            ErrorCode    = 'GROUP_MAILBOX_GET_FAILED'
+            Success             = $false
+            Changed             = $false
+            RequiresRetry       = $true
+            RetryAfterMinutes   = $resolution.RetryAfterMinutes
+            AdObjectName        = $adObjectName
+            ManagerAdObjectName = $manager
+            Authority           = $resolution.ManagementAuthority
+            Message             = $resolution.Reason
+            ErrorCode           = 'MAILBOX_MIGRATION_TRANSIENT'
         }
     }
 
-    if (-not $mailbox) {
+    # Fail: EXO required but disabled, or mailbox not found at all
+    if ($resolution.RecommendedAction -eq 'Fail') {
+        $errorCode = if ($resolution.ManagementAuthority -eq 'ExchangeOnline') {
+            'EXO_REQUIRED_BUT_DISABLED'
+        }
+        else {
+            'MAILBOX_NOT_FOUND'
+        }
+        Write-LogError -Logger $Context.Logger -Message "GroupMailbox.ChangeManager: cannot proceed for '$adObjectName'. Reason: $($resolution.Reason)"
         return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Manager      = $manager
-            Message      = "Group mailbox '$adObjectName' not found."
-            ErrorCode    = 'GROUP_MAILBOX_NOT_FOUND'
+            Success             = $false
+            Changed             = $false
+            RequiresRetry       = $false
+            RetryAfterMinutes   = 0
+            AdObjectName        = $adObjectName
+            ManagerAdObjectName = $manager
+            Authority           = $resolution.ManagementAuthority
+            Message             = $resolution.Reason
+            ErrorCode           = $errorCode
         }
     }
 
-    $mailboxIdentity = if ($mailbox.PSObject.Properties['DistinguishedName'] -and -not [string]::IsNullOrWhiteSpace([string]$mailbox.DistinguishedName)) {
-        [string]$mailbox.DistinguishedName
-    }
-    else {
-        $adObjectName
-    }
-
+    # Execute: route to the correct authority
     try {
-        Invoke-LegacyMailboxPermissionMutation -MailboxIdentity $mailboxIdentity -Trustee $manager -Action 'ADD' -EnableSendAs:$true -WhatIfMode:$false -Logger $Context.Logger | Out-Null
-        Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$false | Out-Null
+        switch ($resolution.ManagementAuthority) {
+            'OnPremExchange' {
+                # On-Prem shared mailbox:
+                #   1. Grant FullAccess + SendAs via Exchange On-Prem (mirrors legacy AddRemove-MailboxPermissions)
+                #   2. Set the AD Manager attribute
+                Invoke-LegacyMailboxPermissionMutation `
+                    -MailboxIdentity $adObjectName `
+                    -Trustee $manager `
+                    -Action 'ADD' `
+                    -EnableSendAs:$true `
+                    -WhatIfMode:$false `
+                    -Logger $Context.Logger | Out-Null
+                Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$false | Out-Null
+            }
+            'ExchangeOnline' {
+                # EXO-hosted mailbox:
+                #   1. Grant FullAccess via Exchange Online gateway
+                #   2. Grant SendAs via Exchange Online gateway
+                #   3. If the on-prem proxy object still exists (RemoteSharedMailbox), set the AD Manager
+                #      attribute so Entra Connect can sync it. Skip for pure EXO-only mailboxes.
+                $faParams = @{
+                    Identity        = $adObjectName
+                    User            = $manager
+                    AccessRights    = 'FullAccess'
+                    InheritanceType = 'All'
+                    AutoMapping     = $false
+                }
+                Add-ExoMailboxPermissionSafe -Parameters $faParams -Config $Context.Config -WhatIfMode:$false | Out-Null
+
+                $saParams = @{
+                    Identity     = $adObjectName
+                    Trustee      = $manager
+                    AccessRights = 'ExtendedRights'
+                    Confirm      = $false
+                }
+                Add-ExoSendAsPermissionSafe -Parameters $saParams -Config $Context.Config -WhatIfMode:$false | Out-Null
+
+                if ($resolution.ExistsOnPrem) {
+                    Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$false | Out-Null
+                }
+            }
+            default {
+                return [pscustomobject]@{
+                    Success             = $false
+                    Changed             = $false
+                    RequiresRetry       = $false
+                    RetryAfterMinutes   = 0
+                    AdObjectName        = $adObjectName
+                    ManagerAdObjectName = $manager
+                    Authority           = $resolution.ManagementAuthority
+                    Message             = "Cannot determine management authority for group mailbox '$adObjectName'. $($resolution.Reason)"
+                    ErrorCode           = 'PERMISSION_AUTHORITY_UNKNOWN'
+                }
+            }
+        }
     }
     catch {
         $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
         Write-LogError -Logger $Context.Logger -Message "Error changing manager on group mailbox '$adObjectName'." -Exception $_.Exception
         return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Manager      = $manager
-            Message      = "Error while changing group mailbox manager on '$adObjectName'. $message"
-            ErrorCode    = 'GROUP_MAILBOX_MANAGER_CHANGE_FAILED'
+            Success             = $false
+            Changed             = $false
+            RequiresRetry       = $false
+            RetryAfterMinutes   = 0
+            AdObjectName        = $adObjectName
+            ManagerAdObjectName = $manager
+            Authority           = $resolution.ManagementAuthority
+            Message             = "Error while changing group mailbox manager on '$adObjectName'. $message"
+            ErrorCode           = 'GROUP_MAILBOX_MANAGER_CHANGE_FAILED'
         }
     }
 
     return [pscustomobject]@{
-        Success      = $true
-        Changed      = $true
-        Simulated    = $false
-        AdObjectName = $adObjectName
-        Manager      = $manager
-        Message      = "Manager changed for group mailbox '$adObjectName'."
-        ErrorCode    = $null
+        Success             = $true
+        Changed             = $true
+        Simulated           = $false
+        RequiresRetry       = $false
+        RetryAfterMinutes   = 0
+        AdObjectName        = $adObjectName
+        ManagerAdObjectName = $manager
+        Authority           = $resolution.ManagementAuthority
+        Message             = "Manager changed for group mailbox '$adObjectName' via $($resolution.ManagementAuthority)."
+        ErrorCode           = $null
     }
 }
 

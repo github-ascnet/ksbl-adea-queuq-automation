@@ -92,6 +92,29 @@ function Remove-ExoSendAsPermissionSafe {
     Remove-RecipientPermission @Parameters -ErrorAction Stop
 }
 
+function Set-ExoMailboxManagerSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][string]$Manager,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [bool]$WhatIfMode = $true
+    )
+
+    if ($WhatIfMode) {
+        return [pscustomobject]@{
+            Simulated = $true
+            Action    = 'Set-Mailbox'
+            Identity  = $Identity
+            Manager   = $Manager
+            Target    = 'ExchangeOnline'
+        }
+    }
+    Assert-ExchangeOnlineEnabled -Config $Config
+    if (-not (Get-Command -Name Set-Mailbox -ErrorAction SilentlyContinue)) { throw 'Set-Mailbox cmdlet unavailable for EXO session.' }
+    Set-Mailbox -Identity $Identity -GrantSendOnBehalfTo @{ Add = $Manager } -ErrorAction Stop
+}
+
 Export-ModuleMember -Function @(
     'Connect-ExchangeOnlineAutomation',
     'Get-ExoMailboxSafe',
@@ -100,5 +123,6 @@ Export-ModuleMember -Function @(
     'Add-ExoMailboxPermissionSafe',
     'Remove-ExoMailboxPermissionSafe',
     'Add-ExoSendAsPermissionSafe',
-    'Remove-ExoSendAsPermissionSafe'
+    'Remove-ExoSendAsPermissionSafe',
+    'Set-ExoMailboxManagerSafe'
 )

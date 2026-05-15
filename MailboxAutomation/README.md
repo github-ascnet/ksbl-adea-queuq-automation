@@ -621,3 +621,101 @@ Die Datei `tests/Pester/GroupMailboxHybridRouting.Tests.ps1` enthält 26 Pester-
 6. `Invoke-AddGroupMailboxFmaMembers Handler` — 3 Tests für RequiresRetry, Succeeded und Failed-Propagation
 
 Mocks verwenden `Mock -ModuleName 'HybridMailboxResolver'` für Gateway-Funktionen innerhalb des Resolvers und `Mock -ModuleName 'MailboxPermissionService'` für den Resolver und die Gateway-Funktionen innerhalb des PermissionServices.
+
+---
+
+## 33. Hybrid-Routing für GroupMailbox.ChangeManager
+
+Dieser Abschnitt beschreibt die Erweiterung, die den Gruppen-Mailbox-Manager (FullAccess + SendAs + AD-Manager-Attribut) automatisch an die korrekte Exchange-Umgebung weiterleitet, abhängig davon, ob das Postfach noch On-Prem (SharedMailbox) oder bereits in die Cloud migriert ist (RemoteSharedMailbox / EXO).
+
+### Architektur
+
+```
+ChangeManagerGroupMailbox.psm1  (Handler)
+  → $Context.Services.GroupMailbox.ChangeManager  (ServiceContainer-Closure in JobEngine)
+     → Set-GroupMailboxManager  (GroupMailboxService)
+        → Resolve-MailboxExecutionContext  (HybridMailboxResolver)
+           → Get-OnPremRecipientSafe  (ExchangeOnPremGateway)
+           → Get-ExoRecipientSafe     (ExchangeOnlineGateway, nur bei RemoteSharedMailbox oder kein On-Prem-Objekt)
+        — On-Prem-Pfad:
+           → Invoke-LegacyMailboxPermissionMutation  (ExchangeOnPremGateway / MailboxPermissionService)
+           → Set-AdUserSafe                           (ActiveDirectoryGateway)
+        — EXO-Pfad:
+           → Add-ExoMailboxPermissionSafe  (ExchangeOnlineGateway)
+           → Add-ExoSendAsPermissionSafe   (ExchangeOnlineGateway)
+           → Set-AdUserSafe                (ActiveDirectoryGateway, nur wenn ExistsOnPrem=$true)
+```
+
+### HybridMailboxResolver — ManagementAuthority
+
+`Resolve-MailboxExecutionContext` gibt jetzt zusätzlich `ManagementAuthority` zurück (identisch mit `PermissionAuthority`). Das Feld steuert den Routing-Entscheid in `Set-GroupMailboxManager`:
+
+| RecipientTypeDetails | EXO-Status | EXO-Objekt gefunden | ManagementAuthority | RecommendedAction |
+|---|---|---|---|---|
+| `SharedMailbox` | beliebig | – | `OnPremExchange` | `Execute` |
+| `RemoteSharedMailbox` | enabled | ja | `ExchangeOnline` | `Execute` |
+| `RemoteSharedMailbox` | enabled | nein | `ExchangeOnline` | `Retry` |
+| `RemoteSharedMailbox` | disabled | – | `ExchangeOnline` | `Fail` |
+| Nur EXO (kein On-Prem-Objekt) | enabled | ja | `ExchangeOnline` | `Execute` |
+| Nicht gefunden | – | – | `Unknown` | `Fail` |
+
+### GroupMailboxService — Set-GroupMailboxManager
+
+Die Funktion `Set-GroupMailboxManager` in `shared/GroupMailboxService.psm1` wurde zu einer hybrid-bewussten Implementierung umgeschrieben:
+
+1. **WhatIf-Early-Return**: kein Resolver-Aufruf, keine Exchange-Cmdlets. Gibt `Simulated=$true`, `Authority='WhatIf'` zurück.
+2. **Resolve-MailboxExecutionContext**: bestimmt `ManagementAuthority` und `RecommendedAction`.
+3. **Retry-Branch**: Bei `RecommendedAction='Retry'` gibt die Funktion sofort ein Objekt mit `RequiresRetry=$true`, `ErrorCode='MAILBOX_MIGRATION_TRANSIENT'` zurück.
+4. **Fail-Branch**: Bei `RecommendedAction='Fail'`:
+   - `ManagementAuthority = 'ExchangeOnline'` → `ErrorCode = 'EXO_REQUIRED_BUT_DISABLED'`
+   - sonst → `ErrorCode = 'MAILBOX_NOT_FOUND'`
+5. **Execute-Branch** (switch auf `ManagementAuthority`):
+   - `OnPremExchange`: `Invoke-LegacyMailboxPermissionMutation` (FullAccess + SendAs On-Prem) + `Set-AdUserSafe`
+   - `ExchangeOnline`: `Add-ExoMailboxPermissionSafe` + `Add-ExoSendAsPermissionSafe` + `Set-AdUserSafe` (nur wenn `ExistsOnPrem=$true`)
+   - `default`: `ErrorCode = 'PERMISSION_AUTHORITY_UNKNOWN'`
+6. **Erfolg**: gibt `Success=$true`, `Changed=$true`, `Authority=$resolution.ManagementAuthority` zurück.
+
+**Besonderheit EXO-only-Mailboxen**: Wenn `ExistsOnPrem=$false` (reines EXO-Postfach ohne On-Prem-Proxy), wird `Set-AdUserSafe` **nicht** aufgerufen, da kein AD-Objekt existiert.
+
+### Handler — RequiresRetry-Propagation
+
+Der Handler `usecases/GroupMailbox/ChangeManagerGroupMailbox.psm1` prüft nach dem Service-Aufruf ob `$serviceResult.RequiresRetry = $true`. Bei Retry wird sofort `New-JobRetryResult` zurückgegeben — bei Multi-Row-Jobs werden verbleibende Zeilen **nicht** weiterverarbeitet (erste RequiresRetry-Zeile gewinnt).
+
+### ExchangeOnlineGateway — Set-ExoMailboxManagerSafe
+
+Das Modul `infrastructure/ExchangeOnlineGateway.psm1` wurde um `Set-ExoMailboxManagerSafe` erweitert. Die Funktion folgt dem bestehenden Gateway-Muster (WhatIf-Guard → `Assert-ExchangeOnlineEnabled` → cmdlet check → `Set-Mailbox`).
+
+### Fehlercodes
+
+| ErrorCode | Bedeutung |
+|---|---|
+| `MAILBOX_MIGRATION_TRANSIENT` | Postfach in Migrationstransiente; EXO-Objekt noch nicht sichtbar |
+| `EXO_REQUIRED_BUT_DISABLED` | RemoteSharedMailbox, aber EXO nicht konfiguriert |
+| `MAILBOX_NOT_FOUND` | Postfach weder On-Prem noch in EXO gefunden |
+| `PERMISSION_AUTHORITY_UNKNOWN` | Routing-Autorität unbekannt (interner Fehler) |
+| `GROUP_MAILBOX_MANAGER_CHANGE_FAILED` | Ausnahme beim Gateway-Aufruf |
+
+### Tests
+
+Die Datei `tests/Pester/GroupMailboxChangeManagerHybridRouting.Tests.ps1` enthält 11 Pester-5.7.1-kompatible Tests. Die Describe-Blöcke decken ab:
+
+1. `GroupMailboxService.Set-GroupMailboxManager` — 8 Tests:
+   - WhatIf: kein Resolver-Aufruf, kein Exchange
+   - On-Prem: `Invoke-LegacyMailboxPermissionMutation` + `Set-AdUserSafe` aufgerufen
+   - EXO: `Add-ExoMailboxPermissionSafe` + `Add-ExoSendAsPermissionSafe` + `Set-AdUserSafe` aufgerufen
+   - Retry: `RequiresRetry=$true`, `ErrorCode='MAILBOX_MIGRATION_TRANSIENT'`
+   - EXO disabled: `ErrorCode='EXO_REQUIRED_BUT_DISABLED'`
+   - Not found: `ErrorCode='MAILBOX_NOT_FOUND'`
+   - Gateway-Exception: `ErrorCode='GROUP_MAILBOX_MANAGER_CHANGE_FAILED'`
+   - WhatIf (EXO enabled): kein EXO-Aufruf
+
+2. `Invoke-ChangeManagerGroupMailbox handler` — 5 Tests:
+   - RequiresRetry → `Status='Retry'`
+   - Success → `Status='Succeeded'`
+   - Failure → `Status='Failed'`
+   - Validation failure → `ErrorCode='USECASE_ERROR'`
+   - Partial failure (Multi-Row) → `Status='Failed'`
+   - RequiresRetry stoppt weitere Zeilen (nur 1 Service-Aufruf bei 2 Zeilen)
+
+Mocks verwenden `Mock -ModuleName 'GroupMailboxService'` für alle Resolver- und Gateway-Funktionen innerhalb des Services.
+
