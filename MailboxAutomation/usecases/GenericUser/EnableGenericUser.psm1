@@ -18,6 +18,18 @@ function Invoke-EnableGenericUser {
             Write-LogInfo -Logger $Context.Logger -Message "Processing GenericUser.Enable for '$($row.AdObjectName)'."
 
             $serviceResult = & $Context.Services.UserProvisioning.EnableUser $Context $row
+
+            # NOTE: Rows already processed in this batch must be idempotent on retry (AD Enable is idempotent).
+            if ($serviceResult -and $serviceResult.PSObject.Properties['RequiresRetry'] -and [bool]$serviceResult.RequiresRetry) {
+                $retryMinutes = if ($serviceResult.PSObject.Properties['RetryAfterMinutes'] -and $serviceResult.RetryAfterMinutes) { [int]$serviceResult.RetryAfterMinutes } else { 15 }
+                $retryAfter = (Get-Date).AddMinutes($retryMinutes)
+                Write-LogWarn -Logger $Context.Logger -Message "GenericUser.Enable for '$($row.AdObjectName)' requires retry after $retryMinutes minutes: $($serviceResult.Message)"
+                return New-JobRetryResult -Message "GenericUser.Enable retry required for '$($row.AdObjectName)': $($serviceResult.Message)" -RetryAfter $retryAfter -Output @{
+                    SuccessCount = $results.Count
+                    FailedRows   = @($row.AdObjectName)
+                }
+            }
+
             $results += $serviceResult
 
             if (-not $serviceResult.Success) {

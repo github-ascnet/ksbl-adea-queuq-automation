@@ -19,6 +19,7 @@ function New-UserProvisioningResult {
         [bool]$Changed = $false,
         [bool]$Simulated = $false,
         [string]$Action,
+        [string]$Authority = '',
         [string]$AdObjectName,
         [string]$Message,
         [string]$ErrorCode,
@@ -26,16 +27,17 @@ function New-UserProvisioningResult {
     )
 
     [pscustomobject]@{
-        Success        = $Success
-        Changed        = $Changed
-        Simulated      = $Simulated
-        RequiresRetry  = $false
+        Success           = $Success
+        Changed           = $Changed
+        Simulated         = $Simulated
+        RequiresRetry     = $false
         RetryAfterMinutes = 0
-        Action         = $Action
-        AdObjectName   = $AdObjectName
-        Message        = $Message
-        ErrorCode      = $ErrorCode
-        Output         = $Output
+        Action            = $Action
+        Authority         = $Authority
+        AdObjectName      = $AdObjectName
+        Message           = $Message
+        ErrorCode         = $ErrorCode
+        Output            = $Output
     }
 }
 
@@ -219,68 +221,125 @@ function Enable-GenericUser {
     Write-LogInfo -Logger $Context.Logger -Message "Enabling non-standard person mailbox account '$adObjectName'."
 
     # Legacy source: current-scripts/Process-UserGenericJobs.ps1, block '*EnableNonStdPersonMailbox*_pshjob_.csv'.
-    # Hybrid / Exchange Online routing is intentionally not implemented in this migration step.
-    # TODO: Extend this operation for Exchange Online / RemoteMailbox scenario in a later migration step.
 
     if ($Context.WhatIfMode) {
         return New-UserProvisioningResult -Success $true -Changed $true -Simulated $true -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "WhatIf: would enable account, unhide mailbox, reset password if needed, clear Hospis2AdDeleted state and move object to configured OU if applicable."
     }
 
-    $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('mail','proxyAddresses','extensionAttribute6','msDS-cloudExtensionAttribute15','SamAccountName','mailNickname','AccountExpirationDate','homeMdb','extensionAttribute11','Enabled','DistinguishedName')
-    if (-not $user) {
-        return New-UserProvisioningResult -Success $false -Changed $false -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
-    }
+    try {
+        $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('mail','proxyAddresses','extensionAttribute6','msDS-cloudExtensionAttribute15','SamAccountName','mailNickname','AccountExpirationDate','homeMdb','extensionAttribute11','Enabled','DistinguishedName')
+        if (-not $user) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
+        }
 
-    $sam = [string](Get-ObjectPropertyValue -Object $user -Name 'SamAccountName')
-    $mailNickname = [string](Get-ObjectPropertyValue -Object $user -Name 'mailNickname')
-    $homeMdb = Get-ObjectPropertyValue -Object $user -Name 'homeMdb'
-    $extensionAttribute11 = [string](Get-ObjectPropertyValue -Object $user -Name 'extensionAttribute11')
-    $isEnabled = [bool](Get-ObjectPropertyValue -Object $user -Name 'Enabled')
-    $actions = @()
+        $sam                  = [string](Get-ObjectPropertyValue -Object $user -Name 'SamAccountName')
+        $mailNickname         = [string](Get-ObjectPropertyValue -Object $user -Name 'mailNickname')
+        $homeMdb              = Get-ObjectPropertyValue -Object $user -Name 'homeMdb'
+        $extensionAttribute11 = [string](Get-ObjectPropertyValue -Object $user -Name 'extensionAttribute11')
+        $isEnabled            = [bool](Get-ObjectPropertyValue -Object $user -Name 'Enabled')
+        $mailAddress          = [string](Get-ObjectPropertyValue -Object $user -Name 'mail')
+        $actions              = @()
 
-    if ([string]::IsNullOrWhiteSpace([string]$homeMdb)) {
-        # Legacy code calls EnableDisable-Mailbox and waits 30 seconds. The concrete mailbox-enable implementation
-        # remains a dedicated migration task because it depends on the legacy helper function.
-        # TODO: Migrate legacy EnableDisable-Mailbox implementation here from current-scripts/Process-UserGenericJobs.ps1.
-        $actions += 'MailboxEnablePendingLegacyMigration'
-    }
-
-    if (-not $isEnabled) {
-        $password = ConvertTo-SecureString -AsPlainText (Get-LegacyActivationPassword -Context $Context) -Force
-        Set-AdAccountPasswordSafe -Identity $sam -NewPassword $password -WhatIfMode:$false | Out-Null
-        Enable-AdAccountSafe -Identity $sam -WhatIfMode:$false | Out-Null
-        Set-AdUserSafe -Parameters @{ Identity = $sam; ChangePasswordAtLogon = $true } -WhatIfMode:$false | Out-Null
-        Set-AdUserSafe -Parameters @{ Identity = $sam; Description = "Aktiviert am $(Get-Date -Format 'yyyy-MM-dd') von $($Data.CurrentUserName)" } -WhatIfMode:$false | Out-Null
-        $actions += 'AccountEnabled'
-    }
-    else {
-        $actions += 'AccountAlreadyEnabled'
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($mailNickname)) {
-        Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Unhide' -WhatIfMode:$false | Out-Null
-        $actions += 'MailboxUnhidden'
-    }
-
-    if ($extensionAttribute11 -eq 'Hospis2AdDeleted') {
-        Update-DfsShareSettingsSafe -SamAccountName $adObjectName -WhatIfMode:$false | Out-Null
-        Set-AdUserSafe -Parameters @{ Identity = $sam; Clear = 'extensionAttribute11' } -WhatIfMode:$false | Out-Null
-        $actions += 'Hospis2AdDeletedCleared'
-
-        $targetOu = Get-ConfiguredUserOu -Context $Context -SamAccountName $adObjectName
-        if (-not [string]::IsNullOrWhiteSpace($targetOu)) {
-            $dn = [string](Get-ObjectPropertyValue -Object $user -Name 'DistinguishedName')
-            if (-not [string]::IsNullOrWhiteSpace($dn)) {
-                Move-AdObjectSafe -Identity $dn -TargetPath $targetOu -WhatIfMode:$false | Out-Null
-                $actions += 'MovedToConfiguredOu'
+        # Hybrid-Routing: resolve mailbox execution context when a mail-enabled user exists.
+        # Identity: prefer mail attribute (SMTP), fall back to SamAccountName (alias-resolved on-prem).
+        $resolution = $null
+        $hasMailbox = (-not [string]::IsNullOrWhiteSpace($mailNickname))
+        if ($hasMailbox) {
+            $resolveIdentity = if (-not [string]::IsNullOrWhiteSpace($mailAddress)) { $mailAddress } else { $adObjectName }
+            try {
+                $resolution = Resolve-MailboxExecutionContext -Identity $resolveIdentity -Config $Context.Config
+            }
+            catch {
+                Write-LogWarn -Logger $Context.Logger -Message "Mailbox context resolution failed for '$adObjectName': $($_.Exception.Message). Proceeding with On-Prem defaults."
             }
         }
-        else {
-            $actions += 'MoveOuSkippedMissingConfiguration'
-        }
-    }
 
-    return New-UserProvisioningResult -Success $true -Changed $true -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Account '$adObjectName' enable processing completed." -Output $actions
+        # Cloud-only recipients are not supported: AD-based Enable requires an on-prem AD object.
+        if ($resolution -and $resolution.IsCloudOnly) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName `
+                -Message "GenericUser.Enable is not supported for cloud-only (EXO-only) recipients. Identity: '$adObjectName'." `
+                -ErrorCode 'CLOUD_ONLY_NOT_SUPPORTED'
+        }
+
+        # Migration transient: EXO mailbox not yet visible; defer and retry.
+        if ($resolution -and $resolution.RecommendedAction -eq 'Retry') {
+            $retryMinutes = if ($resolution.RetryAfterMinutes -and $resolution.RetryAfterMinutes -gt 0) { [int]$resolution.RetryAfterMinutes } else { 15 }
+            return [pscustomobject]@{
+                Success           = $false
+                Changed           = $false
+                Simulated         = $false
+                RequiresRetry     = $true
+                RetryAfterMinutes = $retryMinutes
+                Authority         = 'OnPremExchange'
+                Action            = 'EnableNonStdPersonMailbox'
+                AdObjectName      = $adObjectName
+                Message           = "GenericUser.Enable for '$adObjectName' deferred: $($resolution.Reason)"
+                ErrorCode         = 'MAILBOX_MIGRATION_TRANSIENT'
+                Output            = $null
+            }
+        }
+
+        # EXO required but disabled by configuration.
+        if ($resolution -and $resolution.RecommendedAction -eq 'Fail' -and
+            $resolution.FeatureAuthority -eq 'ExchangeOnline' -and -not $resolution.IsCloudOnly) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName `
+                -Message "GenericUser.Enable for '$adObjectName' requires Exchange Online for mailbox features, but Exchange Online is disabled by configuration." `
+                -ErrorCode 'EXO_REQUIRED_BUT_DISABLED'
+        }
+
+        # === On-Prem AD operations — always executed regardless of mailbox location ===
+        if ([string]::IsNullOrWhiteSpace([string]$homeMdb)) {
+            # Legacy code calls EnableDisable-Mailbox and waits 30 seconds. The concrete mailbox-enable
+            # implementation remains a dedicated migration task.
+            # TODO: Migrate legacy EnableDisable-Mailbox implementation here from current-scripts/Process-UserGenericJobs.ps1.
+            $actions += 'MailboxEnablePendingLegacyMigration'
+        }
+
+        if (-not $isEnabled) {
+            $password = ConvertTo-SecureString -AsPlainText (Get-LegacyActivationPassword -Context $Context) -Force
+            Set-AdAccountPasswordSafe -Identity $sam -NewPassword $password -WhatIfMode:$false | Out-Null
+            Enable-AdAccountSafe -Identity $sam -WhatIfMode:$false | Out-Null
+            Set-AdUserSafe -Parameters @{ Identity = $sam; ChangePasswordAtLogon = $true } -WhatIfMode:$false | Out-Null
+            Set-AdUserSafe -Parameters @{ Identity = $sam; Description = "Aktiviert am $(Get-Date -Format 'yyyy-MM-dd') von $($Data.CurrentUserName)" } -WhatIfMode:$false | Out-Null
+            $actions += 'AccountEnabled'
+        }
+        else {
+            $actions += 'AccountAlreadyEnabled'
+        }
+
+        # === Mailbox visibility routing via MailboxFeatureService ===
+        # UserMailbox/SharedMailbox      → Set-Mailbox On-Prem
+        # RemoteUserMailbox/SharedMailbox → Set-RemoteMailbox On-Prem (synchronized HideFromAddressLists)
+        if (-not [string]::IsNullOrWhiteSpace($mailNickname)) {
+            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Unhide' -WhatIfMode:$false -Resolution $resolution | Out-Null
+            $actions += 'MailboxUnhidden'
+        }
+
+        if ($extensionAttribute11 -eq 'Hospis2AdDeleted') {
+            Update-DfsShareSettingsSafe -SamAccountName $adObjectName -WhatIfMode:$false | Out-Null
+            Set-AdUserSafe -Parameters @{ Identity = $sam; Clear = 'extensionAttribute11' } -WhatIfMode:$false | Out-Null
+            $actions += 'Hospis2AdDeletedCleared'
+
+            $targetOu = Get-ConfiguredUserOu -Context $Context -SamAccountName $adObjectName
+            if (-not [string]::IsNullOrWhiteSpace($targetOu)) {
+                $dn = [string](Get-ObjectPropertyValue -Object $user -Name 'DistinguishedName')
+                if (-not [string]::IsNullOrWhiteSpace($dn)) {
+                    Move-AdObjectSafe -Identity $dn -TargetPath $targetOu -WhatIfMode:$false | Out-Null
+                    $actions += 'MovedToConfiguredOu'
+                }
+            }
+            else {
+                $actions += 'MoveOuSkippedMissingConfiguration'
+            }
+        }
+
+        $authority = if ($resolution -and -not [string]::IsNullOrWhiteSpace($resolution.FeatureAuthority)) { $resolution.FeatureAuthority } else { 'OnPremExchange' }
+        return New-UserProvisioningResult -Success $true -Changed $true -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Authority $authority -Message "Account '$adObjectName' enable processing completed." -Output $actions
+    }
+    catch {
+        Write-LogError -Logger $Context.Logger -Message "Enable-GenericUser failed for '$adObjectName'." -Exception $_.Exception
+        return New-UserProvisioningResult -Success $false -Changed $false -Action 'EnableNonStdPersonMailbox' -AdObjectName $adObjectName -Message $_.Exception.Message -ErrorCode 'ENABLE_GENERIC_USER_FAILED'
+    }
 }
 
 function Disable-GenericUser {
@@ -291,42 +350,99 @@ function Disable-GenericUser {
     Write-LogInfo -Logger $Context.Logger -Message "Disabling non-standard person mailbox account '$adObjectName'."
 
     # Legacy source: current-scripts/Process-UserGenericJobs.ps1, block '*DisableNonStdPersonMailbox*_pshjob_.csv'.
-    # TODO: Extend this operation for Exchange Online / RemoteMailbox scenario in a later migration step.
 
     if ($Context.WhatIfMode) {
         return New-UserProvisioningResult -Success $true -Changed $true -Simulated $true -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "WhatIf: would disable account, mark Entra sync state as disabled, hide mailbox and update description."
     }
 
-    $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('mail','proxyAddresses','extensionAttribute6','msDS-cloudExtensionAttribute15','SamAccountName','mailNickname','AccountExpirationDate','homeMdb','extensionAttribute11','Enabled')
-    if (-not $user) {
-        return New-UserProvisioningResult -Success $false -Changed $false -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
+    try {
+        $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('mail','proxyAddresses','extensionAttribute6','msDS-cloudExtensionAttribute15','SamAccountName','mailNickname','AccountExpirationDate','homeMdb','extensionAttribute11','Enabled')
+        if (-not $user) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
+        }
+
+        $sam          = [string](Get-ObjectPropertyValue -Object $user -Name 'SamAccountName')
+        $mailNickname = [string](Get-ObjectPropertyValue -Object $user -Name 'mailNickname')
+        $homeMdb      = Get-ObjectPropertyValue -Object $user -Name 'homeMdb'
+        $isEnabled    = [bool](Get-ObjectPropertyValue -Object $user -Name 'Enabled')
+        $mailAddress  = [string](Get-ObjectPropertyValue -Object $user -Name 'mail')
+        $actions      = @()
+
+        # Hybrid-Routing: resolve mailbox execution context when a mail-enabled user exists.
+        $resolution = $null
+        $hasMailbox = (-not [string]::IsNullOrWhiteSpace($mailNickname))
+        if ($hasMailbox) {
+            $resolveIdentity = if (-not [string]::IsNullOrWhiteSpace($mailAddress)) { $mailAddress } else { $adObjectName }
+            try {
+                $resolution = Resolve-MailboxExecutionContext -Identity $resolveIdentity -Config $Context.Config
+            }
+            catch {
+                Write-LogWarn -Logger $Context.Logger -Message "Mailbox context resolution failed for '$adObjectName': $($_.Exception.Message). Proceeding with On-Prem defaults."
+            }
+        }
+
+        # Cloud-only recipients are not supported.
+        if ($resolution -and $resolution.IsCloudOnly) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName `
+                -Message "GenericUser.Disable is not supported for cloud-only (EXO-only) recipients. Identity: '$adObjectName'." `
+                -ErrorCode 'CLOUD_ONLY_NOT_SUPPORTED'
+        }
+
+        # Migration transient: defer and retry.
+        if ($resolution -and $resolution.RecommendedAction -eq 'Retry') {
+            $retryMinutes = if ($resolution.RetryAfterMinutes -and $resolution.RetryAfterMinutes -gt 0) { [int]$resolution.RetryAfterMinutes } else { 15 }
+            return [pscustomobject]@{
+                Success           = $false
+                Changed           = $false
+                Simulated         = $false
+                RequiresRetry     = $true
+                RetryAfterMinutes = $retryMinutes
+                Authority         = 'OnPremExchange'
+                Action            = 'DisableNonStdPersonMailbox'
+                AdObjectName      = $adObjectName
+                Message           = "GenericUser.Disable for '$adObjectName' deferred: $($resolution.Reason)"
+                ErrorCode         = 'MAILBOX_MIGRATION_TRANSIENT'
+                Output            = $null
+            }
+        }
+
+        # EXO required but disabled by configuration.
+        if ($resolution -and $resolution.RecommendedAction -eq 'Fail' -and
+            $resolution.FeatureAuthority -eq 'ExchangeOnline' -and -not $resolution.IsCloudOnly) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName `
+                -Message "GenericUser.Disable for '$adObjectName' requires Exchange Online for mailbox features, but Exchange Online is disabled by configuration." `
+                -ErrorCode 'EXO_REQUIRED_BUT_DISABLED'
+        }
+
+        # === On-Prem AD operations — always executed regardless of mailbox location ===
+        if ($isEnabled) {
+            Disable-AdAccountSafe -Identity $sam -WhatIfMode:$false | Out-Null
+            Set-AdUserSafe -Parameters @{ Identity = $sam; Description = "Inaktiviert am $(Get-Date -Format 'yyyy-MM-dd') von $($Data.CurrentUserName)" } -WhatIfMode:$false | Out-Null
+            $actions += 'AccountDisabled'
+
+            # Legacy code calls Set-TenantState -Mode TenantDisable. The full tenant sync-control implementation is still a TODO.
+            # TODO: Migrate legacy Set-TenantState TenantDisable implementation here.
+            $actions += 'TenantDisablePendingLegacyMigration'
+        }
+        else {
+            $actions += 'AccountAlreadyDisabled'
+        }
+
+        # === Mailbox visibility routing via MailboxFeatureService ===
+        # UserMailbox/SharedMailbox       → Set-Mailbox On-Prem
+        # RemoteUserMailbox/SharedMailbox → Set-RemoteMailbox On-Prem (synchronized HideFromAddressLists)
+        if (-not [string]::IsNullOrWhiteSpace([string]$homeMdb) -or -not [string]::IsNullOrWhiteSpace($mailNickname)) {
+            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Hide' -WhatIfMode:$false -Resolution $resolution | Out-Null
+            $actions += 'MailboxHidden'
+        }
+
+        $authority = if ($resolution -and -not [string]::IsNullOrWhiteSpace($resolution.FeatureAuthority)) { $resolution.FeatureAuthority } else { 'OnPremExchange' }
+        return New-UserProvisioningResult -Success $true -Changed $true -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Authority $authority -Message "Account '$adObjectName' disable processing completed." -Output $actions
     }
-
-    $sam = [string](Get-ObjectPropertyValue -Object $user -Name 'SamAccountName')
-    $mailNickname = [string](Get-ObjectPropertyValue -Object $user -Name 'mailNickname')
-    $homeMdb = Get-ObjectPropertyValue -Object $user -Name 'homeMdb'
-    $isEnabled = [bool](Get-ObjectPropertyValue -Object $user -Name 'Enabled')
-    $actions = @()
-
-    if ($isEnabled) {
-        Disable-AdAccountSafe -Identity $sam -WhatIfMode:$false | Out-Null
-        Set-AdUserSafe -Parameters @{ Identity = $sam; Description = "Inaktiviert am $(Get-Date -Format 'yyyy-MM-dd') von $($Data.CurrentUserName)" } -WhatIfMode:$false | Out-Null
-        $actions += 'AccountDisabled'
-
-        # Legacy code calls Set-TenantState -Mode TenantDisable. The full tenant sync-control implementation is still a TODO.
-        # TODO: Migrate legacy Set-TenantState TenantDisable implementation here.
-        $actions += 'TenantDisablePendingLegacyMigration'
+    catch {
+        Write-LogError -Logger $Context.Logger -Message "Disable-GenericUser failed for '$adObjectName'." -Exception $_.Exception
+        return New-UserProvisioningResult -Success $false -Changed $false -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Message $_.Exception.Message -ErrorCode 'DISABLE_GENERIC_USER_FAILED'
     }
-    else {
-        $actions += 'AccountAlreadyDisabled'
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace([string]$homeMdb) -or -not [string]::IsNullOrWhiteSpace($mailNickname)) {
-        Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Hide' -WhatIfMode:$false | Out-Null
-        $actions += 'MailboxHidden'
-    }
-
-    return New-UserProvisioningResult -Success $true -Changed $true -Action 'DisableNonStdPersonMailbox' -AdObjectName $adObjectName -Message "Account '$adObjectName' disable processing completed." -Output $actions
 }
 
 function Rename-GenericUser {

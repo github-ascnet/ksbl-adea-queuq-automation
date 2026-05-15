@@ -834,3 +834,93 @@ Die Datei `tests/Pester/GenericUserHybridAuthority.Tests.ps1` enthält Pester-5.
 7. **Handler `Invoke-AddEmailNickname`** (4 Contexts, 4 Tests):
    - RequiresRetry→Retry, Success→Succeeded, No-Change→Succeeded, Failure→Failed
 
+---
+
+## 35. Hybrid-Autoritätslogik für GenericUser.Enable / GenericUser.Disable
+
+Dieser Abschnitt dokumentiert die Erweiterung der GenericUser-Operationen **Enable** und **Disable** mit vollständiger Hybrid-Autoritätslogik.
+
+### Designprinzipien
+
+- **AD-Konto aktivieren/deaktivieren** (`Enable-ADAccount`, `Disable-ADAccount`, `Set-ADUser`): immer On-Prem AD — unabhängig vom Mailbox-Typ.
+- **Mailbox-Sichtbarkeit** (`HiddenFromAddressListsEnabled`):
+  - `UserMailbox`, `SharedMailbox` → `Set-Mailbox` On-Prem via `Set-OnPremMailboxSafe`
+  - `RemoteUserMailbox`, `RemoteSharedMailbox` → `Set-RemoteMailbox` On-Prem via `Set-OnPremRemoteMailboxSafe` (synchronisiertes Attribut, kein EXO-Aufruf nötig)
+  - EXO-only → `CLOUD_ONLY_NOT_SUPPORTED` (vor dem Mailbox-Aufruf abgebrochen)
+- **Kein Mailbox-Nachschlagen** (kein `mailNickname`): Resolver wird übersprungen; nur AD-Operationen werden ausgeführt.
+
+### Neue FeatureAuthority in HybridMailboxResolver
+
+`Resolve-MailboxExecutionContext` gibt nun das Feld `FeatureAuthority` zurück:
+
+| `RecipientTypeDetails` | `FeatureAuthority` | Bedeutung |
+|---|---|---|
+| `UserMailbox` | `OnPremExchange` | `Set-Mailbox` On-Prem für HideFromAddressLists |
+| `SharedMailbox` | `OnPremExchange` | `Set-Mailbox` On-Prem |
+| `RemoteUserMailbox` | `OnPremExchange` | `Set-RemoteMailbox` On-Prem (synchronisiertes Attribut) |
+| `RemoteSharedMailbox` | `OnPremExchange` | `Set-RemoteMailbox` On-Prem (synchronisiertes Attribut) |
+| EXO-only | `ExchangeOnline` | Alle Feature-Operationen via EXO — nicht unterstützt für GenericUser |
+| Nicht gefunden | `Unknown` | — |
+
+### Erweiterte MailboxFeatureService-Funktionen
+
+Alle drei Funktionen (`Set-MailboxFeatures`, `Disable-MailboxFeatures`, `Set-MailboxVisibility`) erhalten einen optionalen Parameter `[psobject]$Resolution = $null`. Das Routing erfolgt über `RecipientTypeDetails`:
+
+```powershell
+if ($Resolution.RecipientTypeDetails -in @('RemoteUserMailbox', 'RemoteSharedMailbox')) {
+    Set-OnPremRemoteMailboxSafe ...
+} else {
+    Set-OnPremMailboxSafe ...
+}
+```
+
+### Fehlercodes (neu für Enable/Disable)
+
+| ErrorCode | Ursache |
+|---|---|
+| `CLOUD_ONLY_NOT_SUPPORTED` | EXO-only-Postfach — GenericUser erfordert AD-Objekt |
+| `MAILBOX_MIGRATION_TRANSIENT` | RemoteSharedMailbox, EXO-Postfach noch nicht sichtbar (`RequiresRetry=$true`) |
+| `EXO_REQUIRED_BUT_DISABLED` | `FeatureAuthority=ExchangeOnline`, aber EXO in Config deaktiviert |
+| `AD_OBJECT_NOT_FOUND` | AD-Benutzer nicht gefunden |
+| `ENABLE_GENERIC_USER_FAILED` | Unerwartete Ausnahme in `Enable-GenericUser` |
+| `DISABLE_GENERIC_USER_FAILED` | Unerwartete Ausnahme in `Disable-GenericUser` |
+
+### Handler-Erweiterung (RequiresRetry)
+
+Beide Handler (`EnableGenericUser.psm1`, `DisableGenericUser.psm1`) prüfen nach dem Service-Aufruf:
+
+```powershell
+if ($serviceResult.PSObject.Properties['RequiresRetry'] -and [bool]$serviceResult.RequiresRetry) {
+    return New-JobRetryResult -Message "..." -RetryAfter $retryAfter -Output @{...}
+}
+```
+
+### Tests
+
+Die Datei `tests/Pester/GenericUserEnableDisableHybridAuthority.Tests.ps1` enthält Pester-5.7.1-kompatible Tests. Die Describe-Blöcke decken ab:
+
+1. **`HybridMailboxResolver` — FeatureAuthority für GenericUser-Typen** (4 Contexts, 6 Tests):
+   - `UserMailbox`: `FeatureAuthority=OnPremExchange`, `Execute`, `IsSynchronized=$false`
+   - `RemoteUserMailbox`: `FeatureAuthority=OnPremExchange`, kein EXO-Lookup, `IsSynchronized=$true`
+   - EXO-only: `FeatureAuthority=ExchangeOnline`, `IsCloudOnly=$true`
+   - Nicht gefunden: `FeatureAuthority=Unknown`, `Fail`
+
+2. **`MailboxFeatureService.Set-MailboxVisibility` — Routing** (4 Contexts, 4 Tests):
+   - Kein Resolution → `Set-OnPremMailboxSafe`
+   - `UserMailbox`-Resolution → `Set-OnPremMailboxSafe`
+   - `RemoteUserMailbox`-Resolution → `Set-OnPremRemoteMailboxSafe`
+   - WhatIf-Modus
+
+3. **`Enable-GenericUser`** (7 Contexts, 9 Tests):
+   - WhatIf, AD nicht gefunden, UserMailbox, RemoteUserMailbox, Cloud-only, Retry, EXO disabled, kein Mailbox-Nickname
+
+4. **`Disable-GenericUser`** (6 Contexts, 7 Tests):
+   - WhatIf, AD nicht gefunden, UserMailbox, RemoteUserMailbox, Cloud-only, Retry, EXO disabled
+
+5. **Handler `Invoke-EnableGenericUser`** (4 Contexts, 4 Tests):
+   - RequiresRetry→Retry, Success→Succeeded, Failure→Failed, Validierungsfehler→USECASE_ERROR
+
+6. **Handler `Invoke-DisableGenericUser`** (4 Contexts, 4 Tests):
+   - RequiresRetry→Retry, Success→Succeeded, Failure→Failed, Validierungsfehler→USECASE_ERROR
+
+

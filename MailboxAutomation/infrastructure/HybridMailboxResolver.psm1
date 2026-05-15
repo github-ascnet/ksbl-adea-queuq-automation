@@ -16,6 +16,7 @@ function Resolve-MailboxExecutionContext {
     $recipientAuthority = 'Unknown'
     $isSynchronized = $false
     $isCloudOnly = $false
+    $featureAuthority = 'Unknown'
     $recommendedAction = 'Fail'
     $retryAfterMinutes = 15
 
@@ -75,9 +76,10 @@ function Resolve-MailboxExecutionContext {
 
     # Step 4: Routing decision based on mailbox type and location
     if ($onPrem -and $recipientType -in @('UserMailbox', 'SharedMailbox')) {
-        # On-Prem mailbox — all Exchange operations (permissions, recipient attributes) go to On-Prem Exchange
+        # On-Prem mailbox — all Exchange operations (permissions, recipient attributes, features) go to On-Prem Exchange
         $permissionAuthority = 'OnPremExchange'
         $recipientAuthority = 'OnPremExchange'
+        $featureAuthority = 'OnPremExchange'
         $recommendedAction = 'Execute'
         $isSynchronized = $false
         $isCloudOnly = $false
@@ -86,8 +88,10 @@ function Resolve-MailboxExecutionContext {
         # AD-synchronized user mailbox hosted in Exchange Online.
         # Synchronized recipient attributes (PrimarySmtpAddress, proxyAddresses, etc.) are set via
         # Set-RemoteMailbox On-Prem and synced to EXO via Entra Connect. No EXO connectivity needed.
+        # Mailbox features (e.g. HideFromAddressLists) are also managed via Set-RemoteMailbox On-Prem.
         $permissionAuthority = 'ExchangeOnline'
         $recipientAuthority = 'OnPremExchange'
+        $featureAuthority = 'OnPremExchange'
         $recommendedAction = 'Execute'
         $isSynchronized = $true
         $isCloudOnly = $false
@@ -95,9 +99,11 @@ function Resolve-MailboxExecutionContext {
     }
     elseif ($onPrem -and $recipientType -eq 'RemoteSharedMailbox') {
         # Mailbox was migrated to Exchange Online; on-prem object is a proxy.
-        # Permission changes require EXO reachability.
+        # Permission changes require EXO reachability. Synchronized features (e.g. HideFromAddressLists)
+        # can be managed via Set-RemoteMailbox On-Prem without EXO connectivity.
         $recipientAuthority = 'OnPremExchange'
         $permissionAuthority = 'ExchangeOnline'
+        $featureAuthority = 'OnPremExchange'
         $isSynchronized = $true
         $isCloudOnly = $false
         if (-not $exoEnabled) {
@@ -118,9 +124,10 @@ function Resolve-MailboxExecutionContext {
         }
     }
     elseif ($exo -and -not $onPrem) {
-        # EXO-only mailbox (no on-prem proxy object)
+        # EXO-only mailbox (no on-prem proxy object) — all operations including features must go through EXO
         $permissionAuthority = 'ExchangeOnline'
         $recipientAuthority = 'ExchangeOnline'
+        $featureAuthority = 'ExchangeOnline'
         $recommendedAction = 'Execute'
         $isSynchronized = $false
         $isCloudOnly = $true
@@ -149,6 +156,7 @@ function Resolve-MailboxExecutionContext {
         MailboxAuthority       = if ($exo) { 'ExchangeOnline' } elseif ($onPrem) { 'OnPremExchange' } else { 'Unknown' }
         ManagementAuthority    = $permissionAuthority
         PermissionAuthority    = $permissionAuthority
+        FeatureAuthority       = $featureAuthority
         IsSynchronized         = $isSynchronized
         IsCloudOnly            = $isCloudOnly
         IsMigrationTransient   = $isMigrationTransient
