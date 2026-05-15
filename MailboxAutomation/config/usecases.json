@@ -83,7 +83,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "GroupMailbox.AddFmaMembers",
       "Pattern": "*AddGroupMailboxFmaMembers*_pshjob_.csv",
@@ -153,7 +152,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "GenericUser.RenameAccount",
       "Pattern": "*RenameUserAccount*_pshjob_.csv",
@@ -346,7 +344,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "UserPerson.HospisPersonUseCase",
       "Pattern": "*HospisPersonUseCase*_pshjob_.csv",
@@ -367,7 +364,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "Urgent.InactivateHospisPerson",
       "Pattern": "*Inaktivieren_HospisPersonUrgentUseCase*_pshjob_.csv",
@@ -389,7 +385,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "PersonMailbox.CreateNonStandard",
       "Pattern": "*CreateNonStdPersonMailbox*_pshjob_.csv",
@@ -405,7 +400,7 @@
         "ActionType",
         "TargetAdObjectName",
         "TargetDomain",
-        "TargetDomainUserOU",
+        "TargetUserDomainOU",
         "TargetUserAdDisplayname",
         "TargetUserAdGivenname",
         "TargetUserAdSurname",
@@ -417,7 +412,6 @@
         "CurrentUserEMailAddress"
       ]
     },
-
     {
       "Name": "GroupMailbox.ModifyFullAccess",
       "Pattern": "*ModifyGroupMailboxFullAccess*_pshjob_.csv",

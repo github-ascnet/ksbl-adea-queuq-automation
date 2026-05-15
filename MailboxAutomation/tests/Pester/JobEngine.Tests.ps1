@@ -35,7 +35,7 @@
         (($uc | ForEach-Object Name) -contains 'GenericUser.Enable') | Should -Be $true
     }
 
-    It 'filters urgent queue use cases correctly â€” only real use cases enabled' {
+    It 'filters urgent queue use cases correctly - only real use cases enabled' {
         $urgent = $registry.UseCases | Where-Object { $_.Queue -eq 'urgent' -and $_.Enabled }
         (($urgent | ForEach-Object Name) -contains 'Urgent.InactivateHospisPerson') | Should -Be $true
         (($urgent | ForEach-Object Name) -contains 'Urgent.MailboxPermissionChange') | Should -Be $false

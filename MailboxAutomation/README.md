@@ -4,7 +4,7 @@
 Dieses Projekt refaktoriert eine historisch gewachsene AD-/Exchange-On-Prem-Automation in ein modulares, testbares und erweiterbares JobProcessor-Framework.
 
 ## 2. Warum die Alt-Skripte refaktoriert werden
-Die bisherigen Prozess-Skripte sind ueber viele Jahre gewachsen. Ziel ist die Reduktion von Duplikaten, klare Verantwortlichkeiten pro UseCase und sichere Kapselung produktiver Aenderungen ueber Gateways.
+Die bisherigen Prozess-Skripte sind über viele Jahre gewachsen. Ziel ist die Reduktion von Duplikaten, klare Verantwortlichkeiten pro UseCase und sichere Kapselung produktiver Aenderungen über Gateways.
 
 ## 3. Projektstruktur
 - config: Laufzeitkonfiguration und UseCase-Registry
@@ -14,7 +14,9 @@ Die bisherigen Prozess-Skripte sind ueber viele Jahre gewachsen. Ziel ist die Re
 - usecases: ein Handler pro UseCase
 - queues: incoming, processing, retry, paused, done, failed, archive
 - state: Persistenz fuer longRunning-Zustaende
-- tests: Pester-Tests 
+- tests: Pester-Tests und Testdaten
+
+## 4. Queue-Konzept
 Logische Queues:
 - standard
 - urgent
@@ -182,7 +184,7 @@ Diese Warnungen sind nicht funktional kritisch. Auf Umbenennungen wird bewusst v
 Die Warnungen koennen mit `Import-Module ... -DisableNameChecking` oder `$WarningPreference = 'SilentlyContinue'` unterdrueckt werden.
 
 ## 16. Altlogik schrittweise migrieren
-Stellen mit "TODO: Migrate legacy logic here" markieren gezielt die Punkte, an denen bestehende Fachlogik aus current-scripts uebernommen werden soll.
+Stellen mit "TODO: Migrate legacy logic here" markieren gezielt die Punkte, an denen bestehende Fachlogik aus current-scripts übernommen werden soll.
 
 ## 17. Welche TODO-Stellen ersetzt werden muessen
 - Fachlogik in UseCase-Handlern ohne direkte Infrastrukturzugriffe
@@ -191,3 +193,179 @@ Stellen mit "TODO: Migrate legacy logic here" markieren gezielt die Punkte, an d
 - Detailierte Benachrichtigungslogik
 - Verfeinerte State-Machine-Regeln fuer PersonMailbox.CreateNonStandard
 - Vollstaendige Migration von Schritt 10-60 in CreateNonStdPersonMailbox.psm1
+
+## 18. Pilotmigration: GenericUser.AddEmailNickname
+
+Der erste kontrolliert migrierte Pilot-UseCase ist `GenericUser.AddEmailNickname`.
+
+Quelle der Altlogik ist `current-scripts/Process-UserGenericJobs.ps1`, der Block mit dem Dateimuster `*AddEMailNickName*_pshjob_.csv`. Der neue Handler liegt unter `usecases/GenericUser/AddEmailNickname.psm1`, die fachliche Servicefunktion unter `shared/UserProvisioningService.psm1`.
+
+Die migrierte On-Prem-Logik entspricht dem alten Ablauf: Das Zielpostfach wird über `AdObjectName` gelesen, die aktuelle `PrimarySmtpAddress` wird ermittelt und anschliessend wird über `Set-Mailbox` die neue Adresse aus `NewPrimaryEMailAddress` als `PrimarySmtpAddress` gesetzt, wobei `EmailAddressPolicyEnabled` auf `$false` gesetzt wird. Produktive Exchange-Zugriffe laufen nicht im Handler, sondern gekapselt über `ExchangeOnPremGateway.psm1`.
+
+Der Handler verarbeitet nur Payload-Daten aus dem `JobContext`, validiert die Pflichtfelder, ruft `Add-GenericUserEmailNickname` auf und gibt ein standardisiertes `JobResult` zurück. Er sucht keine Dateien, verschiebt keine Queue-Dateien und enthält keine eigene Lifecycle-Logik.
+
+Im `WhatIfMode` werden keine Exchange-Cmdlets benötigt und keine produktiven Änderungen ausgeführt. Die Servicefunktion gibt stattdessen ein simuliertes Ergebnis zurück. Die spätere Hybrid-/Exchange-Online-Erweiterung ist bewusst noch nicht implementiert und bleibt als separater Migrationsschritt offen.
+
+
+## Pilotmigrationen: GroupMailbox- und DistributionGroup-Verantwortlichenlogik
+
+Folgende UseCases wurden aus den Originalskripten unter `current-scripts` in die neue modulare Struktur migriert:
+
+| UseCase | Quelle | Pattern | Handler | Service |
+|---|---|---|---|---|
+| `GroupMailbox.AddFmaMembers` | `current-scripts/Process-GroupMailboxJobs.ps1` | `*AddGroupMailboxFmaMembers*_pshjob_.csv` | `usecases/GroupMailbox/AddGroupMailboxFmaMembers.psm1` | `shared/GroupMailboxService.psm1` |
+| `GroupMailbox.ChangeManager` | `current-scripts/Process-GroupMailboxJobs.ps1` | `*ChangeManagerGroupMailbox*_pshjob_.csv` | `usecases/GroupMailbox/ChangeManagerGroupMailbox.psm1` | `shared/GroupMailboxService.psm1` |
+| `DistributionGroup.AddResponsibles` | `current-scripts/Process-DistributionsGroupJobs.ps1` | `*AddDistributionListResponsibles*_pshjob_.csv` | `usecases/DistributionGroup/AddDistributionListResponsibles.psm1` | `shared/DistributionGroupService.psm1` |
+| `DistributionGroup.ChangeManager` | `current-scripts/Process-DistributionsGroupJobs.ps1` | `*ChangeManagerDistribList*_pshjob_.csv` | `usecases/DistributionGroup/ChangeManagerDistribList.psm1` | `shared/DistributionGroupService.psm1` |
+
+Die migrierte Logik bildet die bisherigen On-Prem-Aktionen kontrolliert nach: FullAccess-/SendAs-Mutationen auf Gruppenmailboxen, Managerwechsel auf Gruppenmailboxen, ManagedBy-/WriteMembers-Verantwortlichenlogik bei Verteilerlisten und Managerwechsel bei Verteilerlisten. Produktive Änderungen laufen über die Gateway-Funktionen in `ExchangeOnPremGateway.psm1` und `ActiveDirectoryGateway.psm1`; im `WhatIfMode` werden keine AD- oder Exchange-Cmdlets benötigt.
+
+Die Hybrid-/Exchange-Online-Erweiterung ist in diesen UseCases bewusst noch nicht enthalten und bleibt ein separater späterer Migrationsschritt.
+
+
+## Pilotmigration: GenericUser Enable/Disable, Grace Period und Mobile Number
+
+Die folgenden UseCases wurden als nächster Migrationsschritt aus den Originalskripten kontrolliert in die modulare Struktur überführt:
+
+| UseCase | Quelle | Pattern | Zielmodul |
+|---|---|---|---|
+| `GenericUser.Enable` | `current-scripts/Process-UserGenericJobs.ps1` | `*EnableNonStdPersonMailbox*_pshjob_.csv` | `usecases/GenericUser/EnableGenericUser.psm1` |
+| `GenericUser.Disable` | `current-scripts/Process-UserGenericJobs.ps1` | `*DisableNonStdPersonMailbox*_pshjob_.csv` | `usecases/GenericUser/DisableGenericUser.psm1` |
+| `GenericUser.EnableAdAccountWithGracePeriod` | `current-scripts/Process-PersonMailboxJobs.ps1` | `*EnableAdAccountWithGracePeriod*_pshjob_.csv` | `usecases/GenericUser/EnableAdAccountWithGracePeriod.psm1` |
+| `GenericUser.ModifyMobilePhoneNumber` | `current-scripts/Process-PersonMailboxJobs.ps1` | `*ModifyMobilePhoneNumber*_pshjob_.csv` | `usecases/GenericUser/ModifyMobilePhoneNumber.psm1` |
+
+Die fachliche Verarbeitung liegt zentral in `shared/UserProvisioningService.psm1`. Produktive Schreiboperationen laufen über `ActiveDirectoryGateway.psm1`, `ExchangeOnPremGateway.psm1`, `DfsGateway.psm1` und `MailboxFeatureService.psm1`. Im `WhatIfMode` werden keine produktiven AD- oder Exchange-Cmdlets benötigt.
+
+Migrierte Kernlogik:
+
+- `GenericUser.Enable` aktiviert nicht standardisierte Personenmailbox-Accounts, setzt bei Bedarf ein Initialkennwort, erzwingt Passwortänderung bei Anmeldung, blendet die Mailbox ein und bereitet die alte `Hospis2AdDeleted`-Behandlung mit DFS-/OU-Schritten vor.
+- `GenericUser.Disable` deaktiviert nicht standardisierte Personenmailbox-Accounts, blendet die Mailbox aus und markiert die alte Tenant-Disable-Logik als gezielt zu migrierenden TODO.
+- `GenericUser.EnableAdAccountWithGracePeriod` aktiviert ein Konto bei Bedarf, setzt `AccountExpirationDate`, setzt `hrmsIsExpired` und blendet die Mailbox ein.
+- `GenericUser.ModifyMobilePhoneNumber` schreibt `MobileNumber` in das AD-Attribut `smsPasscodeMobile`.
+
+Bewusst offengebliebene TODOs:
+
+- Die Legacy-Hilfsfunktion `EnableDisable-Mailbox` muss separat migriert werden, bevor mailboxlose Accounts produktiv automatisch mailbox-enabled werden.
+- Die alte `Set-TenantState -Mode TenantDisable`-Logik ist vorbereitet, aber noch nicht als produktive Fachfunktion implementiert.
+- `Update-DfsShareSettings` ist als Gateway-Funktion vorbereitet, die echte DFS-Logik muss noch aus der Altlogik überführt werden.
+- Hybrid-/Exchange-Online-Routing wurde in diesem Schritt bewusst noch nicht implementiert.
+
+
+## Pilotmigration: GroupMailbox.Create und GenericUser.CreateMultiFunction
+
+In diesem Migrationsschritt wurden zwei weitere echte UseCases aus den Originalskripten unter `current-scripts` in die modulare Framework-Struktur überführt.
+
+| UseCase | Quelle | Pattern | Handler | Service |
+|---|---|---|---|---|
+| `GroupMailbox.Create` | `current-scripts/Process-GroupMailboxJobs.ps1` | `*CreateGroupMailbox*_pshjob_.csv` | `usecases/GroupMailbox/CreateGroupMailbox.psm1` | `shared/GroupMailboxService.psm1` |
+| `GenericUser.CreateMultiFunction` | `current-scripts/Process-UserGenericJobs.ps1` | `*CreateMultiFunctionGenericUser*_pshjob_.csv` | `usecases/GenericUser/CreateMultiFunctionGenericUser.psm1` | `shared/UserProvisioningService.psm1` |
+
+### GroupMailbox.Create
+
+Die migrierte Logik bildet den bisherigen Ablauf zur Erstellung einer Gruppenmailbox ab. Dazu gehören die Prüfung auf eine bestehende Mailbox anhand der Primary SMTP Address, die Vorbereitung eines SamAccountName, die Erstellung einer Shared Mailbox, die Deaktivierung der Junk-Mail-Konfiguration, das optionale Ausblenden aus dem Adressbuch, das Setzen von Beschreibung und Manager, das Setzen von `employeeType = G`, das Hinzufügen von FullAccess-/SendAs-Berechtigungen, die optionale Änderung der Primary SMTP Address, die Aufnahme in `GG-EV-Users` sowie die vorbereitete Tenant-State-Aktivierung.
+
+Im `WhatIfMode` werden keine Exchange- oder AD-Cmdlets ausgeführt. Stattdessen gibt der Service die geplanten Operationen als simulierte Schritte zurück.
+
+### GenericUser.CreateMultiFunction
+
+Die migrierte Logik bildet den bisherigen Ablauf zur Erstellung eines Multifunktions-/Generic-Users ab. Dazu gehören die Prüfung auf ein bestehendes AD-Objekt, die deterministische Passwortbildung gemäss Altlogik, `New-ADUser`, das Setzen von Manager, `employeeType`, Beschreibung, HomeDirectory, HomeDrive und `kisAccountName`. DFS-, HomeDrive- und Applikationsberechtigungslogik ist als TODO markiert und bleibt für die spätere Detailmigration aus `current-scripts/Process-UserGenericJobs.ps1` erhalten.
+
+Im `WhatIfMode` werden keine AD-Cmdlets oder DFS-Operationen ausgeführt. Der Service gibt stattdessen die geplanten AD- und Berechtigungsschritte als simulierte Operationen zurück.
+
+### Tests
+
+Die Datei `tests/Pester/CreateMailboxAndGenericUserMigration.Tests.ps1` enthält Pester-5.7.1-kompatible Tests für beide UseCases. Die Tests prüfen insbesondere, dass die Handler ihre Services aufrufen, erfolgreiche `JobResult`-Objekte zurückgeben und die Services im `WhatIfMode` ohne produktive AD-/Exchange-Cmdlets funktionieren.
+
+
+## Pilotmigration: Urgent.InactivateHospisPerson und UserPerson.HospisPersonUseCase
+
+Diese Version migriert die fachliche Altlogik für zwei Hospis-Personenprozesse aus den Originalskripten unter `current-scripts`.
+
+### Urgent.InactivateHospisPerson
+
+Quelle:
+
+- `current-scripts/Process-UrgentJobs.ps1`
+
+Pattern:
+
+- `*Inaktivieren_HospisPersonUrgentUseCase*_pshjob_.csv`
+
+Handler:
+
+- `usecases/Urgent/InactivateHospisPerson.psm1`
+
+Service:
+
+- `shared/HospisPersonService.psm1`
+- Funktion: `Invoke-UrgentHospisPersonInactivation`
+
+Migrierte Logik:
+
+- Ermittlung von AD-Benutzern über `employeeID = PersId`
+- Deaktivieren der gefundenen AD-Konten
+- Ausblenden von Postfächern, sofern `homeMdb` gesetzt ist
+- Setzen der Abwesenheitsmeldung über Exchange On-Prem Gateway
+- Schliessen offener E-Mail-Revocations via SQL
+- Entfernen bestimmter Gruppenmitgliedschaften aus `TPL-*`, `GG-KSBL-VDI-Remote*` und `GG-OneSign*`
+- Entfernen von `extensionAttribute6` und `msDS-cloudExtensionAttribute15`
+- Setzen der Inaktivierungsbeschreibung
+- Erstellen der dringenden Hospis-SQL-Transaktion `usp_create_urgent_inaktivieren_transaction`
+
+### UserPerson.HospisPersonUseCase
+
+Quelle:
+
+- `current-scripts/Process-UserPersonJobs.ps1`
+
+Pattern:
+
+- `*HospisPersonUseCase*_pshjob_.csv`
+
+Handler:
+
+- `usecases/UserPerson/HospisPersonUseCase.psm1`
+
+Service:
+
+- `shared/HospisPersonService.psm1`
+- Funktion: `Submit-HospisPersonTransaction`
+
+Migrierte Logik:
+
+- ActionType `Erstellen` → `usp_create_erstellen_transaction`
+- ActionType `Aktivieren` → `usp_create_aktivieren_transaction`
+- ActionType `Inaktivieren` / `Terminieren` → `usp_create_terminieren_transaction`
+- ActionType `Standortwechsel` → `usp_create_standortwechsel_transaction`
+- ActionType `UebertrittM2` / `ÜbertrittM2` → `usp_create_uebertritt_m1_to_m2_transaction`
+- ActionType `UebertrittM1` / `ÜbertrittM1` → `usp_create_uebertritt_m2_to_m1_transaction`
+
+`AdObjectName` bleibt bewusst optional, da diese Validierung im Originalskript auskommentiert war. Die actiontype-spezifischen Felder wie `RefUserId`, `RefUserDomain`, `LocationName` und `MigrateUser` werden im Handler differenziert validiert.
+
+### Konfiguration
+
+Die Hospis-bezogenen Werte befinden sich in `config/appsettings.json` unter `Hospis`.
+
+```json
+"Hospis": {
+  "ArchiveRoot": "D:\\IAM\\Archive",
+  "SqlServerInstance": "",
+  "Database": "KSBL_Hospis_Staging",
+  "ConnectionString": "",
+  "AustrittOOOExternalMessage": "",
+  "AustrittOOOInternalMessage": ""
+}
+```
+
+Für den produktiven Betrieb muss entweder `ConnectionString` oder `SqlServerInstance` gesetzt werden. Im `WhatIfMode` werden keine produktiven SQL-, AD- oder Exchange-Änderungen ausgeführt.
+
+
+## Pilotmigration: PersonMailbox.CreateNonStandard
+
+Der UseCase `PersonMailbox.CreateNonStandard` wurde als letzter aktiver UseCase in die modulare Struktur migriert. Die Quelle ist `current-scripts/Process-PersonMailboxJobs.ps1`, der Dateipattern lautet `*CreateNonStdPersonMailbox*_pshjob_.csv` und die Verarbeitung läuft ausschliesslich über die Queue `person-mailbox-longrunning`.
+
+Die Migration bildet die alte blockierende Verarbeitung als nicht-blockierende State-Machine ab. Die Schritte sind `10 ValidateInput`, `20 PrepareAdAccount`, `30 PrepareMailbox`, `40 WaitForMailboxVisibility`, `50 ApplyMailboxAttributes`, `60 Finalize` und `90 Done`. Wartezustände werden nicht mehr mit `Start-Sleep` gelöst, sondern über `Retry` und `RetryAfter` in Verbindung mit stabiler `.meta.json` und `StableJobKey`.
+
+Die fachliche Logik wurde in `shared/PersonMailboxService.psm1` gekapselt. Dort sind die aus dem Alt-Skript abgeleiteten Regeln für DisplayName-Bildung, Standortattribute, Service-Account-Typen, LDAP-Suchfilter, Mailadressbildung, AD-Vorbereitung, Mailbox-Vorbereitung, Sichtbarkeitsprüfung, Attributanwendung und Finalisierung enthalten. Produktive AD- und Exchange-Operationen laufen über die vorhandenen Gateways. Im `WhatIfMode` werden keine produktiven Cmdlets benötigt.
+
+Wichtige Altlogik, die bewusst als TODO markiert bleibt: vollständige DFS/HomeDirectory-Berechtigungen, finale Benachrichtigungslogik, produktive Kollisionsprüfung für eindeutige Mailadressen und spätere Hybrid-/Exchange-Online-Erweiterung für migrierte Postfächer.

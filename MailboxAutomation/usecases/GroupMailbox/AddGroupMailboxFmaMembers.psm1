@@ -1,4 +1,4 @@
-﻿Set-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 
 function Invoke-AddGroupMailboxFmaMembers {
     [CmdletBinding()]
@@ -8,16 +8,33 @@ function Invoke-AddGroupMailboxFmaMembers {
         $rows = @($Context.Payload)
         Assert-RequiredCsvFields -Rows $rows -RequiredFields @('ActionType','AdObjectName','FullAccessMembers','EnableSendAs','CurrentUserName','CurrentUserDomainName','CurrentUserEMailAddress')
 
+        $results = @()
+        $failedResults = @()
+
         foreach ($row in $rows) {
-            # TODO: Migrate legacy logic here
+            Write-LogInfo -Logger $Context.Logger -Message "Processing GroupMailbox.AddFmaMembers for '$($row.AdObjectName)'."
+
+            $serviceResult = & $Context.Services.GroupMailbox.AddFmaMembers $Context $row
+            $results += $serviceResult
+
+            if (-not $serviceResult.Success) {
+                $failedResults += $serviceResult
+                Write-LogWarn -Logger $Context.Logger -Message "GroupMailbox.AddFmaMembers failed for '$($row.AdObjectName)': $($serviceResult.Message)"
+            }
+            else {
+                Write-LogInfo -Logger $Context.Logger -Message "GroupMailbox.AddFmaMembers completed for '$($row.AdObjectName)': $($serviceResult.Message)"
+            }
         }
 
-        Write-LogInfo -Logger $Context.Logger -Message "Invoke-AddGroupMailboxFmaMembers processed $($rows.Count) row(s)."
-        New-JobSucceededResult -Message "Invoke-AddGroupMailboxFmaMembers succeeded."
+        if ($failedResults.Count -gt 0) {
+            return New-JobFailedResult -Message "GroupMailbox.AddFmaMembers failed for $($failedResults.Count) of $($rows.Count) row(s)." -ErrorCode 'GROUP_MAILBOX_FMA_MEMBERS_FAILED' -Output $results
+        }
+
+        return New-JobSucceededResult -Message "GroupMailbox.AddFmaMembers processed $($rows.Count) row(s)." -Output $results
     }
     catch {
-        Write-LogError -Logger $Context.Logger -Message "Invoke-AddGroupMailboxFmaMembers failed." -Exception $_.Exception
-        New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
+        Write-LogError -Logger $Context.Logger -Message 'Invoke-AddGroupMailboxFmaMembers failed.' -Exception $_.Exception
+        return New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
     }
 }
 

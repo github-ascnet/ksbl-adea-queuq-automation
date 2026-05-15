@@ -75,11 +75,11 @@ function Get-NonConflictingPath {
         return $Path
     }
 
-    $dir = [System.IO.Path]::GetDirectoryName($Path)
+    $dir  = [System.IO.Path]::GetDirectoryName($Path)
     $base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
-    $ext = [System.IO.Path]::GetExtension($Path)
-    $ts = (Get-Date).ToString('yyyyMMdd_HHmmss')
-    $sfx = [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $ext  = [System.IO.Path]::GetExtension($Path)
+    $ts   = (Get-Date).ToString('yyyyMMdd_HHmmss')
+    $sfx  = [guid]::NewGuid().ToString('N').Substring(0, 4)
     return Join-Path $dir "$base`__${ts}_${sfx}$ext"
 }
 
@@ -230,7 +230,7 @@ function Find-UseCaseJobFiles {
         }
 
         $candidates = Get-ChildItem -Path $folder -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -eq '.csv' -and $_.Name -like $Pattern -and $_.Name -notlike '*.meta.json' -and $_.Name -notlike '*.lock' }
+            Where-Object { $_.Extension -eq '.csv' -and $_.Name -like $Pattern -and $_.Name -notlike '*.meta.json' -and $_.Name -notlike '*.lock' }
 
         foreach ($candidate in $candidates) {
             # Skip files that are currently locked by another runner.
@@ -350,8 +350,8 @@ function Move-JobFileToStatus {
 
     # Step 2: Determine a non-conflicting target path (checks both CSV and .meta.json).
     $targetFolder = Get-QueuePath -RootPath $RootPath -QueueRoot $QueueRoot -Status $Status
-    $rawTarget = Join-Path -Path $targetFolder -ChildPath ([System.IO.Path]::GetFileName($WorkingFile))
-    $targetPath = Get-NonConflictingPath -Path $rawTarget
+    $rawTarget    = Join-Path -Path $targetFolder -ChildPath ([System.IO.Path]::GetFileName($WorkingFile))
+    $targetPath   = Get-NonConflictingPath -Path $rawTarget
 
     # Step 4: Move CSV to target.
     Move-Item -Path $WorkingFile -Destination $targetPath -ErrorAction Stop

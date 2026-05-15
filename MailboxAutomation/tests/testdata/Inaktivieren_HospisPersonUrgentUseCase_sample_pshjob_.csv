@@ -1,0 +1,2 @@
+ActionType;PersId;DisplayName;MigrateUser;CurrentUserName;CurrentUserDomainName;CurrentUserEMailAddress
+Inaktivieren;12345;Test Person;false;operator;KSBL;operator@example.test

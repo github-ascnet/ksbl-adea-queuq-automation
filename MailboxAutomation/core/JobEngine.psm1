@@ -99,6 +99,29 @@ function New-ServiceContainer {
             AddSendAs        = { param($Context, $Data) Add-MailboxSendAs -Context $Context -Data $Data }
             RemoveSendAs     = { param($Context, $Data) Remove-MailboxSendAs -Context $Context -Data $Data }
         }
+        GroupMailbox = [pscustomobject]@{
+            Create        = { param($Context, $Data) New-GroupMailbox -Context $Context -Data $Data }
+            AddFmaMembers = { param($Context, $Data) Add-GroupMailboxFmaMembers -Context $Context -Data $Data }
+            ChangeManager = { param($Context, $Data) Set-GroupMailboxManager -Context $Context -Data $Data }
+        }
+        DistributionGroup = [pscustomobject]@{
+            AddResponsibles = { param($Context, $Data) Add-DistributionListResponsibles -Context $Context -Data $Data }
+            ChangeManager   = { param($Context, $Data) Set-DistributionGroupManager -Context $Context -Data $Data }
+            Create          = { param($Context, $Data) New-DistributionGroupFromRequest -Context $Context -Data $Data }
+            Delete          = { param($Context, $Data) Remove-DistributionGroupFromRequest -Context $Context -Data $Data }
+        }
+        HospisPerson = [pscustomobject]@{
+            SubmitTransaction   = { param($Context, $Data) Submit-HospisPersonTransaction -Context $Context -Data $Data }
+            UrgentInactivation = { param($Context, $Data) Invoke-UrgentHospisPersonInactivation -Context $Context -Data $Data }
+        }
+        PersonMailbox = [pscustomobject]@{
+            BuildPlan        = { param($Context, $Data) New-NonStandardPersonMailboxPlan -Context $Context -Data $Data }
+            PrepareAdAccount = { param($Context, $Data) Invoke-PrepareNonStandardPersonMailboxAdAccount -Context $Context -Data $Data }
+            PrepareMailbox   = { param($Context, $Data) Invoke-PrepareNonStandardPersonMailboxMailbox -Context $Context -Data $Data }
+            TestVisibility   = { param($Context, $Data) Test-NonStandardPersonMailboxVisibility -Context $Context -Data $Data }
+            ApplyAttributes  = { param($Context, $Data) Invoke-ApplyNonStandardPersonMailboxAttributes -Context $Context -Data $Data }
+            Finalize         = { param($Context, $Data) Complete-NonStandardPersonMailboxProvisioning -Context $Context -Data $Data }
+        }
     }
 }
 

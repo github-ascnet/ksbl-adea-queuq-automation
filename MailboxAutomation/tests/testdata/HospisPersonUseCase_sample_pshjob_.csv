@@ -1,0 +1,2 @@
+ActionType;PersId;DisplayName;RefUserId;RefUserDomain;LocationName;MigrateUser;CurrentUserName;CurrentUserDomainName;CurrentUserEMailAddress
+Aktivieren;12345;Test Person;ref01;KSBL;;true;operator;KSBL;operator@example.test
