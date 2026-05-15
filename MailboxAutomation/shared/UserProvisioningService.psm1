@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Get-ObjectPropertyValue {
     [CmdletBinding()]
@@ -329,18 +329,200 @@ function Disable-GenericUser {
 
 function Rename-GenericUser {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object]$Context, [Parameter(Mandatory = $true)][psobject]$Data)
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][psobject]$Data
+    )
 
-    $params = @{ Identity = $Data.Identity; NewName = $Data.NewName }
-    Rename-AdObjectSafe -Parameters $params -WhatIfMode:$Context.WhatIfMode
+    $currentUserId = [string]$Data.AdObjectName
+    $targetAdObjectName = [string]$Data.TargetAdObjectName
+    $newUserId = [string]$Data.NewUserId
+    $givenName = [string]$Data.GivenName
+    $surName = [string]$Data.SurName
+    $newPrimaryEmail = [string]$Data.NewPrimaryEMailAddress
+
+    Write-LogInfo -Logger $Context.Logger -Message "Renaming generic user '$currentUserId' to '$targetAdObjectName' / NewUserId='$newUserId'."
+
+    # Legacy source: current-scripts/Process-UserGenericJobs.ps1, block '*RenameUserAccount*_pshjob_.csv'.
+    # The legacy process renames the AD object when requested and updates naming/mail attributes.
+    # Some surrounding legacy details (SQL counter update, DFS/home drive rename and customer notification)
+    # remain intentionally outside this service and are documented as TODOs for dedicated migration steps.
+
+    if ($Context.WhatIfMode) {
+        return New-UserProvisioningResult `
+            -Success $true `
+            -Changed $true `
+            -Simulated $true `
+            -Action 'RenameUserAccount' `
+            -AdObjectName $currentUserId `
+            -Message "WhatIf: would rename '$currentUserId' to '$targetAdObjectName', update SamAccountName/NewUserId, name attributes and primary SMTP address." `
+            -Output @{
+                CurrentUserId = $currentUserId
+                TargetAdObjectName = $targetAdObjectName
+                NewUserId = $newUserId
+                GivenName = $givenName
+                SurName = $surName
+                NewPrimaryEMailAddress = $newPrimaryEmail
+            }
+    }
+
+    try {
+        $user = Get-AdUserBySamAccountNameSafe -SamAccountName $currentUserId -Properties @(
+            'mail',
+            'displayName',
+            'sn',
+            'givenName',
+            'SamAccountName',
+            'DistinguishedName',
+            'ObjectGUID',
+            'homeDirectory'
+        )
+
+        if (-not $user) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'RenameUserAccount' -AdObjectName $currentUserId -Message "Target AD user '$currentUserId' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
+        }
+
+        $actions = @()
+        $identityForSet = $currentUserId
+
+        if (-not [string]::IsNullOrWhiteSpace($targetAdObjectName) -and $targetAdObjectName -ne 'skip' -and $targetAdObjectName -ne $currentUserId) {
+            $renameIdentity = if ($user.PSObject.Properties['DistinguishedName'] -and -not [string]::IsNullOrWhiteSpace([string]$user.DistinguishedName)) {
+                [string]$user.DistinguishedName
+            }
+            else {
+                $currentUserId
+            }
+
+            Rename-AdObjectSafe -Parameters @{
+                Identity = $renameIdentity
+                NewName  = $targetAdObjectName
+            } -WhatIfMode:$false | Out-Null
+
+            $identityForSet = $targetAdObjectName
+            $actions += 'AdObjectRenamed'
+        }
+
+        $displayName = ("$givenName $surName").Trim()
+        $setParams = @{
+            Identity = $identityForSet
+            GivenName = $givenName
+            Surname = $surName
+            DisplayName = $displayName
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($newUserId) -and $newUserId -ne 'skip') {
+            $setParams['SamAccountName'] = $newUserId
+            $actions += 'SamAccountNameUpdated'
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            $setParams['EmailAddress'] = $newPrimaryEmail
+            $setParams['UserPrincipalName'] = $newPrimaryEmail
+            $actions += 'MailAttributesUpdated'
+        }
+
+        Set-AdUserSafe -Parameters $setParams -WhatIfMode:$false | Out-Null
+        $actions += 'AdAttributesUpdated'
+
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            Set-OnPremMailboxSafe -Parameters @{
+                Identity                  = $identityForSet
+                PrimarySmtpAddress        = $newPrimaryEmail
+                EmailAddressPolicyEnabled = $false
+            } -WhatIfMode:$false | Out-Null
+            $actions += 'MailboxPrimarySmtpUpdated'
+        }
+
+        # TODO: Migrate SQL user-id counter update, DFS/homeDirectory rename and notification logic from current-scripts/Process-UserGenericJobs.ps1.
+
+        return New-UserProvisioningResult `
+            -Success $true `
+            -Changed $true `
+            -Action 'RenameUserAccount' `
+            -AdObjectName $currentUserId `
+            -Message "Generic user '$currentUserId' rename processing completed." `
+            -Output $actions
+    }
+    catch {
+        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        Write-LogError -Logger $Context.Logger -Message "Rename-GenericUser failed for '$currentUserId'." -Exception $_.Exception
+        return New-UserProvisioningResult -Success $false -Changed $false -Action 'RenameUserAccount' -AdObjectName $currentUserId -Message $message -ErrorCode 'RENAME_GENERIC_USER_FAILED'
+    }
 }
 
 function Set-GenericUserSurname {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object]$Context, [Parameter(Mandatory = $true)][psobject]$Data)
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][psobject]$Data
+    )
 
-    $params = @{ Identity = $Data.Identity; Surname = $Data.Surname }
-    Set-AdUserSafe -Parameters $params -WhatIfMode:$Context.WhatIfMode
+    $adObjectName = [string]$Data.AdObjectName
+    $givenName = [string]$Data.GivenName
+    $surName = [string]$Data.SurName
+    $newPrimaryEmail = [string]$Data.NewPrimaryEMailAddress
+
+    Write-LogInfo -Logger $Context.Logger -Message "Changing name/surname for generic user '$adObjectName'."
+
+    # Legacy source: current-scripts/Process-UserGenericJobs.ps1, block '*ChangeAccountSurname*_pshjob_.csv'.
+    # The legacy process updates AD name attributes and the mailbox primary SMTP address.
+
+    if ($Context.WhatIfMode) {
+        return New-UserProvisioningResult `
+            -Success $true `
+            -Changed $true `
+            -Simulated $true `
+            -Action 'ChangeAccountSurname' `
+            -AdObjectName $adObjectName `
+            -Message "WhatIf: would update GivenName, SurName, DisplayName and PrimarySmtpAddress for '$adObjectName'." `
+            -Output @{
+                GivenName = $givenName
+                SurName = $surName
+                NewPrimaryEMailAddress = $newPrimaryEmail
+            }
+    }
+
+    try {
+        $user = Get-AdUserBySamAccountNameSafe -SamAccountName $adObjectName -Properties @('SamAccountName','mail','displayName','sn','givenName')
+        if (-not $user) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ChangeAccountSurname' -AdObjectName $adObjectName -Message "Target AD user '$adObjectName' not found." -ErrorCode 'AD_OBJECT_NOT_FOUND'
+        }
+
+        $sam = [string](Get-ObjectPropertyValue -Object $user -Name 'SamAccountName')
+        if ([string]::IsNullOrWhiteSpace($sam)) { $sam = $adObjectName }
+
+        $displayName = ("$givenName $surName").Trim()
+        Set-AdUserSafe -Parameters @{
+            Identity = $sam
+            GivenName = $givenName
+            Surname = $surName
+            DisplayName = $displayName
+            EmailAddress = $newPrimaryEmail
+            UserPrincipalName = $newPrimaryEmail
+        } -WhatIfMode:$false | Out-Null
+
+        if (-not [string]::IsNullOrWhiteSpace($newPrimaryEmail)) {
+            Set-OnPremMailboxSafe -Parameters @{
+                Identity                  = $sam
+                PrimarySmtpAddress        = $newPrimaryEmail
+                EmailAddressPolicyEnabled = $false
+            } -WhatIfMode:$false | Out-Null
+        }
+
+        # TODO: Migrate notification text from current-scripts/Process-UserGenericJobs.ps1.
+
+        return New-UserProvisioningResult `
+            -Success $true `
+            -Changed $true `
+            -Action 'ChangeAccountSurname' `
+            -AdObjectName $adObjectName `
+            -Message "Name and mail attributes updated for '$adObjectName'."
+    }
+    catch {
+        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        Write-LogError -Logger $Context.Logger -Message "Set-GenericUserSurname failed for '$adObjectName'." -Exception $_.Exception
+        return New-UserProvisioningResult -Success $false -Changed $false -Action 'ChangeAccountSurname' -AdObjectName $adObjectName -Message $message -ErrorCode 'CHANGE_SURNAME_FAILED'
+    }
 }
 
 function Add-GenericUserEmailNickname {
@@ -574,10 +756,105 @@ function Set-GenericUserMobilePhoneNumber {
 
 function Set-GenericUserMailboxFolderAce {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object]$Context, [Parameter(Mandatory = $true)][psobject]$Data)
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][psobject]$Data
+    )
 
-    # TODO: Migrate legacy logic here
-    Add-MailboxFullAccess -Context $Context -Data ([pscustomobject]@{ MailboxIdentity = $Data.MailboxIdentity; Trustee = $Data.Trustee })
+    $mailboxUserSam = [string]$Data.AdObjectName
+    $delegatedUserSam = [string]$Data.DelegatedAdObjectName
+    $requestedFolderName = [string]$Data.MailboxFolderName
+    $aclActionType = [string]$Data.AclActionType
+    $aclEntry = [string]$Data.AclEntry
+
+    Write-LogInfo -Logger $Context.Logger -Message "Modifying mailbox folder ACE. Mailbox='$mailboxUserSam' Delegate='$delegatedUserSam' Folder='$requestedFolderName' Action='$aclActionType' Rights='$aclEntry'."
+
+    # Legacy source: current-scripts/Process-PersonMailboxJobs.ps1, block '*ModifyMailboxFolderAce*_pshjob_.csv'.
+    # The legacy process resolves both AD users, finds the mailbox calendar folder and adds/removes folder permissions.
+
+    if ($Context.WhatIfMode) {
+        return New-UserProvisioningResult `
+            -Success $true `
+            -Changed $true `
+            -Simulated $true `
+            -Action 'ModifyMailboxFolderAce' `
+            -AdObjectName $mailboxUserSam `
+            -Message "WhatIf: would modify mailbox folder permission '$aclEntry' for '$delegatedUserSam' on '$mailboxUserSam'." `
+            -Output @{
+                Mailbox = $mailboxUserSam
+                Delegate = $delegatedUserSam
+                Folder = $requestedFolderName
+                AclActionType = $aclActionType
+                AclEntry = $aclEntry
+            }
+    }
+
+    try {
+        $delegatedUser = Search-AdUserByLdapFilterSafe -LdapFilter "(&(sAMAccountType=805306368)(samaccountname=$mailboxUserSam))" -Properties @('mailNickname','userPrincipalName')
+        $delegatingUser = Search-AdUserByLdapFilterSafe -LdapFilter "(&(sAMAccountType=805306368)(samaccountname=$delegatedUserSam))" -Properties @('mailNickname','userPrincipalName')
+
+        if (-not $delegatedUser) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Mailbox user '$mailboxUserSam' not found." -ErrorCode 'MAILBOX_USER_NOT_FOUND'
+        }
+
+        if (-not $delegatingUser) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Delegated user '$delegatedUserSam' not found." -ErrorCode 'DELEGATED_USER_NOT_FOUND'
+        }
+
+        $delegateUpn = [string](Get-ObjectPropertyValue -Object $delegatingUser -Name 'userPrincipalName')
+        if ([string]::IsNullOrWhiteSpace($delegateUpn)) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Delegated user '$delegatedUserSam' has no userPrincipalName." -ErrorCode 'DELEGATED_USER_UPN_MISSING'
+        }
+
+        $mailbox = Get-OnPremMailboxSafe -Identity $mailboxUserSam
+        if (-not $mailbox) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Mailbox '$mailboxUserSam' not found." -ErrorCode 'MAILBOX_NOT_FOUND'
+        }
+
+        $mailboxAlias = if ($mailbox.PSObject.Properties['Alias'] -and -not [string]::IsNullOrWhiteSpace([string]$mailbox.Alias)) {
+            [string]$mailbox.Alias
+        }
+        else {
+            $mailboxUserSam
+        }
+
+        $folderName = $requestedFolderName
+        if ([string]::IsNullOrWhiteSpace($folderName) -or $folderName -eq 'Calendar') {
+            $calendarFolder = Get-OnPremMailboxFolderStatisticsSafe -Identity $mailboxAlias -FolderScope 'Calendar' | Select-Object -First 1
+            if ($calendarFolder -and $calendarFolder.PSObject.Properties['Name']) {
+                $folderName = [string]$calendarFolder.Name
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($folderName)) {
+            return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Could not determine mailbox folder name for '$mailboxUserSam'." -ErrorCode 'MAILBOX_FOLDER_NOT_FOUND'
+        }
+
+        $folderIdentity = "${mailboxAlias}:\$folderName"
+
+        if ($aclActionType -eq 'RemovePermissons' -or $aclActionType -eq 'RemovePermissions' -or $aclActionType -eq 'Remove') {
+            Remove-OnPremMailboxFolderPermissionSafe -Parameters @{
+                Identity = $folderIdentity
+                User = $delegateUpn
+                Confirm = $false
+            } -WhatIfMode:$false | Out-Null
+
+            return New-UserProvisioningResult -Success $true -Changed $true -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Mailbox folder permission removed for '$delegateUpn' on '$folderIdentity'." -Output @{ FolderIdentity = $folderIdentity; Delegate = $delegateUpn; Action = 'Remove' }
+        }
+
+        Add-OnPremMailboxFolderPermissionSafe -Parameters @{
+            Identity = $folderIdentity
+            User = $delegateUpn
+            AccessRights = $aclEntry
+        } -WhatIfMode:$false | Out-Null
+
+        return New-UserProvisioningResult -Success $true -Changed $true -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message "Mailbox folder permission '$aclEntry' added for '$delegateUpn' on '$folderIdentity'." -Output @{ FolderIdentity = $folderIdentity; Delegate = $delegateUpn; Action = 'Add'; AccessRights = $aclEntry }
+    }
+    catch {
+        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        Write-LogError -Logger $Context.Logger -Message "Set-GenericUserMailboxFolderAce failed for '$mailboxUserSam'." -Exception $_.Exception
+        return New-UserProvisioningResult -Success $false -Changed $false -Action 'ModifyMailboxFolderAce' -AdObjectName $mailboxUserSam -Message $message -ErrorCode 'MODIFY_MAILBOX_FOLDER_ACE_FAILED'
+    }
 }
 
 Export-ModuleMember -Function @(

@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Assert-OnPremCmdlet {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -189,6 +189,45 @@ function Remove-OnPremDistributionGroupSafe {
 }
 
 
+
+function Get-OnPremMailboxFolderStatisticsSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [string]$FolderScope
+    )
+
+    Assert-OnPremCmdlet -Name 'Get-MailboxFolderStatistics'
+    $params = @{ Identity = $Identity; ErrorAction = 'Stop' }
+    if (-not [string]::IsNullOrWhiteSpace($FolderScope)) { $params['FolderScope'] = $FolderScope }
+    Get-MailboxFolderStatistics @params
+}
+
+function Add-OnPremMailboxFolderPermissionSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [bool]$WhatIfMode = $true
+    )
+
+    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Add-MailboxFolderPermission'; Parameters = $Parameters } }
+    Assert-OnPremCmdlet -Name 'Add-MailboxFolderPermission'
+    Add-MailboxFolderPermission @Parameters -ErrorAction Stop
+}
+
+function Remove-OnPremMailboxFolderPermissionSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [bool]$WhatIfMode = $true
+    )
+
+    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Remove-MailboxFolderPermission'; Parameters = $Parameters } }
+    Assert-OnPremCmdlet -Name 'Remove-MailboxFolderPermission'
+    Remove-MailboxFolderPermission @Parameters -ErrorAction Stop
+}
+
+
 Export-ModuleMember -Function @(
     'Get-OnPremMailboxSafe',
     'New-OnPremMailboxSafe',
@@ -209,5 +248,8 @@ Export-ModuleMember -Function @(
     'Get-OnPremMailboxPermissionSafe',
     'Get-OnPremAdPermissionSafe',
     'Add-OnPremAdPermissionSafe',
-    'Remove-OnPremAdPermissionSafe'
+    'Remove-OnPremAdPermissionSafe',
+    'Get-OnPremMailboxFolderStatisticsSafe',
+    'Add-OnPremMailboxFolderPermissionSafe',
+    'Remove-OnPremMailboxFolderPermissionSafe'
 )

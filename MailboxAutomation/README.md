@@ -1,4 +1,4 @@
-# MailboxAutomation
+﻿# MailboxAutomation
 
 ## 1. Ziel der Loesung
 Dieses Projekt refaktoriert eine historisch gewachsene AD-/Exchange-On-Prem-Automation in ein modulares, testbares und erweiterbares JobProcessor-Framework.
@@ -440,3 +440,12 @@ Die Datei `tests/Pester/DistributionGroupCreateDeleteMigration.Tests.ps1` enthä
 - Service gibt simulierte Operationen im `WhatIfMode` zurück
 - Service entfernt Legacy-Action-Token aus dem Manager-Feld
 - Gateway-Funktionen geben simulierte Ergebnisse zurück ohne Exchange-Cmdlets
+
+
+## 31. Validierung und Konsistenzkorrektur GenericUser-Handler
+
+Die Handler `GenericUser.RenameAccount`, `GenericUser.ChangeSurname` und `GenericUser.ModifyMailboxFolderAce` verwenden ein einheitliches per-row `$failedResults`-Muster. Service-Rückgaben mit `Success = false` werden nicht mehr als erfolgreiche Zeile gezählt, sondern als fachlicher Zeilenfehler mit dem jeweiligen `ErrorCode` in `FailedRows` aufgenommen. Exceptions pro Zeile werden weiterhin als `ROW_PROCESSING_ERROR` gesammelt, ohne die Verarbeitung der restlichen Zeilen abzubrechen.
+
+Im Service `UserProvisioningService.psm1` wurden die Implementierungen für Rename, Namensänderung und Mailbox-Folder-ACE auf die echten CSV-Felder der aktiven UseCases ausgerichtet. Für Mailbox-Folder-Berechtigungen kapselt `ExchangeOnPremGateway.psm1` nun zusätzlich `Get-MailboxFolderStatistics`, `Add-MailboxFolderPermission` und `Remove-MailboxFolderPermission` mit WhatIf-sicherem Verhalten.
+
+Die fachlichen Restpunkte wie SQL-Zähler, DFS-/HomeDirectory-Umbenennung, Kundenbenachrichtigung und spätere Hybrid-/Exchange-Online-Erweiterung bleiben bewusst als TODOs markiert und werden nicht im Handler direkt umgesetzt.

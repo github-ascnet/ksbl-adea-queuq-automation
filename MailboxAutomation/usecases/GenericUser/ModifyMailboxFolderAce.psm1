@@ -6,18 +6,86 @@ function Invoke-ModifyMailboxFolderAce {
 
     try {
         $rows = @($Context.Payload)
-        Assert-RequiredCsvFields -Rows $rows -RequiredFields @('ActionType','AdObjectName','MailboxFolderName','DelegatedAdObjectName','AclActionType','AclEntry','CurrentUserName','CurrentUserDomainName','CurrentUserEMailAddress')
+        Assert-RequiredCsvFields -Rows $rows -RequiredFields @(
+            'ActionType',
+            'AdObjectName',
+            'MailboxFolderName',
+            'DelegatedAdObjectName',
+            'AclActionType',
+            'AclEntry',
+            'CurrentUserName',
+            'CurrentUserDomainName',
+            'CurrentUserEMailAddress'
+        )
+
+        $failedResults = @()
+        $successResults = @()
+        $successCount = 0
 
         foreach ($row in $rows) {
-            & $Context.Services.UserProvisioning.SetMailboxFolderAce $Context $row
+            try {
+                $result = & $Context.Services.UserProvisioning.SetMailboxFolderAce $Context $row
+
+                if ($result -and $result.PSObject.Properties['Success'] -and (-not [bool]$result.Success)) {
+                    $failedResults += [pscustomobject]@{
+                        Row          = $row
+                        AdObjectName = $row.AdObjectName
+                        Message      = $result.Message
+                        ErrorCode    = if ($result.ErrorCode) { $result.ErrorCode } else { 'ROW_FAILED' }
+                        Result       = $result
+                    }
+
+                    Write-LogWarn -Logger $Context.Logger -Message "Invoke-ModifyMailboxFolderAce failed for '$($row.AdObjectName)': $($result.Message)"
+                    continue
+                }
+
+                $successCount++
+                $successResults += [pscustomobject]@{
+                    AdObjectName          = $row.AdObjectName
+                    DelegatedAdObjectName = $row.DelegatedAdObjectName
+                    AclActionType         = $row.AclActionType
+                    Message               = if ($result -and $result.PSObject.Properties['Message']) { $result.Message } else { "Row processed successfully." }
+                    Result                = $result
+                }
+
+                Write-LogInfo -Logger $Context.Logger -Message "Invoke-ModifyMailboxFolderAce succeeded for '$($row.AdObjectName)' / '$($row.DelegatedAdObjectName)'."
+            }
+            catch {
+                $failedResults += [pscustomobject]@{
+                    Row          = $row
+                    AdObjectName = $row.AdObjectName
+                    Message      = $_.Exception.Message
+                    ErrorCode    = 'ROW_PROCESSING_ERROR'
+                }
+
+                Write-LogError -Logger $Context.Logger -Message "Invoke-ModifyMailboxFolderAce failed for '$($row.AdObjectName)'." -Exception $_.Exception
+            }
         }
 
-        Write-LogInfo -Logger $Context.Logger -Message "Invoke-ModifyMailboxFolderAce processed $($rows.Count) row(s)."
-        New-JobSucceededResult -Message "Invoke-ModifyMailboxFolderAce succeeded."
+        if ($failedResults.Count -gt 0) {
+            return New-JobFailedResult `
+                -Message "$($failedResults.Count) row(s) failed, $successCount row(s) succeeded." `
+                -ErrorCode 'PARTIAL_FAILURE' `
+                -Output @{
+                    SuccessCount   = $successCount
+                    FailedCount    = $failedResults.Count
+                    SuccessResults = $successResults
+                    FailedRows     = $failedResults
+                }
+        }
+
+        return New-JobSucceededResult `
+            -Message "$successCount row(s) processed successfully." `
+            -Output @{
+                SuccessCount   = $successCount
+                FailedCount    = 0
+                SuccessResults = $successResults
+                FailedRows     = @()
+            }
     }
     catch {
         Write-LogError -Logger $Context.Logger -Message "Invoke-ModifyMailboxFolderAce failed." -Exception $_.Exception
-        New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
+        return New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
     }
 }
 
