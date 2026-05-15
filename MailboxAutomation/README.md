@@ -369,3 +369,74 @@ Die Migration bildet die alte blockierende Verarbeitung als nicht-blockierende S
 Die fachliche Logik wurde in `shared/PersonMailboxService.psm1` gekapselt. Dort sind die aus dem Alt-Skript abgeleiteten Regeln für DisplayName-Bildung, Standortattribute, Service-Account-Typen, LDAP-Suchfilter, Mailadressbildung, AD-Vorbereitung, Mailbox-Vorbereitung, Sichtbarkeitsprüfung, Attributanwendung und Finalisierung enthalten. Produktive AD- und Exchange-Operationen laufen über die vorhandenen Gateways. Im `WhatIfMode` werden keine produktiven Cmdlets benötigt.
 
 Wichtige Altlogik, die bewusst als TODO markiert bleibt: vollständige DFS/HomeDirectory-Berechtigungen, finale Benachrichtigungslogik, produktive Kollisionsprüfung für eindeutige Mailadressen und spätere Hybrid-/Exchange-Online-Erweiterung für migrierte Postfächer.
+
+
+## Pilotmigration: DistributionGroup.Create und DistributionGroup.Delete
+
+In diesem Migrationsschritt wurden die zwei verbleibenden aktiven Verteilerlisten-UseCases aus dem Originalskript `current-scripts/Process-DistributionsGroupJobs.ps1` in die modulare Framework-Struktur überführt. Damit sind sämtliche in `usecases.json` als `Enabled=true` registrierten DistributionGroup-UseCases vollständig migriert.
+
+| UseCase | Quelle | Pattern | Handler | Service |
+|---|---|---|---|---|
+| `DistributionGroup.Create` | `current-scripts/Process-DistributionsGroupJobs.ps1` | `*CreateDistributionList*_pshjob_.csv` | `usecases/DistributionGroup/CreateDistributionGroup.psm1` | `shared/DistributionGroupService.psm1` |
+| `DistributionGroup.Delete` | `current-scripts/Process-DistributionsGroupJobs.ps1` | `*DeleteDistribList*_pshjob_.csv` | `usecases/DistributionGroup/DeleteDistributionList.psm1` | `shared/DistributionGroupService.psm1` |
+
+### Gateway-Erweiterungen
+
+Die Datei `infrastructure/ExchangeOnPremGateway.psm1` wurde um zwei neue Safe-Funktionen ergänzt:
+
+- `New-OnPremDistributionGroupSafe` — kapselt `New-DistributionGroup`; WhatIfMode-Prüfung vor jeder Cmdlet-Verfügbarkeitsprüfung
+- `Remove-OnPremDistributionGroupSafe` — kapselt `Remove-DistributionGroup`; gleiche Konvention
+
+### DistributionGroup.Create — migrierte Logik
+
+Quelle: Block `*CreateDistributionList*_pshjob_.csv` in `current-scripts/Process-DistributionsGroupJobs.ps1`.
+
+Servicefunktion: `New-DistributionGroupFromRequest` in `shared/DistributionGroupService.psm1`.
+
+Migrierte Schritte:
+
+1. Erstellen der Verteilerliste via `New-DistributionGroup` mit `Name`, `PrimarySmtpAddress`, `Alias`, `SamAccountName`, `DisplayName`, `OrganizationalUnit`, `Type=Security`.
+2. Setzen von `HiddenFromAddressListsEnabled` anhand des CSV-Felds `HideInAb`. Faithful Migration: `HideInAb='true'` setzt `HiddenFromAddressListsEnabled=$false` (Gruppe im Adressbuch sichtbar), entsprechend der Altlogik.
+3. Setzen von `ManagedBy` auf den aus dem CSV-Feld `Manager` extrahierten Account-Namen (Legacy-Action-Token wie `[ADD]` werden vor der Übergabe entfernt). Zusätzlich wird dem Manager die `WriteProperty Member`-Berechtigung über `Add-ADPermission` (Exchange) erteilt.
+4. Setzen der AD-Gruppen-Beschreibung via `Set-ADGroup` mit `"Created on <Datum> by <CurrentUserName>"`.
+5. Deaktivieren von `RequireSenderAuthenticationEnabled` (externe Absender erlaubt).
+
+### DistributionGroup.Delete — migrierte Logik
+
+Quelle: Block `*DeleteDistribList*_pshjob_.csv` in `current-scripts/Process-DistributionsGroupJobs.ps1`.
+
+Servicefunktion: `Remove-DistributionGroupFromRequest` in `shared/DistributionGroupService.psm1`.
+
+Migrierte Schritte:
+
+1. Verifizieren der Existenz der Verteilerliste via `Get-DistributionGroup`.
+2. Übertragen von `ManagedBy` auf das laufende Service-Konto (`[Environment]::UserDomainName\[Environment]::UserName`), damit die Löschung nicht durch Eigentümerschaftsrestriktionen blockiert wird.
+3. Löschen via `Remove-DistributionGroup` mit `Confirm=$false`.
+
+### Pflichtfelder (aus usecases.json)
+
+**Create**: `ActionType`, `DisplayName`, `PrimarySmtpAddress`, `AdObjectName`, `OrgUnit`, `HideInAb`, `Manager`, `CurrentUserName`, `CurrentUserDomainName`, `CurrentUserEMailAddress`
+
+**Delete**: `ActionType`, `AdObjectName`, `CurrentUserName`, `CurrentUserDomainName`, `CurrentUserEMailAddress`
+
+### Bewusst offengebliebene TODOs
+
+- **AcceptMessagesOnlyFromSendersOrMembers**: Das Originalskript fügt hardcodiert `'vl0286'` zur Absenderliste der neuen Verteilerliste hinzu. Diese Logik wurde nicht migriert, da die Konfiguration erst parametrisierbar gemacht werden muss. Markierung: `# TODO: Add distribution group to AcceptMessagesOnlyFromSendersOrMembers` in `DistributionGroupService.psm1`.
+- **Set-DlTenantState (TenantEnable)**: Das Originalskript ruft nach der Erstellung `Set-DlTenantState -Mode TenantEnable -CloudDomain $cloudDomain` auf, das Tenant-Hybrid-Attribute in AD und ProxyAddresses setzt. Diese Logik ist noch nicht über `shared/TenantState.psm1` implementiert. Markierung: `# TODO: Migrate Set-DlTenantState -Mode TenantEnable` in `DistributionGroupService.psm1`. Ref: `current-scripts/Process-DistributionsGroupJobs.ps1` — `Set-DlTenantState`-Funktion.
+- **Automatische VL-Nummernvergabe**: Das Originalskript überschreibt das CSV-Feld `AdObjectName` mit einer automatisch generierten `vl000x`-Bezeichnung via LDAP-Suche. Im neuen Framework liefert die aufrufende Applikation den `AdObjectName` explizit. Die Altlogik (`Enumerate-NextAvailableAdObjectName`) ist als Referenz in `current-scripts/Process-DistributionsGroupJobs.ps1` erhalten.
+
+### WhatIfMode
+
+Im `WhatIfMode` werden keine Exchange- oder AD-Cmdlets ausgeführt. Beide Servicefunktionen geben stattdessen strukturierte `Operations`-Listen mit simulierten Schritten zurück. Die Handler rufen `$Context.Services.DistributionGroup.Create` bzw. `$Context.Services.DistributionGroup.Delete` auf (ServiceContainer-Verdrahtung in `core/JobEngine.psm1` unverändert).
+
+### Tests
+
+Die Datei `tests/Pester/DistributionGroupCreateDeleteMigration.Tests.ps1` enthält 14 Pester-5.7.1-kompatible Tests. Sie verwenden das korrekte `BeforeAll`-Scoping-Muster für Helper-Funktionen. Die Tests prüfen:
+
+- Handler gibt `Succeeded` zurück wenn Service erfolgreich ist
+- Handler gibt `Failed` zurück wenn Service fehlschlägt
+- Handler gibt `Failed` mit `USECASE_ERROR` zurück bei fehlenden Pflichtfeldern
+- Handler akkumuliert Ergebnisse über mehrere Zeilen
+- Service gibt simulierte Operationen im `WhatIfMode` zurück
+- Service entfernt Legacy-Action-Token aus dem Manager-Feld
+- Gateway-Funktionen geben simulierte Ergebnisse zurück ohne Exchange-Cmdlets

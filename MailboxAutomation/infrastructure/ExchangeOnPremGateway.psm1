@@ -170,6 +170,24 @@ function Set-OnPremMailboxAutoReplyConfigurationSafe {
     Set-MailboxAutoReplyConfiguration @Parameters -ErrorAction Stop
 }
 
+function New-OnPremDistributionGroupSafe {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [bool]$WhatIfMode = $true)
+
+    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'New-DistributionGroup'; Parameters = $Parameters } }
+    Assert-OnPremCmdlet -Name 'New-DistributionGroup'
+    New-DistributionGroup @Parameters -ErrorAction Stop
+}
+
+function Remove-OnPremDistributionGroupSafe {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [bool]$WhatIfMode = $true)
+
+    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Remove-DistributionGroup'; Parameters = $Parameters } }
+    Assert-OnPremCmdlet -Name 'Remove-DistributionGroup'
+    Remove-DistributionGroup @Parameters -ErrorAction Stop
+}
+
 
 Export-ModuleMember -Function @(
     'Get-OnPremMailboxSafe',
@@ -186,6 +204,8 @@ Export-ModuleMember -Function @(
     'Remove-OnPremSendAsPermissionSafe',
     'Get-OnPremDistributionGroupSafe',
     'Set-OnPremDistributionGroupSafe',
+    'New-OnPremDistributionGroupSafe',
+    'Remove-OnPremDistributionGroupSafe',
     'Get-OnPremMailboxPermissionSafe',
     'Get-OnPremAdPermissionSafe',
     'Add-OnPremAdPermissionSafe',
