@@ -186,10 +186,10 @@ function New-ServiceContainer {
         # Diese Ebene ist bewusst separat, weil FullAccess und SendAs später
         # On-Prem oder Exchange Online betreffen können.
         MailboxPermission = [pscustomobject]@{
-            AddFullAccess    = { param($Context, $Data) Add-MailboxFullAccess -Context $Context -Data $Data }
-            RemoveFullAccess = { param($Context, $Data) Remove-MailboxFullAccess -Context $Context -Data $Data }
-            AddSendAs        = { param($Context, $Data) Add-MailboxSendAs -Context $Context -Data $Data }
-            RemoveSendAs     = { param($Context, $Data) Remove-MailboxSendAs -Context $Context -Data $Data }
+            AddFullAccess    = { param($Context, $Data) Add-MailboxFullAccess -Context $Context -MailboxIdentity $Data.MailboxIdentity -Trustee $Data.Trustee }
+            RemoveFullAccess = { param($Context, $Data) Remove-MailboxFullAccess -Context $Context -MailboxIdentity $Data.MailboxIdentity -Trustee $Data.Trustee }
+            AddSendAs        = { param($Context, $Data) Add-MailboxSendAs -Context $Context -MailboxIdentity $Data.MailboxIdentity -Trustee $Data.Trustee }
+            RemoveSendAs     = { param($Context, $Data) Remove-MailboxSendAs -Context $Context -MailboxIdentity $Data.MailboxIdentity -Trustee $Data.Trustee }
         }
         # Services für Gruppenmailboxen:
         # - Erstellung

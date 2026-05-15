@@ -514,3 +514,110 @@ Die Handler `GenericUser.RenameAccount`, `GenericUser.ChangeSurname` und `Generi
 Im Service `UserProvisioningService.psm1` wurden die Implementierungen für Rename, Namensänderung und Mailbox-Folder-ACE auf die echten CSV-Felder der aktiven UseCases ausgerichtet. Für Mailbox-Folder-Berechtigungen kapselt `ExchangeOnPremGateway.psm1` nun zusätzlich `Get-MailboxFolderStatistics`, `Add-MailboxFolderPermission` und `Remove-MailboxFolderPermission` mit WhatIf-sicherem Verhalten.
 
 Die fachlichen Restpunkte wie SQL-Zähler, DFS-/HomeDirectory-Umbenennung, Kundenbenachrichtigung und spätere Hybrid-/Exchange-Online-Erweiterung bleiben bewusst als TODOs markiert und werden nicht im Handler direkt umgesetzt.
+
+
+## 32. Hybrid-Routing für GroupMailbox.AddFmaMembers
+
+Dieser Abschnitt beschreibt die Erweiterung, die FullAccess- und SendAs-Berechtigungen für Gruppenmailboxen automatisch an die korrekte Exchange-Umgebung (On-Prem oder Exchange Online) weiterleitet, abhängig davon, ob das Postfach noch lokal oder bereits in die Cloud migriert wurde.
+
+### Architektur
+
+```
+AddGroupMailboxFmaMembers.psm1  (Handler)
+  → $Context.Services.GroupMailbox.AddFmaMembers  (ServiceContainer-Closure in JobEngine)
+     → Add-GroupMailboxFmaMembers  (GroupMailboxService)
+        → Add-MailboxFullAccess / Add-MailboxSendAs  (MailboxPermissionService)
+           → Invoke-ResolvedPermissionGateway  (intern)
+              → Resolve-MailboxExecutionContext  (HybridMailboxResolver)
+                 → Get-OnPremRecipientSafe  (ExchangeOnPremGateway)
+                 → Get-ExoRecipientSafe     (ExchangeOnlineGateway, nur wenn nötig)
+              → Add-OnPremMailboxPermissionSafe   (ExchangeOnPremGateway, wenn OnPremExchange)
+              → Add-ExoMailboxPermissionSafe      (ExchangeOnlineGateway, wenn ExchangeOnline)
+```
+
+### HybridMailboxResolver — Routing-Logik
+
+Das Modul `infrastructure/HybridMailboxResolver.psm1` exportiert `Resolve-MailboxExecutionContext`. Es ermittelt auf Basis eines On-Prem-Lookups (und optionalem EXO-Lookup) den `PermissionAuthority` und die empfohlene Aktion:
+
+| RecipientTypeDetails | EXO-Status | EXO-Objekt gefunden | PermissionAuthority | RecommendedAction | IsMigrationTransient |
+|---|---|---|---|---|---|
+| `SharedMailbox` | beliebig | – | `OnPremExchange` | `Execute` | `$false` |
+| `RemoteSharedMailbox` | enabled | ja | `ExchangeOnline` | `Execute` | `$false` |
+| `RemoteSharedMailbox` | enabled | nein | `ExchangeOnline` | `Retry` | `$true` |
+| `RemoteSharedMailbox` | disabled | – | `ExchangeOnline` | `Fail` | `$false` |
+| Nur EXO (kein On-Prem-Objekt) | enabled | ja | `ExchangeOnline` | `Execute` | `$false` |
+| Nicht gefunden (weder On-Prem noch EXO) | – | – | `Unknown` | `Fail` | `$false` |
+
+EXO wird nur abgefragt, wenn das Postfach als `RemoteSharedMailbox` erkannt wurde oder kein On-Prem-Objekt gefunden wurde. EXO-Konfiguration wird über `$Config.ExchangeOnline.Enabled` gesteuert.
+
+### MailboxPermissionService — strukturierte Ergebnisse
+
+Das Modul `shared/MailboxPermissionService.psm1` ersetzt direkte Gateway-Aufrufe in Höher-Level-Services durch strukturierte Ergebnisobjekte. Alle vier exportierten Funktionen (`Add-MailboxFullAccess`, `Remove-MailboxFullAccess`, `Add-MailboxSendAs`, `Remove-MailboxSendAs`) geben ein Objekt mit folgenden Feldern zurück:
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `Success` | `bool` | Ob die Operation erfolgreich war |
+| `Changed` | `bool` | Ob tatsächlich eine Änderung stattgefunden hat |
+| `RequiresRetry` | `bool` | Ob der Job für einen späteren Retry eingeplant werden soll |
+| `RetryAfterMinutes` | `int` | Wartezeit in Minuten bis zum Retry (nur wenn `RequiresRetry=$true`) |
+| `Authority` | `string` | `OnPremExchange`, `ExchangeOnline`, `WhatIf` oder `Unknown` |
+| `Identity` | `string` | Die Mailbox-Identität |
+| `Trustee` | `string` | Der Trustee (SamAccountName) |
+| `Operation` | `string` | z. B. `AddFullAccess`, `RemoveSendAs` |
+| `Message` | `string` | Lesbare Statusmeldung |
+| `ErrorCode` | `string` | Maschinenlesbarer Fehlercode (leer bei Erfolg) |
+
+#### Fehlercodes
+
+| ErrorCode | Bedeutung |
+|---|---|
+| `MAILBOX_MIGRATION_TRANSIENT` | Postfach wird gerade migriert; EXO-Objekt noch nicht sichtbar |
+| `EXO_REQUIRED_BUT_DISABLED` | RemoteSharedMailbox, aber EXO nicht konfiguriert |
+| `MAILBOX_NOT_FOUND` | Postfach weder On-Prem noch in EXO gefunden |
+| `PERMISSION_AUTHORITY_UNKNOWN` | Routing konnte nicht bestimmt werden |
+| `GATEWAY_ERROR` | Ausnahme beim Gateway-Aufruf |
+| `UNKNOWN_OPERATION` | Unbekannte Operation (interner Fehler) |
+
+### GroupMailboxService — Add-GroupMailboxFmaMembers
+
+Die Funktion `Add-GroupMailboxFmaMembers` in `shared/GroupMailboxService.psm1` iteriert über die Action-Tokens im CSV-Feld `MemberList`. Für jeden Token:
+
+- `[ADD]` → ruft `Add-MailboxFullAccess` auf; bei gesetztem `SendAs`-Flag zusätzlich `Add-MailboxSendAs`
+- `[DEL]` → ruft `Remove-MailboxFullAccess` auf; bei gesetztem `SendAs`-Flag zusätzlich `Remove-MailboxSendAs`
+
+Wenn eine Operation `RequiresRetry=$true` zurückgibt, wird die Schleife sofort abgebrochen und das Retry-Ergebnis weitergegeben. Wenn eine Operation `Success=$false` ohne Retry zurückgibt, wird der Trustee in `FailedMembers` aufgenommen und die Schleife fortgesetzt. Am Ende bestimmt das Vorhandensein von `FailedMembers` ob `Success=$true` oder `Success=$false` (mit `ErrorCode='GROUP_MAILBOX_PERMISSION_PARTIAL_FAILURE'`) zurückgegeben wird.
+
+Im `WhatIfMode` werden keine Exchange-Cmdlets benötigt. Der Service gibt ein simuliertes Ergebnis mit `Simulated=$true` und `Authority='WhatIf'` zurück.
+
+### Handler — RequiresRetry-Propagation
+
+Der Handler `usecases/GroupMailbox/AddGroupMailboxFmaMembers.psm1` prüft nach dem Service-Aufruf, ob `$serviceResult.RequiresRetry = $true` ist. In diesem Fall wird kein `Succeeded`-JobResult erstellt, sondern ein `New-JobRetryResult` mit der konfigurierten `RetryAfter`-Zeit (Standard: 15 Minuten aus `RetryAfterMinutes`). Damit wird der Job automatisch in die Retry-Queue verschoben und nach der Wartezeit erneut verarbeitet, sobald das Postfach in EXO sichtbar ist.
+
+### Konfiguration
+
+Hybrid-Routing wird über `config/environments.hybrid.json` aktiviert:
+
+```json
+"ExchangeOnline": {
+  "Enabled": true,
+  "AppId": "<Entra-App-Id>",
+  "CertThumbprint": "<Thumbprint>",
+  "Organization": "<tenant>.onmicrosoft.com",
+  "TenantDomain": "<tenant>.onmicrosoft.com"
+}
+```
+
+In `config/appsettings.json` ist `ExchangeOnline.Enabled` standardmässig auf `false` gesetzt. Die Hybrid-Konfigurationsdatei muss explizit beim Start des JobProcessors angegeben werden.
+
+### Tests
+
+Die Datei `tests/Pester/GroupMailboxHybridRouting.Tests.ps1` enthält 26 Pester-5.7.1-kompatible Tests (alle grün). Die Describe-Blöcke decken ab:
+
+1. `HybridMailboxResolver.Resolve-MailboxExecutionContext` — 6 Tests für alle Routing-Szenarien
+2. `MailboxPermissionService.Add-MailboxFullAccess` — 6 Tests inkl. Retry-, Fail- und Gateway-Error-Szenarien
+3. `MailboxPermissionService.Add-MailboxSendAs` — 2 Tests
+4. `MailboxPermissionService.Remove-MailboxFullAccess` — 2 Tests
+5. `GroupMailboxService.Add-GroupMailboxFmaMembers` — 7 Tests inkl. WhatIf, DEL-Token, Partial-Failure und RequiresRetry-Propagation
+6. `Invoke-AddGroupMailboxFmaMembers Handler` — 3 Tests für RequiresRetry, Succeeded und Failed-Propagation
+
+Mocks verwenden `Mock -ModuleName 'HybridMailboxResolver'` für Gateway-Funktionen innerhalb des Resolvers und `Mock -ModuleName 'MailboxPermissionService'` für den Resolver und die Gateway-Funktionen innerhalb des PermissionServices.

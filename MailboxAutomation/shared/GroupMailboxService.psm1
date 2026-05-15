@@ -105,96 +105,151 @@ function Add-GroupMailboxFmaMembers {
     $enableSendAs = ([string]$Data.EnableSendAs) -eq 'True'
     $tokens = @([string]$Data.FullAccessMembers -split '!' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
-    Write-LogInfo -Logger $Context.Logger -Message "Migrated legacy logic: mutating FullAccess/SendAs members for group mailbox '$adObjectName'."
+    Write-LogInfo -Logger $Context.Logger -Message "Processing hybrid FullAccess/SendAs permissions for group mailbox '$adObjectName'."
 
+    # WhatIf: simulate without calling any Exchange cmdlets or resolver
     if ($Context.WhatIfMode) {
         $simulatedOperations = @()
         foreach ($token in $tokens) {
             $parsed = ConvertFrom-LegacyActionToken -Token $token
             if ($null -ne $parsed) {
                 $simulatedOperations += [pscustomobject]@{
-                    Trustee      = $parsed.Value
-                    Action       = $parsed.Action
-                    FullAccess   = $true
-                    SendAs       = $enableSendAs
-                    Simulated    = $true
+                    Trustee    = $parsed.Value
+                    Action     = $parsed.Action
+                    FullAccess = $true
+                    SendAs     = $enableSendAs
+                    Simulated  = $true
                 }
             }
         }
-
         return [pscustomobject]@{
-            Success       = $true
-            Changed       = ($simulatedOperations.Count -gt 0)
-            Simulated     = $true
-            AdObjectName  = $adObjectName
-            Operations    = $simulatedOperations
-            Message       = "WhatIf: would mutate $($simulatedOperations.Count) FullAccess/SendAs member operation(s) on group mailbox '$adObjectName'."
-            ErrorCode     = $null
+            Success           = $true
+            Changed           = ($simulatedOperations.Count -gt 0)
+            Simulated         = $true
+            RequiresRetry     = $false
+            RetryAfterMinutes = 0
+            AdObjectName      = $adObjectName
+            FullAccessCount   = $simulatedOperations.Count
+            SendAsCount       = if ($enableSendAs) { $simulatedOperations.Count } else { 0 }
+            Authority         = 'WhatIf'
+            Operations        = $simulatedOperations
+            FailedMembers     = @()
+            Message           = "WhatIf: would mutate $($simulatedOperations.Count) FullAccess/SendAs member operation(s) on group mailbox '$adObjectName'."
+            ErrorCode         = $null
         }
     }
 
-    $mailbox = $null
-    try {
-        $mailbox = Get-OnPremMailboxSafe -Identity $adObjectName
-    }
-    catch {
-        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-LogError -Logger $Context.Logger -Message "Error getting group mailbox '$adObjectName'." -Exception $_.Exception
-        return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Message      = "Group mailbox '$adObjectName' could not be found or read. $message"
-            ErrorCode    = 'GROUP_MAILBOX_GET_FAILED'
+    # Production: route all permission operations through MailboxPermissionService (hybrid-aware)
+    $fullAccessCount = 0
+    $sendAsCount     = 0
+    $failedMembers   = @()
+    $authority       = 'Unknown'
+
+    foreach ($token in $tokens) {
+        $parsed = ConvertFrom-LegacyActionToken -Token $token
+        if ($null -eq $parsed) { continue }
+
+        $trustee = $parsed.Value
+        $action  = $parsed.Action
+
+        # FullAccess (ADD or DEL)
+        if ($action -eq 'ADD') {
+            $faResult = Add-MailboxFullAccess -Context $Context -MailboxIdentity $adObjectName -Trustee $trustee -AutoMapping $false
+        }
+        else {
+            $faResult = Remove-MailboxFullAccess -Context $Context -MailboxIdentity $adObjectName -Trustee $trustee
+        }
+
+        if ($faResult.RequiresRetry) {
+            Write-LogWarn -Logger $Context.Logger -Message "Transient migration state for '$adObjectName' / '$trustee'. Retry scheduled after $($faResult.RetryAfterMinutes) minutes."
+            return [pscustomobject]@{
+                Success           = $false
+                Changed           = $false
+                RequiresRetry     = $true
+                RetryAfterMinutes = $faResult.RetryAfterMinutes
+                AdObjectName      = $adObjectName
+                FullAccessCount   = $fullAccessCount
+                SendAsCount       = $sendAsCount
+                Authority         = $faResult.Authority
+                FailedMembers     = @($trustee)
+                Message           = $faResult.Message
+                ErrorCode         = $faResult.ErrorCode
+            }
+        }
+
+        if (-not $faResult.Success) {
+            $failedMembers += $trustee
+            Write-LogWarn -Logger $Context.Logger -Message "FullAccess $action failed for '$trustee' on '$adObjectName': $($faResult.Message)"
+            continue
+        }
+
+        $authority = $faResult.Authority
+        $fullAccessCount++
+
+        # SendAs (ADD only when enabled; DEL when enabled)
+        if ($enableSendAs) {
+            if ($action -eq 'ADD') {
+                $saResult = Add-MailboxSendAs -Context $Context -MailboxIdentity $adObjectName -Trustee $trustee
+            }
+            else {
+                $saResult = Remove-MailboxSendAs -Context $Context -MailboxIdentity $adObjectName -Trustee $trustee
+            }
+
+            if ($saResult.RequiresRetry) {
+                Write-LogWarn -Logger $Context.Logger -Message "Transient migration state (SendAs) for '$adObjectName' / '$trustee'. Retry scheduled after $($saResult.RetryAfterMinutes) minutes."
+                return [pscustomobject]@{
+                    Success           = $false
+                    Changed           = ($fullAccessCount -gt 0)
+                    RequiresRetry     = $true
+                    RetryAfterMinutes = $saResult.RetryAfterMinutes
+                    AdObjectName      = $adObjectName
+                    FullAccessCount   = $fullAccessCount
+                    SendAsCount       = $sendAsCount
+                    Authority         = $saResult.Authority
+                    FailedMembers     = @($trustee)
+                    Message           = $saResult.Message
+                    ErrorCode         = $saResult.ErrorCode
+                }
+            }
+
+            if (-not $saResult.Success) {
+                $failedMembers += "$trustee[SendAs]"
+                Write-LogWarn -Logger $Context.Logger -Message "SendAs $action failed for '$trustee' on '$adObjectName': $($saResult.Message)"
+            }
+            else {
+                $sendAsCount++
+            }
         }
     }
 
-    if (-not $mailbox) {
+    if ($failedMembers.Count -gt 0) {
         return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Message      = "Group mailbox '$adObjectName' not found."
-            ErrorCode    = 'GROUP_MAILBOX_NOT_FOUND'
-        }
-    }
-
-    $mailboxIdentity = if ($mailbox.PSObject.Properties['DistinguishedName'] -and -not [string]::IsNullOrWhiteSpace([string]$mailbox.DistinguishedName)) {
-        [string]$mailbox.DistinguishedName
-    }
-    else {
-        $adObjectName
-    }
-
-    $operations = @()
-    try {
-        foreach ($token in $tokens) {
-            $parsed = ConvertFrom-LegacyActionToken -Token $token
-            if ($null -eq $parsed) { continue }
-            $ops = Invoke-LegacyMailboxPermissionMutation -MailboxIdentity $mailboxIdentity -Trustee $parsed.Value -Action $parsed.Action -EnableSendAs:$enableSendAs -WhatIfMode:$false -Logger $Context.Logger
-            $operations += $ops
-        }
-    }
-    catch {
-        $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-LogError -Logger $Context.Logger -Message "Error mutating FullAccess/SendAs members for group mailbox '$adObjectName'." -Exception $_.Exception
-        return [pscustomobject]@{
-            Success      = $false
-            Changed      = $false
-            AdObjectName = $adObjectName
-            Message      = "Error while mutating permissions on group mailbox '$adObjectName'. $message"
-            ErrorCode    = 'GROUP_MAILBOX_PERMISSION_MUTATION_FAILED'
+            Success           = $false
+            Changed           = ($fullAccessCount -gt 0 -or $sendAsCount -gt 0)
+            RequiresRetry     = $false
+            RetryAfterMinutes = 0
+            AdObjectName      = $adObjectName
+            FullAccessCount   = $fullAccessCount
+            SendAsCount       = $sendAsCount
+            Authority         = $authority
+            FailedMembers     = $failedMembers
+            Message           = "FullAccess/SendAs permissions processed for group mailbox '$adObjectName'. $($failedMembers.Count) operation(s) failed."
+            ErrorCode         = 'GROUP_MAILBOX_PERMISSION_PARTIAL_FAILURE'
         }
     }
 
     return [pscustomobject]@{
-        Success      = $true
-        Changed      = ($operations.Count -gt 0)
-        Simulated    = $false
-        AdObjectName = $adObjectName
-        Operations   = $operations
-        Message      = "FullAccess/SendAs permissions processed for group mailbox '$adObjectName'."
-        ErrorCode    = $null
+        Success           = $true
+        Changed           = ($fullAccessCount -gt 0 -or $sendAsCount -gt 0)
+        RequiresRetry     = $false
+        RetryAfterMinutes = 0
+        AdObjectName      = $adObjectName
+        FullAccessCount   = $fullAccessCount
+        SendAsCount       = $sendAsCount
+        Authority         = $authority
+        FailedMembers     = @()
+        Message           = "FullAccess/SendAs permissions processed for group mailbox '$adObjectName' via $authority."
+        ErrorCode         = $null
     }
 }
 
