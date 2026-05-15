@@ -1,0 +1,2 @@
+ActionType;TargetAdObjectName;TargetDomain;TargetDomainUserOU;TargetUserAdDisplayname;TargetUserAdGivenname;TargetUserAdSurname;TargetUserAdEmployeeType;TargetLocation;MailboxEnable;CurrentUserName;CurrentUserDomainName;CurrentUserEMailAddress
+Create;p.user01;DOMAIN;OU=Users,DC=example,DC=invalid;Doe Peter;Peter;Doe;Person;Location01;true;admin;DOMAIN;admin@example.invalid

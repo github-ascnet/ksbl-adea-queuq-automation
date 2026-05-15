@@ -1,0 +1,9 @@
+{
+  "EnvironmentName": "OnPrem",
+  "ExchangeOnline": {
+    "Enabled": false
+  },
+  "ExchangeOnPrem": {
+    "Enabled": true
+  }
+}

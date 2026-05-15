@@ -1,0 +1,2 @@
+ActionType;AdObjectName;CurrentUserName;CurrentUserDomainName;CurrentUserEMailAddress
+Disable;svc_testuser03;admin;DOMAIN;admin@example.invalid

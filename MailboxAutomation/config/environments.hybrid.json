@@ -1,0 +1,13 @@
+{
+  "EnvironmentName": "Hybrid",
+  "ExchangeOnline": {
+    "Enabled": true,
+    "TenantDomain": "contoso.onmicrosoft.com",
+    "Organization": "contoso.onmicrosoft.com",
+    "AppId": "00000000-0000-0000-0000-000000000000",
+    "CertificateThumbprint": "0000000000000000000000000000000000000000"
+  },
+  "ExchangeOnPrem": {
+    "Enabled": true
+  }
+}

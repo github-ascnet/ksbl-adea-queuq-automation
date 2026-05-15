@@ -1,0 +1,530 @@
+{
+  "UseCases": [
+    {
+      "Name": "DistributionGroup.AddResponsibles",
+      "Pattern": "*AddDistributionListResponsibles*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/AddDistributionListResponsibles.psm1",
+      "Handler": "Invoke-AddDistributionListResponsibles",
+      "Queue": "standard",
+      "Priority": 200,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-DistributionsGroupJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "ManagedByMembers",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "DistributionGroup.Create",
+      "Pattern": "*CreateDistributionList*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/CreateDistributionGroup.psm1",
+      "Handler": "Invoke-CreateDistributionGroup",
+      "Queue": "standard",
+      "Priority": 210,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-DistributionsGroupJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "DisplayName",
+        "PrimarySmtpAddress",
+        "AdObjectName",
+        "OrgUnit",
+        "HideInAb",
+        "Manager",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "DistributionGroup.ChangeManager",
+      "Pattern": "*ChangeManagerDistribList*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/ChangeManagerDistribList.psm1",
+      "Handler": "Invoke-ChangeManagerDistribList",
+      "Queue": "standard",
+      "Priority": 220,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-DistributionsGroupJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "ManagerAdObjectName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "DistributionGroup.Delete",
+      "Pattern": "*DeleteDistribList*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/DeleteDistributionList.psm1",
+      "Handler": "Invoke-DeleteDistributionList",
+      "Queue": "standard",
+      "Priority": 230,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-DistributionsGroupJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "GroupMailbox.AddFmaMembers",
+      "Pattern": "*AddGroupMailboxFmaMembers*_pshjob_.csv",
+      "Module": "usecases/GroupMailbox/AddGroupMailboxFmaMembers.psm1",
+      "Handler": "Invoke-AddGroupMailboxFmaMembers",
+      "Queue": "standard",
+      "Priority": 110,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-GroupMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "FullAccessMembers",
+        "EnableSendAs",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GroupMailbox.Create",
+      "Pattern": "*CreateGroupMailbox*_pshjob_.csv",
+      "Module": "usecases/GroupMailbox/CreateGroupMailbox.psm1",
+      "Handler": "Invoke-CreateGroupMailbox",
+      "Queue": "standard",
+      "Priority": 100,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-GroupMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "DisplayName",
+        "FirstName",
+        "LastName",
+        "PrimarySmtpAddress",
+        "NewPrimaryEMailAddress",
+        "AdObjectName",
+        "OrgUnit",
+        "HideInAb",
+        "Manager",
+        "FullAccessMembers",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GroupMailbox.ChangeManager",
+      "Pattern": "*ChangeManagerGroupMailbox*_pshjob_.csv",
+      "Module": "usecases/GroupMailbox/ChangeManagerGroupMailbox.psm1",
+      "Handler": "Invoke-ChangeManagerGroupMailbox",
+      "Queue": "standard",
+      "Priority": 120,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-GroupMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "ManagerAdObjectName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "GenericUser.RenameAccount",
+      "Pattern": "*RenameUserAccount*_pshjob_.csv",
+      "Module": "usecases/GenericUser/RenameUserAccount.psm1",
+      "Handler": "Invoke-RenameUserAccount",
+      "Queue": "standard",
+      "Priority": 310,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "TargetAdObjectName",
+        "NewUserId",
+        "GivenName",
+        "SurName",
+        "NewPrimaryEMailAddress",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.ChangeSurname",
+      "Pattern": "*ChangeAccountSurname*_pshjob_.csv",
+      "Module": "usecases/GenericUser/ChangeAccountSurname.psm1",
+      "Handler": "Invoke-ChangeAccountSurname",
+      "Queue": "standard",
+      "Priority": 320,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "GivenName",
+        "SurName",
+        "NewPrimaryEMailAddress",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.Enable",
+      "Pattern": "*EnableNonStdPersonMailbox*_pshjob_.csv",
+      "Module": "usecases/GenericUser/EnableGenericUser.psm1",
+      "Handler": "Invoke-EnableGenericUser",
+      "Queue": "standard",
+      "Priority": 340,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.Disable",
+      "Pattern": "*DisableNonStdPersonMailbox*_pshjob_.csv",
+      "Module": "usecases/GenericUser/DisableGenericUser.psm1",
+      "Handler": "Invoke-DisableGenericUser",
+      "Queue": "standard",
+      "Priority": 350,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.AddEmailNickname",
+      "Pattern": "*AddEMailNickName*_pshjob_.csv",
+      "Module": "usecases/GenericUser/AddEmailNickname.psm1",
+      "Handler": "Invoke-AddEmailNickname",
+      "Queue": "standard",
+      "Priority": 330,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "NewPrimaryEMailAddress",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.CreateMultiFunction",
+      "Pattern": "*CreateMultiFunctionGenericUser*_pshjob_.csv",
+      "Module": "usecases/GenericUser/CreateMultiFunctionGenericUser.psm1",
+      "Handler": "Invoke-CreateMultiFunctionGenericUser",
+      "Queue": "standard",
+      "Priority": 300,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserGenericJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "TargetAdObjectName",
+        "TargetDomain",
+        "TargetUserAdDisplayname",
+        "TargetUserAdEmployeeType",
+        "Description",
+        "Manager",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.EnableAdAccountWithGracePeriod",
+      "Pattern": "*EnableAdAccountWithGracePeriod*_pshjob_.csv",
+      "Module": "usecases/GenericUser/EnableAdAccountWithGracePeriod.psm1",
+      "Handler": "Invoke-EnableAdAccountWithGracePeriod",
+      "Queue": "standard",
+      "Priority": 360,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-PersonMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "TargetAdObjectName",
+        "GracePeriod",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.ModifyMobilePhoneNumber",
+      "Pattern": "*ModifyMobilePhoneNumber*_pshjob_.csv",
+      "Module": "usecases/GenericUser/ModifyMobilePhoneNumber.psm1",
+      "Handler": "Invoke-ModifyMobilePhoneNumber",
+      "Queue": "standard",
+      "Priority": 370,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-PersonMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "MobileNumber",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+    {
+      "Name": "GenericUser.ModifyMailboxFolderAce",
+      "Pattern": "*ModifyMailboxFolderAce*_pshjob_.csv",
+      "Module": "usecases/GenericUser/ModifyMailboxFolderAce.psm1",
+      "Handler": "Invoke-ModifyMailboxFolderAce",
+      "Queue": "standard",
+      "Priority": 380,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-PersonMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "AdObjectName",
+        "MailboxFolderName",
+        "DelegatedAdObjectName",
+        "AclActionType",
+        "AclEntry",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "UserPerson.HospisPersonUseCase",
+      "Pattern": "*HospisPersonUseCase*_pshjob_.csv",
+      "Module": "usecases/UserPerson/HospisPersonUseCase.psm1",
+      "Handler": "Invoke-HospisPersonUseCase",
+      "Queue": "standard",
+      "Priority": 400,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UserPersonJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "PersId",
+        "DisplayName",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "Urgent.InactivateHospisPerson",
+      "Pattern": "*Inaktivieren_HospisPersonUrgentUseCase*_pshjob_.csv",
+      "Module": "usecases/Urgent/InactivateHospisPerson.psm1",
+      "Handler": "Invoke-InactivateHospisPerson",
+      "Queue": "urgent",
+      "Priority": 10,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-UrgentJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "PersId",
+        "DisplayName",
+        "MigrateUser",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "PersonMailbox.CreateNonStandard",
+      "Pattern": "*CreateNonStdPersonMailbox*_pshjob_.csv",
+      "Module": "usecases/PersonMailbox/CreateNonStdPersonMailbox.psm1",
+      "Handler": "Invoke-CreateNonStdPersonMailbox",
+      "Queue": "person-mailbox-longrunning",
+      "Priority": 10,
+      "SupportsPause": true,
+      "MaxParallelism": 1,
+      "Enabled": true,
+      "LegacyScript": "Process-PersonMailboxJobs.ps1",
+      "RequiredFields": [
+        "ActionType",
+        "TargetAdObjectName",
+        "TargetDomain",
+        "TargetDomainUserOU",
+        "TargetUserAdDisplayname",
+        "TargetUserAdGivenname",
+        "TargetUserAdSurname",
+        "TargetUserAdEmployeeType",
+        "TargetLocation",
+        "MailboxEnable",
+        "CurrentUserName",
+        "CurrentUserDomainName",
+        "CurrentUserEMailAddress"
+      ]
+    },
+
+    {
+      "Name": "GroupMailbox.ModifyFullAccess",
+      "Pattern": "*ModifyGroupMailboxFullAccess*_pshjob_.csv",
+      "Module": "usecases/GroupMailbox/ModifyGroupMailboxFullAccess.psm1",
+      "Handler": "Invoke-ModifyGroupMailboxFullAccess",
+      "Queue": "standard",
+      "Priority": 130,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "GroupMailbox.ModifySendAs",
+      "Pattern": "*ModifyGroupMailboxSendAs*_pshjob_.csv",
+      "Module": "usecases/GroupMailbox/ModifyGroupMailboxSendAs.psm1",
+      "Handler": "Invoke-ModifyGroupMailboxSendAs",
+      "Queue": "standard",
+      "Priority": 140,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "DistributionGroup.ModifyMembers",
+      "Pattern": "*ModifyDistributionGroupMembers*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/ModifyDistributionGroupMembers.psm1",
+      "Handler": "Invoke-ModifyDistributionGroupMembers",
+      "Queue": "standard",
+      "Priority": 215,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "DistributionGroup.ChangeOwner",
+      "Pattern": "*ChangeDistributionGroupOwner*_pshjob_.csv",
+      "Module": "usecases/DistributionGroup/ChangeDistributionGroupOwner.psm1",
+      "Handler": "Invoke-ChangeDistributionGroupOwner",
+      "Queue": "standard",
+      "Priority": 225,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Replaced by DistributionGroup.ChangeManager."
+    },
+    {
+      "Name": "UserPerson.RenameAccount",
+      "Pattern": "*RenameUserPersonAccount*_pshjob_.csv",
+      "Module": "usecases/UserPerson/RenameUserPersonAccount.psm1",
+      "Handler": "Invoke-RenameUserPersonAccount",
+      "Queue": "standard",
+      "Priority": 410,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "UserPerson.ChangeName",
+      "Pattern": "*ChangeUserPersonName*_pshjob_.csv",
+      "Module": "usecases/UserPerson/ChangeUserPersonName.psm1",
+      "Handler": "Invoke-ChangeUserPersonName",
+      "Queue": "standard",
+      "Priority": 420,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "UserPerson.AddEmailNickname",
+      "Pattern": "*AddUserPersonEmailNickname*_pshjob_.csv",
+      "Module": "usecases/UserPerson/AddUserPersonEmailNickname.psm1",
+      "Handler": "Invoke-AddUserPersonEmailNickname",
+      "Queue": "standard",
+      "Priority": 430,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "Urgent.MailboxPermissionChange",
+      "Pattern": "*UrgentMailboxPermissionChange*_pshjob_.csv",
+      "Module": "usecases/Urgent/UrgentMailboxPermissionChange.psm1",
+      "Handler": "Invoke-UrgentMailboxPermissionChange",
+      "Queue": "urgent",
+      "Priority": 20,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    },
+    {
+      "Name": "Urgent.RecipientAttributeChange",
+      "Pattern": "*UrgentRecipientAttributeChange*_pshjob_.csv",
+      "Module": "usecases/Urgent/UrgentRecipientAttributeChange.psm1",
+      "Handler": "Invoke-UrgentRecipientAttributeChange",
+      "Queue": "urgent",
+      "Priority": 30,
+      "SupportsPause": false,
+      "MaxParallelism": 1,
+      "Enabled": false,
+      "Note": "Not derived from current alt-scripts. Reserved for future use."
+    }
+  ]
+}
