@@ -25,12 +25,8 @@ function New-HomeDirectoryTestContext {
                 DefaultUserDomain        = 'EXAMPLE'
                 ApplicationDirectoryShare = '\\fileserver\Appdata$'
                 DesktopDirectoryShare     = '\\fileserver\Desktop$'
-<<<<<<< HEAD
                 DfsRootNamePattern       = '*\HomeDrives'
                 DeletedHomeDirectoryMarker = '.delete_manually_user_left_company'
-=======
-                DfsUtilPath              = 'd:\iam\dfsutil.exe'
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
             }
         }
         Services   = [pscustomobject]@{}
@@ -81,24 +77,15 @@ Describe 'UserHomeDirectoryService legacy migration' {
         $result.Output.Action | Should -Be 'Set-LegacyHomeDirectoryAcl'
     }
 
-<<<<<<< HEAD
     It 'Set-UserHomeDirectoryAndDfsTarget simulates home target selection, DFSN folder target, home ACL and application/desktop permissions' {
         $context = New-HomeDirectoryTestContext
         $result = Set-UserHomeDirectoryAndDfsTarget -Context $context -Data ([pscustomobject]@{ Identity = 'ex01234'; UserPrincipalDomain = 'EXAMPLE' })
-=======
-    It 'Update-UserLegacyDfsShareSettings simulates Get-HomeDrive, home ACL, dfsutil and application/desktop permissions' {
-        $context = New-HomeDirectoryTestContext
-        $result = Update-UserLegacyDfsShareSettings -Context $context -Data ([pscustomobject]@{ Identity = 'ex01234'; UserPrincipalDomain = 'EXAMPLE' })
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
         $result.Success | Should -BeTrue
         $result.Simulated | Should -BeTrue
         $result.Output.Action | Should -Be 'Update-DfsShareSettings'
         @($result.Output.Operations).Count | Should -BeGreaterThan 2
         @($result.Output.Operations | Where-Object { $_.Action -eq 'Set-DfsPath' }).Count | Should -Be 1
-<<<<<<< HEAD
         @($result.Output.Operations | Where-Object { $_.Action -eq 'Set-DfsPath' }).Provider | Should -Be 'DFSN'
-=======
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
         @($result.Output.Operations | Where-Object { $_.Action -eq 'Set-LegacyApplicationDirectoryAcl' }).Count | Should -Be 2
     }
 
@@ -108,7 +95,6 @@ Describe 'UserHomeDirectoryService legacy migration' {
         $result.unc_path | Should -Be '\\fileserver\home_a'
         $result.Source | Should -Be 'Config.DefaultTargetRoot'
     }
-<<<<<<< HEAD
 
     It 'Set-DfsPathSafe uses DFSN provider in WhatIf mode and does not call dfsutil.exe' {
         $context = New-HomeDirectoryTestContext
@@ -127,20 +113,12 @@ Describe 'UserHomeDirectoryService legacy migration' {
 }
 
 
-=======
-}
-
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
 Describe 'PersonMailbox finalization DFS migration' {
     It 'Complete-NonStandardPersonMailboxProvisioning advertises legacy DFS finalization in WhatIf output' {
         $context = New-HomeDirectoryTestContext
         $context | Add-Member -NotePropertyName Services -NotePropertyValue ([pscustomobject]@{
             UserHomeDirectory = [pscustomobject]@{
-<<<<<<< HEAD
                 UpdateDfsShares = { param($Context, $Data) Set-UserHomeDirectoryAndDfsTarget -Context $Context -Data $Data }
-=======
-                UpdateDfsShares = { param($Context, $Data) Update-UserLegacyDfsShareSettings -Context $Context -Data $Data }
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
             }
         }) -Force
 
