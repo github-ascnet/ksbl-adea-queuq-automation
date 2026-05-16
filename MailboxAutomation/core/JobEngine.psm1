@@ -218,6 +218,16 @@ function New-ServiceContainer {
             SubmitTransaction  = { param($Context, $Data) Submit-HospisPersonTransaction -Context $Context -Data $Data }
             UrgentInactivation = { param($Context, $Data) Invoke-UrgentHospisPersonInactivation -Context $Context -Data $Data }
         }
+        # Services für HomeDirectory-, DFS- und Legacy-ACL-Operationen.
+        # Diese Ebene kapselt die aus Process-PersonMailboxJobs.ps1 migrierte
+        # Logik für Get-HomeDrive, Run-DfsUtil, Set-UserHomeDirPermissions,
+        # Set-UserApplicationDrivePermissions und Update-DfsShareSettings.
+        UserHomeDirectory = [pscustomobject]@{
+            SetHomeDirectory = { param($Context, $Data) Set-UserHomeDirectory -Context $Context -Data $Data }
+            SetPermissions   = { param($Context, $Data) Set-UserHomeDirectoryPermissions -Context $Context -Data $Data }
+            UpdateDfsShares  = { param($Context, $Data) Update-UserLegacyDfsShareSettings -Context $Context -Data $Data }
+        }
+
         # Services für den einzigen LongRunning-UseCase:
         # PersonMailbox.CreateNonStandard.
         #

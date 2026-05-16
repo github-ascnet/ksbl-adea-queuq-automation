@@ -69,7 +69,7 @@ function Update-MailboxAttributes ($workingFileEntry) {
         $sourceMailbox = Get-Mailbox $($workingFileEntry.TargetAdObjectName) -DomainController $dc -ErrorAction SilentlyContinue
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting Mailbox for User $($workingFileEntry.TargetAdObjectName) from Exchange: $msg " -EntryType Error                        
     }
@@ -109,7 +109,7 @@ function Update-AdAttributes ($workingFileEntry) {
         Set-ADUser $($workingFileEntry.TargetAdObjectName) -Enabled $true -Server $dc
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error enabilng User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
     }
@@ -120,7 +120,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -DisplayName $($workingFileEntry.TargetUserAdDisplayname)
         }
         catch {
-    ([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute DisplayName for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -131,7 +131,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -HomeDirectory "$homeDirectory\$($workingFileEntry.TargetAdObjectName)" 
         }
         catch {
-    ([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute HomeDirectory for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -140,7 +140,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -HomeDrive $global:homeDirectoryDrive
         }
         catch {
-    ([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute HomeDrive for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -150,7 +150,7 @@ function Update-AdAttributes ($workingFileEntry) {
         Set-ADUser $($workingFileEntry.TargetAdObjectName) -StreetAddress $streetAddress -PostalCode $zipCode -City $city -State $state -Country $country -Company $company
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute StreetAddress for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
     }
@@ -160,7 +160,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -Department $($workingFileEntry.TargetUserAdDepartment)
         }
         catch {
-([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute Department for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -172,7 +172,7 @@ function Update-AdAttributes ($workingFileEntry) {
                 Set-ADUser $($workingFileEntry.TargetAdObjectName) -EmployeeID $($workingFileEntry.TargetUserAdEmployeeId)
             }
             catch {
-    ([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute EmployeeID for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
             }
@@ -184,7 +184,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"employeeType" = $($workingFileEntry.TargetUserAdEmployeeType) }
         }
         catch {
-([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute EmployeeType for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -196,7 +196,7 @@ function Update-AdAttributes ($workingFileEntry) {
                 Set-ADUser $($workingFileEntry.TargetAdObjectName) -add @{"ExtensionAttribute14" = $($workingFileEntry.TargetUserBirtdayDate) }
             }
             catch {
-    ([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute ExtensionAttribute14 for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
             }
@@ -208,7 +208,7 @@ function Update-AdAttributes ($workingFileEntry) {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -Company  $($workingFileEntry.TargetExternalCompany)
         }
         catch {
-([Exception])
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute Company for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -218,7 +218,7 @@ function Update-AdAttributes ($workingFileEntry) {
         Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"kisAccountName" = $($workingFileEntry.TargetAdObjectName) }
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute kisAccountName for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
     }
@@ -226,7 +226,9 @@ function Update-AdAttributes ($workingFileEntry) {
     if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "P" -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "E" -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "HNP") {
         try {
             Set-ADUser $($workingFileEntry.TargetAdObjectName) -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($global:upnDomainName)"
-        } catch {([Exception])
+        }
+        catch {
+            ([Exception])
             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Attribute UserPrincipalName for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
         }
@@ -238,7 +240,8 @@ function Update-AdAttributes ($workingFileEntry) {
             try {
                 Add-ADGroupMember -Identity "GG-OneSign" -Members $($workingFileEntry.TargetAdObjectName) -Server $dc
             }
-            catch { ([Exception])
+            catch {
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error adding User $($workingFileEntry.TargetAdObjectName) into group GG-OneSign: $msg " -EntryType Error                  
             }
@@ -248,13 +251,69 @@ function Update-AdAttributes ($workingFileEntry) {
             try {
                 Add-ADGroupMember -Identity "GG-VDI8-Produktiv-WIN10" -Members $($workingFileEntry.TargetAdObjectName) -Server $dc
             }
-            catch { ([Exception])
+            catch {
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error adding User $($workingFileEntry.TargetAdObjectName) into group GG-VDI8-Produktiv-WIN10: $msg " -EntryType Error                  
             }
         }    
     }
 }
+
+function Set-TenantState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [Microsoft.ActiveDirectory.Management.ADUser] $User,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("TenantEnable", "TenantDisable")]
+        [string] $Mode,
+
+        [Parameter(Mandatory = $true)]
+        [string] $CloudDomain
+    )
+
+    # AD Attribute
+    $Attr_EntraFlag = "msDS-cloudExtensionAttribute15"
+    $Attr_DisableMarker = "extensionAttribute6"
+
+    $dn = $User.DistinguishedName
+    $mail = $User.mail
+
+    switch ($Mode) {
+
+        "TenantEnable" {
+
+            if (-not ($mail -and $mail -match "@")) {
+                Write-Host "User $($User.SamAccountName): Ungueltiges oder fehlendes mail-Attribut."
+                return;    
+            }
+
+            # Cloud-Proxyadresse generieren
+            $localPart = $mail.Split("@")[0].ToLower()
+            $cloudProxy = "smtp:$localPart@$CloudDomain"
+
+            # Proxy-Adresse hinzufügen
+            if ($User.proxyAddresses -notcontains $cloudProxy) {
+                Set-ADUser -Identity $dn -Add @{ proxyAddresses = $cloudProxy }
+            }
+
+            # Entra-Attribute setzen
+            Set-ADUser -Identity $dn -Replace @{
+                $Attr_EntraFlag     = "EntraEnabled"
+                $Attr_DisableMarker = "EntraDisable"
+            }
+        }
+
+        "TenantDisable" {
+
+            # Attribute löschen
+            Set-ADUser -Identity $dn -Clear $Attr_EntraFlag, $Attr_DisableMarker
+        }
+    }
+}
+
 
 <#
 function Manage-VdiPodGroupMemberships ($userLocation, $migratedForestUserObject) {
@@ -324,7 +383,7 @@ function Manage-VdiPodGroupMemberships ($userLocation, $migratedForestUserObject
 #>
 
 function Get-HomeDrive() {
-  <#
+    <#
       .SYNOPSIS
       Gets the HomeDrive with the least utilization
       .DESCRIPTION
@@ -335,75 +394,70 @@ function Get-HomeDrive() {
       Version:       1.1
   #>
 
-  #------------------------------------
-  $fs_server = @(
-    'sv01005.ksbl.local'
-    'sv01006.ksbl.local'
-  )
-  #------------------------------------
+    #------------------------------------
+    $fs_server = @(
+        'sv01005.ksbl.local'
+        'sv01006.ksbl.local'
+    )
+    #------------------------------------
 
-  $home_targets = @()
+    $home_targets = @()
 
-  $fs_shares = @{}
-  foreach($server in $fs_server)
-  {
-    $fs_shares += @{ $server = @() }
-    $wmi_params = @{
-      Class  = 'Win32_Share'
-      Filter = "Name like 'home[_][a-z]$'"
-      ComputerName = $server
+    $fs_shares = @{}
+    foreach ($server in $fs_server) {
+        $fs_shares += @{ $server = @() }
+        $wmi_params = @{
+            Class        = 'Win32_Share'
+            Filter       = "Name like 'home[_][a-z]$'"
+            ComputerName = $server
+        }
+        Get-WmiObject @wmi_params | ForEach-Object {
+            $fs_shares[$server] += @{
+                name = $_.Name
+                path = $_.Path
+            }
+        }
     }
-    Get-WmiObject @wmi_params | ForEach-Object {
-      $fs_shares[$server] += @{
-        name = $_.Name
-        path = $_.Path
-      }
+
+    foreach ($server in $fs_shares.Keys) {
+        foreach ($share in $fs_shares[$server]) {
+            $wmi_params = @{
+                Class        = 'Win32_LogicalDisk'
+                Filter       = "DeviceID='{0}'" -f $share.path.Substring(0, 2)
+                ComputerName = $server
+            }  
+            $disc = Get-WmiObject @wmi_params
+            $share.unc = '\\{0}\{1}' -f $server, $share.name
+            if (Test-Path -Path $share.unc) {
+                $dir_count = (Get-ChildItem -Path $share.unc).Count
+            }
+            else {
+                $dir_count = 1
+            }
+            #$disc_size = [math]::Round($disc.Size /1024/1024/1024);
+            #$disc_size = $disc.Size;
+            #$free_space = [math]::Round($disc.FreeSpace /1024/1024/1024);
+            $free_space = $disc.FreeSpace
+            $dir_points = ($dir_count * 1024 * 1024 * 1024) * 10 # 10 GB for each folder
+            $home_targets += @{
+                'server'     = $server
+                'path'       = $share.path
+                'unc_path'   = $share.unc
+                'name'       = $share.name
+                #'disc_size' = $disc_size;
+                'free_space' = $free_space / 1GB
+                'dir_count'  = $dir_count
+                'Points'     = $free_space - $dir_points
+            }
+        }
     }
-  }
 
-  foreach($server in $fs_shares.Keys)
-  {
-    foreach($share in $fs_shares[$server])
-    {
-      $wmi_params = @{
-        Class  = 'Win32_LogicalDisk'
-        Filter = "DeviceID='{0}'" -f $share.path.Substring(0, 2)
-        ComputerName = $server
-      }  
-      $disc = Get-WmiObject @wmi_params
-      $share.unc = '\\{0}\{1}' -f $server, $share.name
-      if(Test-Path -Path $share.unc)
-      {
-        $dir_count = (Get-ChildItem -Path $share.unc).Count
-      }
-      else
-      {
-        $dir_count = 1
-      }
-      #$disc_size = [math]::Round($disc.Size /1024/1024/1024);
-      #$disc_size = $disc.Size;
-      #$free_space = [math]::Round($disc.FreeSpace /1024/1024/1024);
-      $free_space = $disc.FreeSpace
-      $dir_points = ($dir_count * 1024 * 1024 * 1024) * 10 # 10 GB for each folder
-      $home_targets += @{
-        'server' = $server
-        'path' = $share.path
-        'unc_path' = $share.unc
-        'name' = $share.name
-        #'disc_size' = $disc_size;
-        'free_space' = $free_space/1GB
-        'dir_count' = $dir_count
-        'Points' = $free_space - $dir_points
-      }
-    }
-  }
+    $sort1 = @{Expression = 'Points'; Descending = $true };
+    $sort2 = @{Expression = 'name'; Ascending = $true };
 
-  $sort1 = @{Expression='Points'; Descending=$true };
-  $sort2 = @{Expression='name'; Ascending=$true };
+    #$home_targets | ForEach-Object { [PSCustomObject]$_ } | Sort-Object $sort1, $sort2 | Out-GridView
 
-  #$home_targets | ForEach-Object { [PSCustomObject]$_ } | Sort-Object $sort1, $sort2 | Out-GridView
-
-  return $home_targets | ForEach-Object { [PSCustomObject]$_ } | Sort-Object $sort1, $sort2 | Select-Object -First 1
+    return $home_targets | ForEach-Object { [PSCustomObject]$_ } | Sort-Object $sort1, $sort2 | Select-Object -First 1
 }
 
 function Run-DfsUtil($cmdLineArguments) {
@@ -656,7 +710,7 @@ function Validate-EMailAddress {
                     }
                 }
                 catch {
-([Exception])
+                    ([Exception])
                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error retrieving unique Mail Address $($mailAddress) for multiple times: $msg " -EntryType Error                  
                 }
@@ -670,7 +724,7 @@ function Validate-EMailAddress {
 
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error retrieving unique Mail Address $($mailAddress): $msg " -EntryType Error                  
     }
@@ -791,7 +845,7 @@ function Send-EMail {
 
     }
     catch {
-([Exception])
+        ([Exception])
         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
         Write-EventLog $global:logName -Source $global:logSourceName -EventId 300 -Message "Error sending Summary-Mail $($mailSubject): $msg " -EntryType Error                  
     }
@@ -913,7 +967,8 @@ function LdapSearchFilterForAccount($workingFileEntry) {
 
         if ([string]::IsNullOrEmpty($($workingFileEntry.TargetAdObjectName)) -eq $false) {
             return "(&(sAMAccountType=805306368)(samaccountname=$($workingFileEntry.TargetAdObjectName))(employeeType=E))"
-        } else {
+        }
+        else {
             return $null
         }
     }
@@ -922,7 +977,8 @@ function LdapSearchFilterForAccount($workingFileEntry) {
 
         if (-not [string]::IsNullOrEmpty($($workingFileEntry.TargetUserAdEmployeeId))) {
             return "(&(sAMAccountType=805306368)(employeeid=$($workingFileEntry.TargetUserAdEmployeeId)))"
-        } else {
+        }
+        else {
             return $null
         }
     }
@@ -949,7 +1005,8 @@ function LdapSearchFilterForAccount($workingFileEntry) {
             else {
                 return $null
             }
-        } else {
+        }
+        else {
             if ([string]::IsNullOrEmpty($($workingFileEntry.TargetAdObjectName)) -eq $false) {
                 return "(&(sAMAccountType=805306368)(samaccountname=$($workingFileEntry.TargetAdObjectName))(employeeType=S))"
             }
@@ -960,37 +1017,6 @@ function LdapSearchFilterForAccount($workingFileEntry) {
 
     }
 
-}
-
-# Funktion für das Setzen von AD-Attributen mit Fehlerbehandlung
-function Set-AdUserWithErrorHandling {
-    param(
-        [string]$userName,
-        [string]$attribute,
-        [string]$value,
-        [string]$description = ""
-    )
-    try {
-        Set-ADUser $userName -replace @{ $attribute = $value } -Description $description
-    } catch {
-        $msg = If ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting $attribute for User $userName: $msg" -EntryType Error
-    }
-}
-
-# Funktion zur Aktualisierung des Benutzer-Postfachs
-function Update-Mailbox {
-    param (
-        [string]$userName,
-        [string]$newEmail
-    )
-    try {
-        $mailboxDatabase = $defaultMailboxDbs | Get-Random
-        Enable-Mailbox -Identity $userName -Database $mailboxDatabase -PrimarySmtpAddress $newEmail -DisplayName $userName
-    } catch {
-        $msg = If ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error enabling Mailbox for User $userName: $msg" -EntryType Error
-    }
 }
 
 cls
@@ -1043,12 +1069,12 @@ $global:upnDomainName = "ksbl.ch"
 
 try {
     $global:defaultMailboxDbs = $null
-    $mailboxDbLdapFilter = "(&(objectClass=msExchPrivateMDB)(!(name=MAILDB-NODAG))(!name=maildb101)(!name=maildb102)(!name=maildb103)(!name=Mailbox Database*)(!name=MBXDB*))"
+    $mailboxDbLdapFilter = "(&(objectClass=msExchPrivateMDB)(!(name=MAILDB-NODAG))(!name=maildb101)(!name=maildb102)(!name=maildb103)(!name=Mailbox Database*)(!name=maildb*))"
     $global:defaultMailboxDbs = (New-Object System.DirectoryServices.DirectorySearcher([ADSI]"LDAP://CN=Databases,$($global:exchAdminGroupDn)", $mailboxDbLdapFilter, @('name'))).FindAll() | % { $_.Path.Split(',')[0].Split('=')[1] } 
     #$global:defaultMailboxDbs = @("MAILDB05","MAILDB07","MAILDB06","MAILDB08","MAILDB09","MAILDB11","MAILDB13","MAILDB15","MAILDB10","MAILDB12","MAILDB14","MAILDB16")
 } 
 catch {
-([Exception])
+    ([Exception])
     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
     Write-EventLog $global:logName -Source $global:logSourceName -EventId 400 -Message "Error retrieving Exchange Mailbox Databases from $($global:exchAdminGroupDn): $msg " -EntryType Error                  
     Exit
@@ -1058,7 +1084,7 @@ try {
     $dc = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().RidRoleOwner.Name
 } 
 catch {
-([Exception])
+    ([Exception])
     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
     Write-EventLog $global:logName -Source $global:logSourceName -EventId 400 -Message "Error retrieving RidRoleOwner Domain-Controller from Active-Directory: $msg " -EntryType Error                  
     Exit
@@ -1068,7 +1094,7 @@ try {
     $primaryUserDomain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().Name
 } 
 catch {
-([Exception])
+    ([Exception])
     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
     Write-EventLog $global:logName -Source $global:logSourceName -EventId 400 -Message "Error retrieving primary User Domain from Active-Directory: $msg " -EntryType Error                  
     Exit
@@ -1076,10 +1102,11 @@ catch {
 
 try {
     #$primaryMailDomain = (([ADSI]"LDAP://CN=Default Policy,CN=Recipient Policies,CN=KSBL,CN=Microsoft Exchange,CN=Services,$(([ADSI]”LDAP://rootdse”).ConfigurationNamingContext)").gatewayProxy | Where-Object { [regex]::IsMatch($_, '^SMTP:') }).split('@')[1]
-	$primaryMailDomain = "ksbl.ch"
+    $primaryMailDomain = "ksbl.ch"
+    $cloudDomain = "kantonsspitalbl.mail.onmicrosoft.com"
 } 
 catch {
-([Exception])
+    ([Exception])
     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
     Write-EventLog $global:logName -Source $global:logSourceName -EventId 400 -Message "Error retrieving primary Mail Domain  from Active-Directory: $msg " -EntryType Error                  
     Exit
@@ -1093,7 +1120,7 @@ try {
     }
 }
 catch {
-([Management.Automation.Remoting.PSRemotingTransportException], [Exception])
+    ([Management.Automation.Remoting.PSRemotingTransportException], [Exception])
     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
     Write-EventLog $global:logName -Source $global:logSourceName -EventId 500 -Message "Exit Script! Error creating a new Remote Exchange Powershell Connection: $msg " -EntryType Error                  
     #Exit
@@ -1185,13 +1212,15 @@ foreach ($jobToProcess in $filesToProcess) {
                 $displayname = "$($givenName) $($surName)"
                 $workingFileEntry.TargetUserAdDisplayname = $displayname
 
-            } elseif ($($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+            }
+            elseif ($($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
                 $surName = Replace-IllegalChars -stringToConvert $($workingFileEntry.TargetUserAdSurname)
                 $givenName = Replace-IllegalChars -stringToConvert $($workingFileEntry.TargetUserAdGivenname)
                 $displayname = "Admin $($surName) $($givenName)"
                 $workingFileEntry.TargetUserAdDisplayname = $displayname
 
-            } else {
+            }
+            else {
                 $surName = Replace-IllegalChars -stringToConvert $($workingFileEntry.TargetUserAdSurname)
                 $givenName = Replace-IllegalChars -stringToConvert $($workingFileEntry.TargetUserAdGivenname)
                 $displayname = "$($surName) $($givenName)"
@@ -1202,73 +1231,627 @@ foreach ($jobToProcess in $filesToProcess) {
 
             if ($null -eq $ldapFilter) {
                 $resourceForestAccount = $null
-            } else {
+            }
+            else {
                 try {
                     $ds = New-Object System.DirectoryServices.DirectorySearcher([ADSI]"LDAP://$dc", $ldapFilter, @('samaccountname', 'displayName', 'distinguishedName', 'extensionAttribute11', 'mail'))
                     $resourceForestAccount = $ds.FindOne()            
-                } catch {([Exception])
+                }
+                catch {
+                    ([Exception])
                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error retrieving User $($workingFileEntry.TargetAdObjectName) using LDAP-Filter $($ldapFilter): $msg " -EntryType Error                  
                 }                
             }
 
+            if ($resourceForestAccount -ne $null `
+                    -and $($workingFileEntry.TargetUserAdEmployeeType) -ne "A" `
+                    -and $workingFileEntry.TargetUserAdEmployeeType -ne "E") {
 
-            # Benutzerattribut setzen und Fehlerbehandlung durchführen
-            if ($resourceForestAccount -ne $null -and $workingFileEntry.TargetUserAdEmployeeType -notin @("A", "E")) {
-                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -EntryType Warning -Message "User $($displayname) matches with AD User $($resourceForestAccount.Properties["displayName"]) ($($workingFileEntry.TargetAdObjectName)) hence we'll update the existing AD object."
-    
-                # Attribut setzen
-                Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "samaccountname" -value $resourceForestAccount.Properties["samaccountname"]
-                Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "Description" -value "Updated am $(get-date -Format 'yyyy-MM-dd') von $($workingFileEntry.CurrentUserName)"
-    
-                # Weitere Einstellungen für HNP
-                if ($workingFileEntry.TargetUserAdEmployeeType -eq "HNP") {
-                    Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "PasswordNeverExpires" -value $true
-                    Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "Title" -value "Hausarzt"
-                    Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "AccountExpirationDate" -value (Get-Date).AddDays(-1)
+                Write-EventLog $global:logName -Source $global:logSourceName `
+                    -EventId 6000 `
+                    -entryType Warning `
+                    -Message  "User $($displayname) matches with AD User $($resourceForestAccount.Properties["displayName"]) ($($workingFileEntry.TargetAdObjectName)) hence we'll update the existing AD object."                        
+
+                $workingFileEntry.TargetAdObjectName = $($resourceForestAccount.Properties["samaccountname"])
+
+                Update-AdAttributes -workingFileEntry $workingFileEntry
+                Update-DfsShareSettings -samAccountName $workingFileEntry.TargetAdObjectName
+
+                if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "HNP") {
+
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Updated am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Description for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
                 }
+                else {
 
-                # E-Mail aktivieren
-                if ($workingFileEntry.MailboxEnable) {
-                    $newEmail = Validate-EMailAddress -mailDomain $primaryMailDomain -givenName $givenName -surName $surName
-                    Update-Mailbox -userName $workingFileEntry.TargetAdObjectName -newEmail $newEmail
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -PasswordNeverExpires $true -Title "Hausarzt"
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting PasswordNeverExpires for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+
+                    try {
+                        Set-ADAccountExpiration $($workingFileEntry.TargetAdObjectName) -DateTime (Get-Date).AddDays(-1)
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting ADAccountExpiration for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Hausarzt Notfall Praxis (HNP) (Ohne Adressbuch) - Updated am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                                                    
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Description for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+                }
+                
+                if ($resourceForestAccount.Properties["ExtensionAttribute11"] -eq "Hospis2AdDeleted") {
+                    
+                    try {
+                        Set-ADUser $($resourceForestAccount.Properties["samAccountname"]) -Clear extensionattribute11 -Server $dc   
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error clearing extensionattribute11 for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+                    
+                    if ($($workingFileEntry.TargetAdObjectName).StartsWith("ex") -eq $true) {
+                        
+                        try {
+                            Move-ADObject (Get-ADUser $($resourceForestAccount.Properties["samAccountname"])).distinguishedName -TargetPath $externalUserOu
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error moving User $($resourceForestAccount.Properties["samAccountname"]) to $($externalUserOu): $msg " -EntryType Error                  
+                        }
+                    }
+                    else {
+                        
+                        try {
+                            Move-ADObject (Get-ADUser $($resourceForestAccount.Properties["samAccountname"])).distinguishedName -TargetPath $internalUserOu        
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error moving User $($resourceForestAccount.Properties["samAccountname"]) to $($internalUserOu): $msg " -EntryType Error                  
+                        }
+                    }
                 }
 
                 Write-Host "Successfully updated PersonMailbox $displayname as $($workingFileEntry.TargetAdObjectName) in $($workingFileEntry.TargetUserDomainOU)" -ForegroundColor Green
+               
+                #if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "HNP") {
+                if ($($workingFileEntry.MailboxEnable) -eq $true) {
+
+                    try {
+                        $sourceMailbox = Get-Mailbox $($workingFileEntry.TargetAdObjectName) -DomainController $dc -ErrorAction SilentlyContinue
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting Mailbox for User $($workingFileEntry.TargetAdObjectName) from Exchange: $msg " -EntryType Error                        
+                    }
+
+                    if ([string]::IsNullOrEmpty($sourceMailbox)) {
+
+                        $newPrimaryEMail = Validate-EMailAddress -mailDomain $primaryMailDomain -givenName $givenName -surName $surName
+                        Write-Host "Enabling Mailbox $displayname with E-Mail $newPrimaryEMail as $($workingFileEntry.TargetAdObjectName) in $targetMailUserOU"
+                        
+                        try {
+
+                            $mailboxDatabase = $defaultMailboxDbs | Get-Random                            
+
+                            Enable-Mailbox `
+                                -Identity $($workingFileEntry.TargetAdObjectName) `
+                                -Database $mailboxDatabase `
+                                -PrimarySmtpAddress $newPrimaryEMail `
+                                -DisplayName $displayname `
+                                -Alias $($workingFileEntry.TargetAdObjectName) `
+                                -DomainController $dc
+
+                        }
+                        catch [System.Exception] {
+                            if ($_.Exception.InnerException) { $errorMsg = $($_.Exception.InnerException.Message) } else { $errorMsg = $($_.Exception.Message) }
+
+                            Write-EventLog $global:logName -Source $global:logSourceName `
+                                -EventId 6000 `
+                                -entryType Error `
+                                -Message  "An error occurred while creating Mailbox $($workingFileEntry.TargetAdObjectName) ($errorMsg). We'll terminate this time..."                        
+
+                            $htmlBody += "Während dem aktivieren des Benutzer-Postfaches <b> $($workingFileEntry.TargetAdObjectName) </b> ist folgender Fehler aufgetreten: <b> $($errorMsg) </b><br/><br/>"    
+                            
+                            Send-EMail -smtpHost $smtpHost -mailFrom $mailFrom -mailTo $($workingFileEntry.CurrentUserEMailAddress) -mailCc $mailCc `
+                                -mailSubject "*** Auftrag - Fehler beim Aktivieren einer 'nicht standardisierten' Personenmailbox ***" `
+                                -mailBody $htmlBody `
+                                -attachment $null `
+                                Exit                                     
+                        }
+                        
+                        Start-Sleep -Seconds 30
+                    }
+
+                    Update-MailboxAttributes -workingFileEntry $workingFileEntry
+                    Write-Host "Successfully updated PersonMailbox $displayname as $($workingFileEntry.TargetAdObjectName) in $($workingFileEntry.TargetUserDomainOU)" -ForegroundColor Green
+                
+                }                
+                
+                #if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "HNP") {
+                if ($($workingFileEntry.MailboxEnable) -eq $true) {
+                    $htmlBody += "Das Postfach <b> $displayname </b> mit der E-Mail $newPrimaryEMail und Login Name $($workingFileEntry.TargetAdObjectName) im AD Container $($workingFileEntry.TargetUserDomainOU) wurde erfolgreich ergänzt.<br/><br/>"                
+                }
+                else {
+                    $htmlBody += "Der Benutzer <b> $displayname </b> mit dem Login Name $($workingFileEntry.TargetAdObjectName) im AD Container $($workingFileEntry.TargetUserDomainOU) wurde erfolgreich ergänzt.<br/><br/>"
+                }
             }
 
-            # Neue AD-Objekte erstellen
-            if ($resourceForestAccount -eq $null -or $workingFileEntry.TargetUserAdEmployeeType -in @("A", "E")) {
-                $nextAvailableSamAccountName = Get-NextAvailableSamAccountName -localForestDomainController $dc -employeeType ([EmployeeType]::EXTERNAL)
+            if ($resourceForestAccount -eq $null `
+                    -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "A" `
+                    -or $workingFileEntry.TargetUserAdEmployeeType -eq "E") {
+                
+                if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S" -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+                    
+                    $nextAvailableSamAccountName = $workingFileEntry.TargetAdObjectName
+
+                }
+                else {
+                    if ($($workingFileEntry.TargetAdObjectName).StartsWith("us") -eq $true) {
+                        $nextAvailableSamAccountName = Get-NextAvailableSamAccountName -localForestDomainController $dc -employeeType ([EmployeeType]::INTERNAL)
+                    }
+                    else {
+                        $nextAvailableSamAccountName = Get-NextAvailableSamAccountName -localForestDomainController $dc -employeeType ([EmployeeType]::EXTERNAL)
+                    }
+
+                    if ($nextAvailableSamAccountName -ne $($workingFileEntry.TargetAdObjectName)) {
+                        $workingFileEntry.TargetAdObjectName = $nextAvailableSamAccountName
+                        if ($($workingFileEntry.TargetAdObjectName).StartsWith("us") -eq $true) {
+                            try {
+                                $sql = "UPDATE [KSBL_IAM].[dbo].[Configuration] SET [InternalUserId] = '$nextAvailableSamAccountName' WHERE Id = 1"
+                                Invoke-Sqlcmd -Query $sql -ServerInstance $dbServer
+                            }
+                            catch {
+                                ([System.Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Failed executing SQL-Stmt $($sql): $msg " -EntryType Error                          	
+                            }
+
+                        }
+                        else {
+                            try {
+                                $sql = "UPDATE [KSBL_IAM].[dbo].[Configuration] SET [ExternalUserId] = '$nextAvailableSamAccountName' WHERE Id = 1"
+                                Invoke-Sqlcmd -Query $sql -ServerInstance $dbServer
+                            }
+                            catch {
+                                ([System.Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Failed executing SQL-Stmt $($sql): $msg " -EntryType Error                          	
+                            }
+                        }
+                    }
+                }
+                
+                Write-EventLog $global:logName -Source $global:logSourceName `
+                    -EventId 6000 `
+                    -entryType Information `
+                    -Message  "User $($displayname) has no match with an existing AD User hence, we'll create a new AD object named ($($nextAvailableSamAccountName))."                        
+
                 $workingFileEntry.TargetAdObjectName = $nextAvailableSamAccountName
-                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -entryType Information -Message "User $($displayname) has no match with an existing AD User hence, we'll create a new AD object named ($($nextAvailableSamAccountName))."
-    
-                # Setzen von AD-Attributen für das neue AD-Objekt
-                Set-AdUserWithErrorHandling -userName $workingFileEntry.TargetAdObjectName -attribute "Description" -value "Erstellt am $(get-date -Format 'yyyy-MM-dd') von $($workingFileEntry.CurrentUserName)"
-    
-                # Mailbox erstellen
-                if ($workingFileEntry.MailboxEnable) {
-                    $newEmail = Validate-EMailAddress -mailDomain $primaryMailDomain -givenName $givenName -surName $surName
-                    Update-Mailbox -userName $workingFileEntry.TargetAdObjectName -newEmail $newEmail
+                $usr = $workingFileEntry.TargetAdObjectName
+
+                if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S" -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+                    $newPwd = [System.Web.Security.Membership]::GeneratePassword(10, 2)
+                }
+                else {
+                    $newPwd = $usr.Substring(0, 1).toupper() + $usr.Substring(1, 1) + "@" + $usr.substring($usr.length - 5, 5)
+                }
+                $Password = ConvertTo-SecureString -string $newPwd -AsPlainText -Force
+
+                #if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "HNP") {
+                if ($($workingFileEntry.MailboxEnable) -eq $true) {
+                        
+                    try {
+
+                        $mailboxDatabase = $defaultMailboxDbs | Get-Random                            
+                        $newPrimaryEMail = Validate-EMailAddress -mailDomain $primaryMailDomain -givenName $givenName -surName $surName
+                        
+                        if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+                            if ($global:ServiceAccountType -eq [EmployeeType]::MANAGED_SERVICE) {
+                                $organizationalUnit = $managedServiceUserOu
+                            }
+                            else {
+                                $organizationalUnit = $serviceUserOu
+                            }
+                        }
+                        else {
+                            if ($($workingFileEntry.TargetAdObjectName).StartsWith("ex") -eq $true) {
+                                $organizationalUnit = $externalUserOu
+                            }
+                            else {
+                                $organizationalUnit = $internalUserOu
+                            }
+                        }
+                        
+                        Write-Host "Creating Mailbox $displayname with E-Mail $newPrimaryEMail as $($workingFileEntry.TargetAdObjectName)"
+
+                        if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+                            New-Mailbox `
+                                -Database $mailboxDatabase `
+                                -PrimarySmtpAddress $newPrimaryEMail `
+                                -SamAccountName $($workingFileEntry.TargetAdObjectName) `
+                                -Firstname $givenName `
+                                -LastName $surName `
+                                -DisplayName $displayname `
+                                -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" `
+                                -Alias $($workingFileEntry.TargetAdObjectName) `
+                                -Name $($workingFileEntry.TargetAdObjectName) `
+                                -OrganizationalUnit $organizationalUnit `
+                                -Password $Password `
+                                -DomainController $dc
+                        }
+                        else {
+                            New-Mailbox `
+                                -Database $mailboxDatabase `
+                                -PrimarySmtpAddress $newPrimaryEMail `
+                                -SamAccountName $($workingFileEntry.TargetAdObjectName) `
+                                -Firstname $givenName `
+                                -LastName $surName `
+                                -DisplayName $displayname `
+                                -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" `
+                                -Alias $($workingFileEntry.TargetAdObjectName) `
+                                -Name $($workingFileEntry.TargetAdObjectName) `
+                                -OrganizationalUnit $organizationalUnit `
+                                -Password $Password `
+                                -DomainController $dc `
+                                -ResetPasswordOnNextLogon $true
+                        }
+
+                    }
+                    catch [System.Exception] {
+                        if ($_.Exception.InnerException) { $errorMsg = $($_.Exception.InnerException.Message) } else { $errorMsg = $($_.Exception.Message) }
+
+                        Write-EventLog $global:logName -Source $global:logSourceName `
+                            -EventId 6000 `
+                            -entryType Error `
+                            -Message  "An error occurred while creating Mailbox $($workingFileEntry.TargetAdObjectName) ($errorMsg). We'll terminate this time..."                        
+
+                        $htmlBody += "Während dem erstellen des neuen Benutzer-Postfaches <b> $($workingFileEntry.TargetAdObjectName) </b> ist folgender Fehler aufgetreten: <b> $($errorMsg) </b><br/><br/>"    
+                            
+                        if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+
+                            Send-EMail -smtpHost $smtpHost -mailFrom $mailFrom -mailTo $($workingFileEntry.CurrentUserEMailAddress) -mailCc $mailCc `
+                                -mailSubject "*** Auftrag - Fehler beim Erstellen einer Service Account Mailbox ***" `
+                                -mailBody $htmlBody `
+                                -attachment $null `
+                                Exit    
+                        }
+                        else {
+
+                            Send-EMail -smtpHost $smtpHost -mailFrom $mailFrom -mailTo $($workingFileEntry.CurrentUserEMailAddress) -mailCc $mailCc `
+                                -mailSubject "*** Auftrag - Fehler beim Erstellen einer 'nicht standardisierten' Personenmailbox ***" `
+                                -mailBody $htmlBody `
+                                -attachment $null `
+                                Exit                            
+                        }
+                                             
+                    }
+                        
+                    Start-Sleep -Seconds 30
+                    Update-MailboxAttributes -workingFileEntry $workingFileEntry
+
+                }
+                else {
+                    <#
+                    $usr = $workingFileEntry.TargetAdObjectName
+                    $newPwd = $usr.Substring(0, 1).toupper() + $usr.Substring(1, 1) + "@" + $usr.substring($usr.length - 5, 5)
+                    $Password = ConvertTo-SecureString -string $newPwd -AsPlainText -Force
+                    #>
+                    if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+
+
+                        if ($global:ServiceAccountType -eq [EmployeeType]::MANAGED_SERVICE) {
+                            try {
+                                New-ADServiceAccount -Name $($workingFileEntry.TargetAdObjectName) -DNSHostName "$($workingFileEntry.TargetAdObjectName).ksbl.local" -PrincipalsAllowedToRetrieveManagedPassword $global:principalsAllowedToRetrieveManagedPassword -ManagedPasswordIntervalInDays 30 -KerberosEncryptionType AES128, AES256 -OtherAttributes @{'employeeType' = 'S' }
+                                #Start-Sleep -Seconds 30
+                            }
+                            catch {
+                                ([Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error creating new AD User $($workingFileEntry.TargetAdObjectName) in OU $($serviceUserOu): $msg " -EntryType Error                  
+                                Exit
+                            }
+                        }
+                        else {
+                            try {
+                                New-ADUser -Name $($workingFileEntry.TargetAdObjectName) -GivenName $givenName -Surname $surName -DisplayName $displayname -SamAccountName $($workingFileEntry.TargetAdObjectName) -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" -Path $serviceUserOu -AccountPassword $Password -Enabled $true -Server $dc
+                                Start-Sleep -Seconds 30
+                            }
+                            catch {
+                                ([Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error creating new AD User $($workingFileEntry.TargetAdObjectName) in OU $($serviceUserOu): $msg " -EntryType Error                  
+                                Exit
+                            }
+                        }
+
+                    }
+                    elseif ($($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+
+                        try {
+                            New-ADUser -Name $($workingFileEntry.TargetAdObjectName) -GivenName $givenName -Surname $surName -DisplayName $displayname -SamAccountName $($workingFileEntry.TargetAdObjectName) -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" -Path $adminUserOu -AccountPassword $Password -Enabled $true -Server $dc
+                            Start-Sleep -Seconds 30
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error creating new AD User $($workingFileEntry.TargetAdObjectName) in OU $($adminUserOu): $msg " -EntryType Error                  
+                            Exit
+                        }
+
+                    }
+                    else {
+
+                        if ($($workingFileEntry.TargetAdObjectName).StartsWith("ex") -eq $true) {
+
+                            try {
+                                New-ADUser -Name $($workingFileEntry.TargetAdObjectName) -GivenName $givenName -Surname $surName -DisplayName $displayname -SamAccountName $($workingFileEntry.TargetAdObjectName) -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" -Path $externalUserOu -AccountPassword $Password -Enabled $true -Server $dc
+                                Start-Sleep -Seconds 30
+                            }
+                            catch {
+                                ([Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error creating new AD User $($workingFileEntry.TargetAdObjectName) in OU $($externalUserOu): $msg " -EntryType Error                  
+                                Exit
+                            }                        
+                        }
+                        else {
+                        
+                            try {
+                                New-ADUser -Name $($workingFileEntry.TargetAdObjectName) -GivenName $givenName -Surname $surName -DisplayName $displayname -SamAccountName $($workingFileEntry.TargetAdObjectName) -UserPrincipalName "$($workingFileEntry.TargetAdObjectName)@$($env:USERDNSDOMAIN)" -Path $internalUserOu -AccountPassword $Password -Enabled $true -Server $dc
+                                Start-Sleep -Seconds 30
+                            }
+                            catch {
+                                ([Exception])
+                                if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                                Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error creating new AD User $($workingFileEntry.TargetAdObjectName) in OU $($externalUserOu): $msg " -EntryType Error                  
+                                Exit
+                            }
+                        }
+                    }
+                }
+                
+                if ($global:ServiceAccountType -ne [EmployeeType]::MANAGED_SERVICE) {
+                    Update-AdAttributes -workingFileEntry $workingFileEntry
+                }
+
+                if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "S" -and $($workingFileEntry.TargetUserAdEmployeeType) -ne "A") {
+                    Update-DfsShareSettings -samAccountName $workingFileEntry.TargetAdObjectName
+                }
+
+                if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+
+                    # C:\Program Files\WindowsPowerShell\Modules\KSBL.PasswordSecure
+                    if ($global:ServiceAccountType -ne [EmployeeType]::MANAGED_SERVICE) {
+                        if ($(Get-Module | ? { $_.Name -eq "KSBL.PasswordSecure" }) -eq $null) {
+                            Import-Module -Name KSBL.PasswordSecure -Force    
+                        }
+
+                        $psr_db = 'PWSInformatik'
+                        $psr_cred = New-Object System.Management.Automation.PSCredential -ArgumentList ("ksbl\serviceiamjobs10", $(Get-Content "d:\Source\Secrets\serviceiamjobs10.sec" | ConvertTo-SecureString))
+                        if (Open-PsrSession -Database $psr_db -Credential $psr_cred) {
+                            $newSecurePassword = Get-PsrGenratedPolicyPassword -PolicyName 'AD Service Accounts'
+                            Set-ADAccountPassword -Identity $($workingFileEntry.TargetAdObjectName) -Reset -NewPassword (ConvertTo-SecureString -AsPlainText $newSecurePassword -Force) 
+                        
+                            $psr_form = Get-PsrContainerList -Search 'AD Benutzer' -ContainerType Form
+
+                            if ($workingFileEntry.TargetAppDescription.StartsWith("Service-Account created by")) {
+                                $pwdSafeInfo = "Service Account - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                            }
+                            else {                                            
+                                $pwdSafeInfo = "Service Account ($($workingFileEntry.TargetAppDescription)) - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"
+                            }
+
+                            $response
+                            $response = New-PsrContainerFromForm -Form $psr_form -ParentOrgUnitId '57de3ce1-de33-e711-80e8-0050569e0d1d' -Properties @{
+                                Beschreibung  = "Service $($workingFileEntry.TargetAdObjectName.Replace('service',''))"
+                                Benutzername  = $($workingFileEntry.TargetAdObjectName)
+                                Passwort      = $newSecurePassword
+                                Domäne        = 'KSBL'
+                                Informationen = $pwdSafeInfo
+                            }
+
+                            if ($response -ne $null) {
+                                Get-PsrContainerList -Search $($($workingFileEntry.TargetAdObjectName)) | Add-PsrContainerTags -Tags $(Get-PsrTagList -Search 'Service Account')
+                            }
+                        }
+                    }
+
+                    if ($global:ServiceAccountType -ne [EmployeeType]::MANAGED_SERVICE) {
+
+                        try {
+                            Set-ADUser $($workingFileEntry.TargetAdObjectName) -PasswordNeverExpires $true
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting PasswordNeverExpires for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                        }
+                    
+                        try {
+                            Set-ADUser $($workingFileEntry.TargetAdObjectName) -CannotChangePassword $true
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting CannotChangePassword for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                        }
+
+                        try {
+                            Set-ADUser $($workingFileEntry.TargetAdObjectName) -KerberosEncryptionType AES256
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting KerberosEncryptionType AES256 for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                        }
+                    }
+
+                    try {
+                        if ($workingFileEntry.TargetAppDescription.StartsWith("Service-Account created by")) {
+                            if ($global:ServiceAccountType -eq [EmployeeType]::MANAGED_SERVICE) {
+                                Set-ADServiceAccount $($workingFileEntry.TargetAdObjectName) -Description "Managed Service Account - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"
+                            }
+                            else {
+                                Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Service Account - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                            }
+                        }
+                        else {
+                            if ($global:ServiceAccountType -eq [EmployeeType]::MANAGED_SERVICE) {
+                                Set-ADServiceAccount $($workingFileEntry.TargetAdObjectName) -Description "Managed Service Account ($($workingFileEntry.TargetAppDescription)) - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"
+                            }
+                            else {
+                                Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Service Account ($($workingFileEntry.TargetAppDescription)) - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                            }
+                        }
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Description for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+
+                }
+                elseif ($($workingFileEntry.TargetUserAdEmployeeType) -eq "HNP") {
+
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -PasswordNeverExpires $true -Title "Hausarzt"
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting PasswordNeverExpires for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+
+                    try {
+                        Set-ADAccountExpiration $($workingFileEntry.TargetAdObjectName) -DateTime (Get-Date).AddDays(-1)
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting ADAccountExpiration for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+
+                    if ($null -eq $((Get-ADUser $($workingFileEntry.TargetAdObjectName) -Properties *).memberof | Where-Object { $_ -like "CN=SW-KSBL_KISIM*" })) {
+                        try {
+                            Add-ADGroupMember -Identity "SW-KSBL_KISIM" -Members $($workingFileEntry.TargetAdObjectName)
+                        }
+                        catch {
+                            ([Exception])
+                            if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  
+                            Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error adding User $($workingFileEntry.TargetAdObjectName) into group CN=SW-KSBL_KISIM: $msg " -EntryType Error                  
+                        }
+                    } 
+
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Hausarzt Notfall Praxis (HNP) (Ohne Adressbuch) - Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Description for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+                }
+                else {
+
+                    if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"ExtensionAttribute8" = $($resourceForestAccount.Properties["samaccountname"]) }
+                        if (-not [string]::IsNullOrEmpty($($resourceForestAccount.Properties["mail"]))) {
+                            Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"ExtensionAttribute6" = $($resourceForestAccount.Properties["mail"]) } 
+                        }
+                    }
+
+                    try {
+                        Set-ADUser $($workingFileEntry.TargetAdObjectName) -Description "Erstellt am $(get-date -Format "yyyy-MM-dd") von $($workingFileEntry.CurrentUserName)"                
+                    }
+                    catch {
+                        ([Exception])
+                        if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
+                        Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting Description for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                    }
+                }
+                    
+                if ($samAccountNameHasChanged -eq $true) {
+                    #if ($($workingFileEntry.TargetUserAdEmployeeType) -ne "HNP") {
+                    if ($($workingFileEntry.MailboxEnable) -eq $true) {
+                        $htmlBody += "Das Postfach <b> $displayname </b> mit Login Name $($workingFileEntry.TargetAdObjectName) im AD Container $($workingFileEntry.TargetUserDomainOU) wurde erfolgreich erstellt. (User ID wurde aufgrund der Eindeutigkeit geändert. Der neue Login Name ist $($workingFileEntry.TargetAdObjectName)).<br/><br/>"
+                    }
+                    else {
+                        $htmlBody += "Der Benutzer <b> $displayname </b> mit dem Login Name $($workingFileEntry.TargetAdObjectName) im AD Container $($workingFileEntry.TargetUserDomainOU) wurde erfolgreich erstellt. (User ID wurde aufgrund der Eindeutigkeit geändert. Der neue Login Name ist $($workingFileEntry.TargetAdObjectName)).<br/><br/>"
+                    }
+                }
+                else {
+                    if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "S") {
+                        if ($global:ServiceAccountType -eq [EmployeeType]::MANAGED_SERVICE) {
+                            $htmlBody += "Der Managed Service Account <b> $displayname </b> mit Login Name $($workingFileEntry.TargetAdObjectName) wurde im AD Container $($workingFileEntry.TargetUserDomainOU) erfolgreich erstellt.<br/><br/>"                
+                        }
+                        else {
+                            $htmlBody += "Der Service Account <b> $displayname </b> mit Login Name $($workingFileEntry.TargetAdObjectName) wurde im AD Container $($workingFileEntry.TargetUserDomainOU) erfolgreich erstellt und im Password Safe Management Tool hinterlegt. Das dazu gehörige Kennwort kann im Password Safe Management Tool gefunden werden.<br/><br/>"                
+                        }
+                    }
+                    elseif ($($workingFileEntry.TargetUserAdEmployeeType) -eq "A") {
+                        $htmlBody += "Der Admin Account <b> $displayname </b> mit Login Name $($workingFileEntry.TargetAdObjectName) wurde im AD Container $($workingFileEntry.TargetUserDomainOU) erfolgreich erstellt.<br/><br/>"                
+                    }
+                    elseif ($($workingFileEntry.MailboxEnable) -eq $true) {
+                        $htmlBody += "Das Postfach <b> $displayname </b> mit Login Name $($workingFileEntry.TargetAdObjectName) wurde im AD Container $($workingFileEntry.TargetUserDomainOU) erfolgreich erstellt.<br/><br/>"                
+                    }
+                    else {
+                        $htmlBody += "Der Benutzer <b> $displayname </b> mit dem Login Name $($workingFileEntry.TargetAdObjectName) wurde im AD Container $($workingFileEntry.TargetUserDomainOU) erfolgreich erstellt.<br/><br/>"
+                    }
                 }
             }
 
             if ($($workingFileEntry.TargetUserAdEmployeeType) -eq "P" `
-                -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "E" `
-                -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "HNP") {
+                    -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "E" `
+                    -or $($workingFileEntry.TargetUserAdEmployeeType) -eq "HNP") {
 
                 try {
-                    Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"hrmsBadgeFirstName" = $((Get-ADUser $workingFileEntry.TargetAdObjectName).GivenName)} -ErrorAction Stop
-                } catch {([Exception])
+                    Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"hrmsBadgeFirstName" = $((Get-ADUser $workingFileEntry.TargetAdObjectName).GivenName) } -ErrorAction Stop
+                }
+                catch {
+                    ([Exception])
                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 1969 -Message "Error setting Attribute hrmsBadgeFirstName for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
                 }
 
                 try {
-                    Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"hrmsBadgeLastName" = $((Get-ADUser $workingFileEntry.TargetAdObjectName).SurName)} -ErrorAction Stop
-                } catch {([Exception])
+                    Set-ADUser $($workingFileEntry.TargetAdObjectName) -replace @{"hrmsBadgeLastName" = $((Get-ADUser $workingFileEntry.TargetAdObjectName).SurName) } -ErrorAction Stop
+                }
+                catch {
+                    ([Exception])
                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 1969 -Message "Error setting Attribute hrmsBadgeLastName for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
+                }
+
+                # Enable Account for Entra-Sync
+                $user = Get-ADUser $($workingFileEntry.TargetAdObjectName) -Properties mail, proxyAddresses, extensionAttribute6, msDS-cloudExtensionAttribute15
+                if ($user -ne $null) {
+                    if (-not [string]::IsNullOrEmpty($user.mail)) {
+                        Set-TenantState -User $user -Mode TenantEnable -CloudDomain $cloudDomain
+                    }
                 }
             }
 
@@ -1281,7 +1864,8 @@ foreach ($jobToProcess in $filesToProcess) {
             # Bestimme das Cmdlet basierend auf dem Typ
             if ($targetIsServiceAccount -and $isManagedServiceType) {
                 $userSettings = Get-ADServiceAccount -Identity $adObjectName -Properties *
-            } else {
+            }
+            else {
                 $userSettings = Get-ADUser -Identity $adObjectName -Properties *
             }
 
@@ -1343,7 +1927,7 @@ foreach ($jobToProcess in $filesToProcess) {
                 $resourceForestUserObject = Get-ADUser -LDAPFilter "(samaccountname=$($workingFileEntry.AdObjectName))" -Properties mail, SamAccountName, AccountExpirationDate, mailNickname -Server $dc
             }
             catch {
-([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting User $($workingFileEntry.AdObjectName) from Active-Directory: $msg " -EntryType Error                  
             }
@@ -1356,7 +1940,7 @@ foreach ($jobToProcess in $filesToProcess) {
                         Set-ADAccountPassword -Identity $($resourceForestUserObject.SamAccountName) -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "P@ssw0rd4You" -Force)                     
                     }
                     catch {
-([Exception])
+                        ([Exception])
                         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting NewPassword for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
                     }
@@ -1366,7 +1950,7 @@ foreach ($jobToProcess in $filesToProcess) {
                         Set-ADUser $resourceForestUserObject.SamAccountName -Replace @{'hrmsIsExpired' = $true }
                     }
                     catch {
-([Exception])
+                        ([Exception])
                         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error enabling User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
                     }
@@ -1384,7 +1968,7 @@ foreach ($jobToProcess in $filesToProcess) {
                         Set-ADUser $resourceForestUserObject.SamAccountName -Replace @{'hrmsIsExpired' = $true }
                     }
                     catch {
-([Exception])
+                        ([Exception])
                         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error setting AccountExpirationDate for User $($workingFileEntry.TargetAdObjectName): $msg " -EntryType Error                  
                     }
@@ -1433,7 +2017,7 @@ foreach ($jobToProcess in $filesToProcess) {
                 $forestUserObject = Get-ADUser -LDAPFilter "(samaccountname=$($workingFileEntry.AdObjectName))" -Properties mail, SamAccountName, extensionattribute3 -Server $dc
             }
             catch {
-([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting User $($workingFileEntry.AdObjectName) from Active-Directory: $msg " -EntryType Error                  
                 Exit
@@ -1509,7 +2093,7 @@ foreach ($jobToProcess in $filesToProcess) {
                 $delegatedUser = Get-ADUser -LDAPFilter "(&(sAMAccountType=805306368)(samaccountname=$($workingFileEntry.AdObjectName)))" -Properties mailNickname
             }
             catch {
-([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting User $($workingFileEntry.AdObjectName) from Active-Directory: $msg " -EntryType Error                  
                 Exit
@@ -1519,7 +2103,7 @@ foreach ($jobToProcess in $filesToProcess) {
                 $delegatingUser = Get-ADUser -LDAPFilter "(&(sAMAccountType=805306368)(samaccountname=$($workingFileEntry.DelegatedAdObjectName)))" -Properties mailNickname
             }
             catch {
-([Exception])
+                ([Exception])
                 if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                 Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting delegated User $($workingFileEntry.DelegatedAdObjectName) from Active-Directory: $msg " -EntryType Error                  
                 Exit
@@ -1533,7 +2117,7 @@ foreach ($jobToProcess in $filesToProcess) {
                         $mbx = Get-Mailbox $($workingFileEntry.AdObjectName)
                     }
                     catch {
-([Exception])
+                        ([Exception])
                         if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                         Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting Mailbox $($workingFileEntry.AdObjectName) from Exchange: $msg " -EntryType Error                        
                         Exit
@@ -1546,7 +2130,7 @@ foreach ($jobToProcess in $filesToProcess) {
                             $calendarName = (Get-MailboxFolderStatistics -Identity $mbx.alias -FolderScope Calendar | Select-Object -First 1).Name
                         }
                         catch {
-([Exception])
+                            ([Exception])
                             if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                             Write-EventLog $global:logName -Source $global:logSourceName -EventId 6000 -Message "Error getting MailboxFolderStatistics for Mailbox $($mbx.alias) from Exchange: $msg " -EntryType Error                        
                         }
@@ -1560,7 +2144,7 @@ foreach ($jobToProcess in $filesToProcess) {
                                     Remove-MailboxFolderPermission -Identity $folderID -User $($delegatingUser.userPrincipalName) -Confirm:$false
                                 }
                                 catch {
-([Exception])
+                                    ([Exception])
                                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 2000 -Message "Error removing Mailbox Permissions for Trustee $($delegatingUser.userPrincipalName) on Mailbox $($folderID): $msg " -EntryType Error                  
                                     $htmlBody += "Während dem Modifizieren des Kalenders auf dem Postfach <b> $($mbx.DisplayName) </b> ist folgender Fehler aufgetreten: <b> $($msg) </b><br/><br/>"                     
@@ -1571,7 +2155,7 @@ foreach ($jobToProcess in $filesToProcess) {
                                     Add-MailboxFolderPermission -Identity $folderID -User $($delegatingUser.userPrincipalName) -AccessRights $($workingFileEntry.AclEntry)                                                                
                                 }
                                 catch {
-([Exception])
+                                    ([Exception])
                                     if ($_.Exception.InnerException) { $msg = $($_.Exception.InnerException.Message) } else { $msg = $($_.Exception.Message) }  	
                                     Write-EventLog $global:logName -Source $global:logSourceName -EventId 2000 -Message "Error adding Mailbox Permissions $($workingFileEntry.AclEntry) for Trustee $($delegatingUser.userPrincipalName) on Mailbox $($folderID): $msg " -EntryType Error                  
                                     $htmlBody += "Während dem Modifizieren des Kalenders auf dem Postfach <b> $($mbx.DisplayName) </b> ist folgender Fehler aufgetreten: <b> $($msg) </b><br/><br/>"                     

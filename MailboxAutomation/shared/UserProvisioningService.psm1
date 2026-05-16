@@ -1,4 +1,4 @@
-﻿Set-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 
 function Get-ObjectPropertyValue {
     [CmdletBinding()]
@@ -311,7 +311,7 @@ function Enable-GenericUser {
         # UserMailbox/SharedMailbox      → Set-Mailbox On-Prem
         # RemoteUserMailbox/SharedMailbox → Set-RemoteMailbox On-Prem (synchronized HideFromAddressLists)
         if (-not [string]::IsNullOrWhiteSpace($mailNickname)) {
-            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Unhide' -WhatIfMode:$false -Resolution $resolution | Out-Null
+            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Unhide' -WhatIfMode:$Context.WhatIfMode -Resolution $resolution | Out-Null
             $actions += 'MailboxUnhidden'
         }
 
@@ -432,7 +432,7 @@ function Disable-GenericUser {
         # UserMailbox/SharedMailbox       → Set-Mailbox On-Prem
         # RemoteUserMailbox/SharedMailbox → Set-RemoteMailbox On-Prem (synchronized HideFromAddressLists)
         if (-not [string]::IsNullOrWhiteSpace([string]$homeMdb) -or -not [string]::IsNullOrWhiteSpace($mailNickname)) {
-            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Hide' -WhatIfMode:$false -Resolution $resolution | Out-Null
+            Set-MailboxVisibility -MailboxName $adObjectName -Visibility 'Hide' -WhatIfMode:$Context.WhatIfMode -Resolution $resolution | Out-Null
             $actions += 'MailboxHidden'
         }
 
