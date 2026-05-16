@@ -53,7 +53,7 @@ function Get-DfsnHomeRootSafe {
         [bool]$WhatIfMode = $true
     )
 
-    $configuredRoot = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','NamespaceRoot') -DefaultValue '')
+    $configuredRoot = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'NamespaceRoot') -DefaultValue '')
     if (-not [string]::IsNullOrWhiteSpace($configuredRoot)) {
         return [pscustomobject]@{
             Simulated = $WhatIfMode
@@ -64,7 +64,7 @@ function Get-DfsnHomeRootSafe {
         }
     }
 
-    $rootPattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','DfsRootNamePattern') -DefaultValue '*\HomeDrives')
+    $rootPattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'DfsRootNamePattern') -DefaultValue '*\HomeDrives')
 
     if ($WhatIfMode) {
         return [pscustomobject]@{
@@ -191,7 +191,7 @@ function Find-ExistingUserHomeDirectoryPathSafe {
         return $null
     }
 
-    $shareNamePattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','ShareNamePattern') -DefaultValue 'home[_][a-z]$')
+    $shareNamePattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'ShareNamePattern') -DefaultValue 'home[_][a-z]$')
     foreach ($server in $fileServers) {
         $shares = @(Get-WmiObject -Class Win32_Share -ComputerName ([string]$server) -Filter "Name like '$shareNamePattern'" -ErrorAction Stop)
         foreach ($share in $shares) {
@@ -201,14 +201,14 @@ function Find-ExistingUserHomeDirectoryPathSafe {
             $match = Get-ChildItem -Path $uncPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match [regex]::Escape($SamAccountName) } | Select-Object -First 1
             if ($match) {
                 return [pscustomobject]@{
-                    Simulated       = $false
-                    Action          = 'Find-ExistingUserHomeDirectoryPath'
-                    SamAccountName  = $SamAccountName
-                    FullName        = [string]$match.FullName
+                    Simulated         = $false
+                    Action            = 'Find-ExistingUserHomeDirectoryPath'
+                    SamAccountName    = $SamAccountName
+                    FullName          = [string]$match.FullName
                     HomeDirectoryRoot = [string]($match.FullName.Replace('\' + $SamAccountName, ''))
-                    Server          = [string]$server
-                    ShareName       = [string]$share.Name
-                    Success         = $true
+                    Server            = [string]$server
+                    ShareName         = [string]$share.Name
+                    Success           = $true
                 }
             }
         }
@@ -230,8 +230,8 @@ function Get-HomeDriveSafe {
         $fileServers = @($homeConfig.FileServers)
     }
 
-    $shareNamePattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','ShareNamePattern') -DefaultValue 'home[_][a-z]$')
-    $fallbackTargetRoot = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','DefaultTargetRoot') -DefaultValue '')
+    $shareNamePattern = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'ShareNamePattern') -DefaultValue 'home[_][a-z]$')
+    $fallbackTargetRoot = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'DefaultTargetRoot') -DefaultValue '')
 
     if ($fileServers.Count -eq 0) {
         if (-not [string]::IsNullOrWhiteSpace($fallbackTargetRoot)) {
@@ -253,7 +253,7 @@ function Get-HomeDriveSafe {
 
     if ($WhatIfMode) {
         $server = [string]$fileServers[0]
-        $share = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','WhatIfShareName') -DefaultValue 'home_a')
+        $share = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'WhatIfShareName') -DefaultValue 'home_a')
         return [pscustomobject]@{
             server     = $server
             path       = $null
@@ -382,12 +382,12 @@ function Update-DfsShareSettingsSafe {
     }
 
     if ([string]::IsNullOrWhiteSpace($UserPrincipalDomain)) {
-        $UserPrincipalDomain = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','DefaultUserDomain') -DefaultValue $env:USERDOMAIN)
+        $UserPrincipalDomain = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'DefaultUserDomain') -DefaultValue $env:USERDOMAIN)
     }
 
-    $applicationDirectoryShare = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','ApplicationDirectoryShare') -DefaultValue '')
-    $desktopDirectoryShare = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','DesktopDirectoryShare') -DefaultValue '')
-    $deletedMarker = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory','DeletedHomeDirectoryMarker') -DefaultValue '.delete_manually_user_left_company')
+    $applicationDirectoryShare = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'ApplicationDirectoryShare') -DefaultValue '')
+    $desktopDirectoryShare = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'DesktopDirectoryShare') -DefaultValue '')
+    $deletedMarker = [string](Get-ConfigValue -Config $Config -Path @('HomeDirectory', 'DeletedHomeDirectoryMarker') -DefaultValue '.delete_manually_user_left_company')
 
     $operations = @()
 
@@ -434,20 +434,20 @@ function Update-DfsShareSettingsSafe {
         }
 
         [pscustomobject]@{
-            Success           = $true
-            Changed           = $true
-            Simulated         = $WhatIfMode
-            Action            = 'Update-DfsShareSettings'
-            Provider          = 'DFSN'
-            SamAccountName    = $SamAccountName
-            DfsRoot           = [string]$dfsRoot.Path
-            DfsPath           = $dfsPath
-            DfsTarget         = $physicalHomePath
-            HomeDrive         = $homeDrive
-            ExistingHome      = $existingHome
-            Operations        = $operations
-            Message           = "DFSN home directory target and permissions updated for '$SamAccountName'."
-            ErrorCode         = $null
+            Success        = $true
+            Changed        = $true
+            Simulated      = $WhatIfMode
+            Action         = 'Update-DfsShareSettings'
+            Provider       = 'DFSN'
+            SamAccountName = $SamAccountName
+            DfsRoot        = [string]$dfsRoot.Path
+            DfsPath        = $dfsPath
+            DfsTarget      = $physicalHomePath
+            HomeDrive      = $homeDrive
+            ExistingHome   = $existingHome
+            Operations     = $operations
+            Message        = "DFSN home directory target and permissions updated for '$SamAccountName'."
+            ErrorCode      = $null
         }
     }
     catch {

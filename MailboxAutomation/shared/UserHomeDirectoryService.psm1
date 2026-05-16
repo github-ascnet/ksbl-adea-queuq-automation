@@ -82,7 +82,7 @@ function Resolve-HomeDirectoryIdentity {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][psobject]$Data)
 
-    [string](Get-HomeDirectoryDataValue -Data $Data -Names @('Identity','AdObjectName','SamAccountName','TargetAdObjectName','UserPrincipalName'))
+    [string](Get-HomeDirectoryDataValue -Data $Data -Names @('Identity', 'AdObjectName', 'SamAccountName', 'TargetAdObjectName', 'UserPrincipalName'))
 }
 
 function Resolve-HomeDirectoryPath {
@@ -93,15 +93,15 @@ function Resolve-HomeDirectoryPath {
         [Parameter(Mandatory = $true)][string]$Identity
     )
 
-    $explicit = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('HomePath','HomeDirectory','TargetPath'))
+    $explicit = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('HomePath', 'HomeDirectory', 'TargetPath'))
     if (-not [string]::IsNullOrWhiteSpace($explicit)) { return $explicit }
 
-    $namespaceRoot = [string](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','NamespaceRoot') -DefaultValue '')
+    $namespaceRoot = [string](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'NamespaceRoot') -DefaultValue '')
     if (-not [string]::IsNullOrWhiteSpace($namespaceRoot)) {
         return (Join-Path -Path $namespaceRoot -ChildPath $Identity)
     }
 
-    $defaultTargetRoot = [string](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','DefaultTargetRoot') -DefaultValue '')
+    $defaultTargetRoot = [string](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'DefaultTargetRoot') -DefaultValue '')
     if (-not [string]::IsNullOrWhiteSpace($defaultTargetRoot)) {
         return (Join-Path -Path $defaultTargetRoot -ChildPath $Identity)
     }
@@ -123,8 +123,8 @@ function Set-UserHomeDirectory {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectory' -Identity $identity -Message 'HomePath/HomeDirectory is required or HomeDirectory.NamespaceRoot/DefaultTargetRoot must be configured.' -ErrorCode 'HOME_PATH_MISSING'
     }
 
-    $homeDrive = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('HomeDrive') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','DefaultHomeDrive') -DefaultValue 'H:'))
-    $createFolder = [bool](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','CreateFolderIfMissing') -DefaultValue $true)
+    $homeDrive = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('HomeDrive') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'DefaultHomeDrive') -DefaultValue 'H:'))
+    $createFolder = [bool](Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'CreateFolderIfMissing') -DefaultValue $true)
 
     $operations = @()
 
@@ -156,12 +156,12 @@ function Set-UserHomeDirectoryPermissions {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryPermissions' -Message 'User identity is required.' -ErrorCode 'USER_IDENTITY_MISSING'
     }
 
-    $targetPath = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('TargetPath','HomePath','HomeDirectory'))
+    $targetPath = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('TargetPath', 'HomePath', 'HomeDirectory'))
     if ([string]::IsNullOrWhiteSpace($targetPath)) {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryPermissions' -Identity $identity -Message 'TargetPath/HomePath/HomeDirectory is required.' -ErrorCode 'TARGET_PATH_MISSING'
     }
 
-    $userDomain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain','Domain','TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
+    $userDomain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain', 'Domain', 'TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
 
     try {
         $result = Set-LegacyHomeDirectoryAclSafe -HomeDirectoryPath $targetPath -UserPrincipalName $identity -UserPrincipalDomain $userDomain -WhatIfMode:$Context.WhatIfMode
@@ -187,7 +187,7 @@ function Set-UserHomeDirectoryAndDfsTarget {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryAndDfsTarget' -Message 'User identity is required.' -ErrorCode 'USER_IDENTITY_MISSING'
     }
 
-    $domain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain','Domain','TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
+    $domain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain', 'Domain', 'TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
 
     try {
         $result = Update-DfsShareSettingsSafe -SamAccountName $identity -Config $Context.Config -UserPrincipalDomain $domain -WhatIfMode:$Context.WhatIfMode
@@ -207,7 +207,7 @@ function Update-UserLegacyDfsShareSettings {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'UpdateLegacyDfsShareSettings' -Message 'User identity is required.' -ErrorCode 'USER_IDENTITY_MISSING'
     }
 
-    $domain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain','Domain','TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory','DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
+    $domain = [string](Get-HomeDirectoryDataValue -Data $Data -Names @('UserPrincipalDomain', 'Domain', 'TargetDomain') -DefaultValue (Get-HomeDirectoryConfigValue -Config $Context.Config -Path @('HomeDirectory', 'DefaultUserDomain') -DefaultValue $env:USERDOMAIN))
 
     try {
         $result = Update-DfsShareSettingsSafe -SamAccountName $identity -Config $Context.Config -UserPrincipalDomain $domain -WhatIfMode:$Context.WhatIfMode
