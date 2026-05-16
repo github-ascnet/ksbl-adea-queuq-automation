@@ -403,11 +403,39 @@ function Complete-NonStandardPersonMailboxProvisioning {
     }
 
     try {
-        # TODO: Migrate legacy DFS home directory, application/desktop permission and customer notification logic from current-scripts/Process-PersonMailboxJobs.ps1.
-        if (Get-Command -Name Update-DfsShareSettingsSafe -ErrorAction SilentlyContinue) {
-            Update-DfsShareSettingsSafe -SamAccountName $plan.TargetAdObjectName -WhatIfMode:$false | Out-Null
+        # Migrated from current-scripts/Process-PersonMailboxJobs.ps1:
+        # Update-DfsShareSettings -> Get-HomeDrive -> Set-UserHomeDirPermissions
+        # -> Run-DfsUtil link add -> Set-UserApplicationDrivePermissions for
+        # application and desktop shares. The technical operations are now
+        # delegated to UserHomeDirectoryService / DfsGateway / FileSystemGateway.
+        $finalizeData = [pscustomobject]@{
+            Identity            = $plan.TargetAdObjectName
+            SamAccountName      = $plan.TargetAdObjectName
+            AdObjectName        = $plan.TargetAdObjectName
+            TargetAdObjectName  = $plan.TargetAdObjectName
+            TargetDomain        = $plan.TargetDomain
+            UserPrincipalDomain = $plan.TargetDomain
         }
-        return New-PersonMailboxResult -Success $true -Changed $true -Action 'Finalize' -AdObjectName $plan.TargetAdObjectName -Message "Finalized non-standard person mailbox provisioning for '$($plan.TargetAdObjectName)'."
+
+        $dfsResult = $null
+        if ($Context.Services -and $Context.Services.PSObject.Properties['UserHomeDirectory']) {
+            $dfsResult = & $Context.Services.UserHomeDirectory.UpdateDfsShares $Context $finalizeData
+        }
+        elseif (Get-Command -Name Update-UserLegacyDfsShareSettings -ErrorAction SilentlyContinue) {
+            $dfsResult = Update-UserLegacyDfsShareSettings -Context $Context -Data $finalizeData
+        }
+        elseif (Get-Command -Name Update-DfsShareSettingsSafe -ErrorAction SilentlyContinue) {
+            $dfsResult = Update-DfsShareSettingsSafe -SamAccountName $plan.TargetAdObjectName -Config $Context.Config -UserPrincipalDomain $plan.TargetDomain -WhatIfMode:$Context.WhatIfMode
+        }
+        else {
+            return New-PersonMailboxResult -Success $false -Changed $false -Action 'Finalize' -AdObjectName $plan.TargetAdObjectName -Message 'No DFS/HomeDirectory finalization service is available.' -ErrorCode 'PERSONMAILBOX_DFS_FINALIZE_NOT_AVAILABLE'
+        }
+
+        if ($dfsResult -and $dfsResult.PSObject.Properties['Success'] -and -not $dfsResult.Success) {
+            return New-PersonMailboxResult -Success $false -Changed $false -Action 'Finalize' -AdObjectName $plan.TargetAdObjectName -Message $dfsResult.Message -ErrorCode $dfsResult.ErrorCode -Output $dfsResult
+        }
+
+        return New-PersonMailboxResult -Success $true -Changed $true -Simulated $Context.WhatIfMode -Action 'Finalize' -AdObjectName $plan.TargetAdObjectName -Message "Finalized non-standard person mailbox provisioning for '$($plan.TargetAdObjectName)'." -Output $dfsResult
     }
     catch {
         return New-PersonMailboxResult -Success $false -Changed $false -Action 'Finalize' -AdObjectName $plan.TargetAdObjectName -Message $_.Exception.Message -ErrorCode 'PERSONMAILBOX_FINALIZE_FAILED'
