@@ -366,4 +366,36 @@ Describe 'JobFileQueue lifecycle and metadata' {
         $result = Find-UseCaseJobFiles -RootPath $script:testRoot -QueueRoot $script:queueRoot -Pattern '*CreateNonStdPersonMailbox*_pshjob_.csv' -IncludePaused
         ($result | Where-Object { $_.Name -like '*pausepast*' }).Count | Should -Be 1
     }
+
+    It 'stores ExternalCorrelationId in metadata when CorrelationId is provided' {
+        $incoming = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'incoming'
+        $csv = Join-Path -Path $incoming -ChildPath 'CreateNonStdPersonMailbox_corrset_pshjob_.csv'
+        Set-Content -Path $csv -Value "ActionType;TargetAdObjectName`nCreate;corrset" -Encoding UTF8
+
+        $claim = Claim-JobFile -FilePath $csv -RootPath $script:testRoot -QueueRoot $script:queueRoot -UseCaseName 'PersonMailbox.CreateNonStandard' -Queue 'person-mailbox-longrunning' -ExternalCorrelationId '4c7f8ff7-b96c-4f94-bbc2-fd9cfbd8401e'
+        $meta = Read-JobMetadata -FilePath $claim.WorkingFile
+
+        ($meta.PSObject.Properties.Name -contains 'ExternalCorrelationId') | Should -Be $true
+        $meta.ExternalCorrelationId | Should -Be '4c7f8ff7-b96c-4f94-bbc2-fd9cfbd8401e'
+    }
+
+    It 'does not overwrite an existing different ExternalCorrelationId' {
+        $incoming = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'incoming'
+        $csv = Join-Path -Path $incoming -ChildPath 'CreateNonStdPersonMailbox_correxisting_pshjob_.csv'
+        Set-Content -Path $csv -Value "ActionType;TargetAdObjectName`nCreate;correxisting" -Encoding UTF8
+
+        Get-OrCreateJobMetadata -FilePath $csv -UseCaseName 'PersonMailbox.CreateNonStandard' -Queue 'person-mailbox-longrunning' -ExternalCorrelationId 'existing-correlation' | Out-Null
+        $meta = Get-OrCreateJobMetadata -FilePath $csv -UseCaseName 'PersonMailbox.CreateNonStandard' -Queue 'person-mailbox-longrunning' -ExternalCorrelationId 'new-correlation'
+
+        $meta.ExternalCorrelationId | Should -Be 'existing-correlation'
+    }
+
+    It 'does not force ExternalCorrelationId when CorrelationId is not provided' {
+        $incoming = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'incoming'
+        $csv = Join-Path -Path $incoming -ChildPath 'CreateNonStdPersonMailbox_corrnone_pshjob_.csv'
+        Set-Content -Path $csv -Value "ActionType;TargetAdObjectName`nCreate;corrnone" -Encoding UTF8
+
+        $meta = Get-OrCreateJobMetadata -FilePath $csv -UseCaseName 'PersonMailbox.CreateNonStandard' -Queue 'person-mailbox-longrunning'
+        ($meta.PSObject.Properties.Name -contains 'ExternalCorrelationId') | Should -Be $false
+    }
 }

@@ -283,6 +283,24 @@ function Convert-ResultToQueueStatus {
     }
 }
 
+function Get-JobProcessingAggregateStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][int]$Processed,
+        [Parameter(Mandatory = $true)][int]$Succeeded,
+        [Parameter(Mandatory = $true)][int]$Failed,
+        [Parameter(Mandatory = $true)][int]$Retry,
+        [Parameter(Mandatory = $true)][int]$Paused
+    )
+
+    if ($Failed -gt 0) { return 'Failed' }
+    if ($Paused -gt 0) { return 'Paused' }
+    if ($Retry -gt 0) { return 'WaitingForRetry' }
+    if ($Processed -gt 0 -and $Succeeded -eq $Processed) { return 'Succeeded' }
+    if ($Processed -eq 0) { return 'NoWork' }
+    'CompletedWithWarnings'
+}
+
 
 # ---------------------------------------------------------------------------
 # Invoke-JobEngine
@@ -322,6 +340,9 @@ function Invoke-JobEngine {
         [Parameter(Mandatory = $true)][string]$RootPath,
         [bool]$IncludePaused = $false,
         [bool]$ResumePaused = $false,
+        [string]$CorrelationId,
+        [switch]$ReturnSummary,
+        [switch]$SuppressConsoleOutput,
         [bool]$WhatIfMode,
         [bool]$VerboseLogging
     )
@@ -341,6 +362,20 @@ function Invoke-JobEngine {
     # RootPath wird explizit in die Config aufgenommen, damit Services und Gateways
     # bei Bedarf auf den Projektwurzelpfad zugreifen können.
     $mergedConfig['RootPath'] = $RootPath
+    if ($SuppressConsoleOutput -and $mergedConfig.ContainsKey('Logging') -and $mergedConfig.Logging -is [hashtable]) {
+        $mergedConfig.Logging['ConsoleEnabled'] = $false
+    }
+
+    $summary = [ordered]@{
+        queue     = $Queue
+        status    = 'NoWork'
+        processed = 0
+        succeeded = 0
+        failed    = 0
+        retry     = 0
+        paused    = 0
+        jobIds    = [System.Collections.Generic.List[string]]::new()
+    }
 
     # Logger initialisieren.
     # Der Logger kapselt Datei-/Konsolen-/Eventlog-Ausgaben gemäss Konfiguration.
@@ -424,19 +459,25 @@ function Invoke-JobEngine {
             # Jede Datei wird separat geclaimt, importiert, verarbeitet und verschoben.
             foreach ($file in $files) {
                 $claimed = $null
+                $fileStatusCounted = $false
                 try {
                     # Datei atomar claimen:
                     # - File-Lock setzen
                     # - stabile .meta.json lesen oder erstellen
                     # - CSV nach processing verschieben
                     # - JobId und StableJobKey beibehalten
-                    $claimed = Claim-JobFile -FilePath $file.FullName -RootPath $RootPath -QueueRoot $mergedConfig.Paths.QueueRoot -UseCaseName $useCase.Name -Queue $useCase.Queue -StaleLockMinutes $staleLockMinutes
+                    $claimed = Claim-JobFile -FilePath $file.FullName -RootPath $RootPath -QueueRoot $mergedConfig.Paths.QueueRoot -UseCaseName $useCase.Name -Queue $useCase.Queue -ExternalCorrelationId $CorrelationId -Logger $logger -StaleLockMinutes $staleLockMinutes
                     # Wenn Claim-JobFile $null liefert, ist die Datei typischerweise
                     # von einem anderen Runner gesperrt oder nicht claimbar.
                     # Das ist kein fataler Fehler.
                     if (-not $claimed) {
                         Write-LogWarn -Logger $logger -Message "Skipping non-claimable file: $($file.FullName)"
                         continue
+                    }
+
+                    $summary.processed++
+                    if ($summary.jobIds -notcontains [string]$claimed.JobId) {
+                        $summary.jobIds.Add([string]$claimed.JobId)
                     }
 
                     Write-LogInfo -Logger $logger -Message "Claimed file '$($claimed.WorkingFile)' for use case '$($useCase.Name)'."
@@ -527,6 +568,14 @@ function Invoke-JobEngine {
                         $moveParams['ErrorCode'] = $resultErrCode
                     }
 
+                    switch ($resultStatus) {
+                        'Succeeded' { $summary.succeeded++ }
+                        'Failed' { $summary.failed++ }
+                        'Retry' { $summary.retry++ }
+                        'Paused' { $summary.paused++ }
+                    }
+                    $fileStatusCounted = $true
+
                     # Datei und .meta.json in den Zielordner verschieben.
                     # Dabei wird die Metadata aktualisiert, z.B. Status, RetryAfter,
                     # ResumeAfter, LastMessage und ErrorCode.
@@ -583,6 +632,10 @@ function Invoke-JobEngine {
                             Write-LogError -Logger $logger -Message "Could not move failed file '$($claimed.WorkingFile)' to failed queue." -Exception $_.Exception
                         }
                     }
+
+                    if ($claimed -and -not $fileStatusCounted) {
+                        $summary.failed++
+                    }
                 }
             }
         }
@@ -597,9 +650,24 @@ function Invoke-JobEngine {
 
     # Abschlusslog für den gesamten Engine-Lauf.
     Write-LogInfo -Logger $logger -Message 'Job engine completed.'
+
+    $summary.status = Get-JobProcessingAggregateStatus -Processed $summary.processed -Succeeded $summary.succeeded -Failed $summary.failed -Retry $summary.retry -Paused $summary.paused
+
+    if ($ReturnSummary) {
+        [pscustomobject]@{
+            queue     = [string]$summary.queue
+            status    = [string]$summary.status
+            processed = [int]$summary.processed
+            succeeded = [int]$summary.succeeded
+            failed    = [int]$summary.failed
+            retry     = [int]$summary.retry
+            paused    = [int]$summary.paused
+            jobIds    = @($summary.jobIds)
+        }
+    }
 }
 
 
 # Nur Invoke-JobEngine wird als öffentliche Modulfunktion exportiert.
 # Alle anderen Funktionen in dieser Datei sind interne Hilfsfunktionen des Moduls.
-Export-ModuleMember -Function @('Invoke-JobEngine')
+Export-ModuleMember -Function @('Invoke-JobEngine', 'Get-JobProcessingAggregateStatus')

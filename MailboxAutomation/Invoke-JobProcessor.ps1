@@ -8,7 +8,9 @@ param(
     [bool]$IncludePaused = $false,
     [bool]$ResumePaused = $false,
     [bool]$WhatIfMode = $true,
-    [bool]$VerboseLogging = $false
+    [bool]$VerboseLogging = $false,
+    [switch]$OutputJson,
+    [string]$CorrelationId
 )
 
 Set-StrictMode -Version Latest
@@ -36,9 +38,54 @@ try {
     $resolvedUseCaseRegistryPath = Join-Path -Path $rootPath -ChildPath $UseCaseRegistryPath
     $resolvedEnvironmentPath = Join-Path -Path $rootPath -ChildPath $EnvironmentPath
 
-    Invoke-JobEngine -ConfigPath $resolvedConfigPath -UseCaseRegistryPath $resolvedUseCaseRegistryPath -EnvironmentPath $resolvedEnvironmentPath -Queue $Queue -RootPath $rootPath -IncludePaused:$IncludePaused -ResumePaused:$ResumePaused -WhatIfMode:$WhatIfMode -VerboseLogging:$VerboseLogging
+    $engineParams = @{
+        ConfigPath          = $resolvedConfigPath
+        UseCaseRegistryPath = $resolvedUseCaseRegistryPath
+        EnvironmentPath     = $resolvedEnvironmentPath
+        Queue               = $Queue
+        RootPath            = $rootPath
+        IncludePaused       = $IncludePaused
+        ResumePaused        = $ResumePaused
+        CorrelationId       = $CorrelationId
+        ReturnSummary       = $OutputJson
+        SuppressConsoleOutput = $OutputJson
+        WhatIfMode          = $WhatIfMode
+        VerboseLogging      = $VerboseLogging
+    }
+
+    $engineResult = Invoke-JobEngine @engineParams
+
+    if ($OutputJson) {
+        $engineResult | ConvertTo-Json -Depth 6
+    }
 }
 catch {
+    if ($OutputJson) {
+        $errorRecord = $_
+        $errorMessage = if ($errorRecord.Exception -and $errorRecord.Exception.Message) { [string]$errorRecord.Exception.Message } else { 'Unhandled error.' }
+        $errorCategory = if ($errorRecord.CategoryInfo -and $errorRecord.CategoryInfo.Category) { [string]$errorRecord.CategoryInfo.Category } else { 'NotSpecified' }
+        $errorId = if ($errorRecord.FullyQualifiedErrorId) { [string]$errorRecord.FullyQualifiedErrorId } else { 'InvokeJobProcessorFailed' }
+
+        [pscustomobject]@{
+            queue     = $Queue
+            status    = 'Failed'
+            processed = 0
+            succeeded = 0
+            failed    = 1
+            retry     = 0
+            paused    = 0
+            jobIds    = @()
+            error     = [pscustomobject]@{
+                message               = $errorMessage
+                category              = $errorCategory
+                fullyQualifiedErrorId = $errorId
+            }
+        } | ConvertTo-Json -Depth 6
+
+        [Console]::Error.WriteLine("Invoke-JobProcessor failed: $errorMessage")
+        return
+    }
+
     Write-Error "Invoke-JobProcessor failed: $($_.Exception.Message)"
     throw
 }

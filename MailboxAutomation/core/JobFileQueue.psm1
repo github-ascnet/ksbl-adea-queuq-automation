@@ -100,7 +100,9 @@ function Get-OrCreateJobMetadata {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string]$UseCaseName,
-        [Parameter(Mandatory = $true)][string]$Queue
+        [Parameter(Mandatory = $true)][string]$Queue,
+        [string]$ExternalCorrelationId,
+        [object]$Logger
     )
 
     $now = (Get-Date).ToString('o')
@@ -127,7 +129,23 @@ function Get-OrCreateJobMetadata {
     $currentFileName = if ($loadedMetadata -and ($loadedPropNames -contains 'CurrentFileName') -and $loadedMetadata.CurrentFileName) { [string]$loadedMetadata.CurrentFileName } elseif ($loadedMetadata -and ($loadedPropNames -contains 'CurrentFile') -and $loadedMetadata.CurrentFile) { [System.IO.Path]::GetFileName([string]$loadedMetadata.CurrentFile) } else { $fileName }
     $originalFileName = if ($loadedMetadata -and ($loadedPropNames -contains 'OriginalFileName') -and $loadedMetadata.OriginalFileName) { [string]$loadedMetadata.OriginalFileName } else { $fileName }
 
-    $metadata = [pscustomobject]@{
+    $resolvedExternalCorrelationId = $null
+    if ($loadedMetadata -and ($loadedPropNames -contains 'ExternalCorrelationId') -and -not [string]::IsNullOrWhiteSpace([string]$loadedMetadata.ExternalCorrelationId)) {
+        $resolvedExternalCorrelationId = [string]$loadedMetadata.ExternalCorrelationId
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExternalCorrelationId)) {
+        if ([string]::IsNullOrWhiteSpace($resolvedExternalCorrelationId)) {
+            $resolvedExternalCorrelationId = [string]$ExternalCorrelationId
+        }
+        elseif ($resolvedExternalCorrelationId -ne $ExternalCorrelationId) {
+            if ($Logger -and (Get-Command -Name Write-LogWarn -ErrorAction SilentlyContinue)) {
+                Write-LogWarn -Logger $Logger -Message "Job '$jobId' already has ExternalCorrelationId '$resolvedExternalCorrelationId'. Incoming CorrelationId '$ExternalCorrelationId' was ignored."
+            }
+        }
+    }
+
+    $metadataHash = [ordered]@{
         JobId            = $jobId
         StableJobKey     = if ($loadedMetadata -and ($loadedPropNames -contains 'StableJobKey') -and $loadedMetadata.StableJobKey) { [string]$loadedMetadata.StableJobKey } else { $stableKey }
         OriginalFileName = $originalFileName
@@ -147,6 +165,12 @@ function Get-OrCreateJobMetadata {
         LastMessage      = $lastMessage
         LastErrorCode    = $lastErrorCode
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedExternalCorrelationId)) {
+        $metadataHash['ExternalCorrelationId'] = $resolvedExternalCorrelationId
+    }
+
+    $metadata = [pscustomobject]$metadataHash
 
     Save-JobMetadata -FilePath $FilePath -Metadata $metadata | Out-Null
     $metadata
@@ -258,6 +282,8 @@ function Claim-JobFile {
         [Parameter(Mandatory = $true)][string]$QueueRoot,
         [Parameter(Mandatory = $true)][string]$UseCaseName,
         [Parameter(Mandatory = $true)][string]$Queue,
+        [string]$ExternalCorrelationId,
+        [object]$Logger,
         [int]$StaleLockMinutes = 60
     )
 
@@ -277,11 +303,12 @@ function Claim-JobFile {
         $rawTarget = Join-Path -Path $processingPath -ChildPath ([System.IO.Path]::GetFileName($FilePath))
         $targetPath = Get-NonConflictingPath -Path $rawTarget
 
-        $sourceMetadata = Get-OrCreateJobMetadata -FilePath $FilePath -UseCaseName $UseCaseName -Queue $Queue
+        $sourceMetadata = Get-OrCreateJobMetadata -FilePath $FilePath -UseCaseName $UseCaseName -Queue $Queue -ExternalCorrelationId $ExternalCorrelationId -Logger $Logger
         Move-Item -Path $FilePath -Destination $targetPath -ErrorAction Stop
 
         $now = (Get-Date).ToString('o')
-        $targetMetadata = [pscustomobject]@{
+        $sourcePropNames = @($sourceMetadata.PSObject.Properties.Name)
+        $targetMetadataHash = [ordered]@{
             JobId            = [string]$sourceMetadata.JobId
             StableJobKey     = [string]$sourceMetadata.StableJobKey
             OriginalFileName = [string]$sourceMetadata.OriginalFileName
@@ -301,6 +328,12 @@ function Claim-JobFile {
             LastMessage      = $null
             LastErrorCode    = $null
         }
+
+        if (($sourcePropNames -contains 'ExternalCorrelationId') -and -not [string]::IsNullOrWhiteSpace([string]$sourceMetadata.ExternalCorrelationId)) {
+            $targetMetadataHash['ExternalCorrelationId'] = [string]$sourceMetadata.ExternalCorrelationId
+        }
+
+        $targetMetadata = [pscustomobject]$targetMetadataHash
 
         $targetMetadataPath = Save-JobMetadata -FilePath $targetPath -Metadata $targetMetadata
         Remove-JobMetadata -FilePath $FilePath
@@ -383,7 +416,8 @@ function Move-JobFileToStatus {
 
     $pauseReasonValue = if ($JobResult -and ($jobResultProps -contains 'PauseReason') -and $JobResult.PauseReason) { [string]$JobResult.PauseReason } elseif ($PSBoundParameters.ContainsKey('PauseReason')) { $PauseReason } else { $null }
 
-    $movedMetadata = [pscustomobject]@{
+    $metadataPropNames = @($metadata.PSObject.Properties.Name)
+    $movedMetadataHash = [ordered]@{
         JobId            = [string]$metadata.JobId
         StableJobKey     = [string]$metadata.StableJobKey
         OriginalFileName = [string]$metadata.OriginalFileName
@@ -403,6 +437,12 @@ function Move-JobFileToStatus {
         LastMessage      = $messageValue
         LastErrorCode    = $errorCodeValue
     }
+
+    if (($metadataPropNames -contains 'ExternalCorrelationId') -and -not [string]::IsNullOrWhiteSpace([string]$metadata.ExternalCorrelationId)) {
+        $movedMetadataHash['ExternalCorrelationId'] = [string]$metadata.ExternalCorrelationId
+    }
+
+    $movedMetadata = [pscustomobject]$movedMetadataHash
 
     # Step 5: Write .meta.json next to the newly moved CSV.
     # If this write fails the exception propagates — do not swallow silently.
