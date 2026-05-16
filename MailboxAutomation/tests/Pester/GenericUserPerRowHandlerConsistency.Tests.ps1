@@ -1,96 +1,94 @@
 BeforeAll {
-    ﻿BeforeAll {
-        $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
+    $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
 
-        Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
-        Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force
-        Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force
-        Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force
-        Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force
-        Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force
 
-        function New-TestLogger {
-            [pscustomobject]@{
-                RunId           = 'test'
-                LogFile         = (Join-Path $TestDrive 'test.log')
-                ConsoleEnabled  = $false
-                FileEnabled     = $false
-                EventLogEnabled = $false
-                EventLogName    = 'Application'
-                EventSource     = 'MailboxAutomation.Tests'
-                VerboseLogging  = $false
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
+        }
+    }
+
+    function New-RenameAccountRow {
+        param([string]$AdObjectName = 'gn-source', [string]$TargetAdObjectName = 'gn-target')
+        [pscustomobject]@{
+            ActionType              = 'RenameUserAccount'
+            AdObjectName            = $AdObjectName
+            TargetAdObjectName      = $TargetAdObjectName
+            NewUserId               = 'newuserid'
+            GivenName               = 'Max'
+            SurName                 = 'Mustermann'
+            NewPrimaryEMailAddress  = 'max.mustermann@ksbl.ch'
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'KSBL'
+            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        }
+    }
+
+    function New-ChangeSurnameRow {
+        param([string]$AdObjectName = 'gn-user')
+        [pscustomobject]@{
+            ActionType              = 'ChangeAccountSurname'
+            AdObjectName            = $AdObjectName
+            GivenName               = 'Max'
+            SurName                 = 'Neuname'
+            NewPrimaryEMailAddress  = 'max.neuname@ksbl.ch'
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'KSBL'
+            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        }
+    }
+
+    function New-ModifyMailboxFolderAceRow {
+        param([string]$AdObjectName = 'gn-mailbox', [string]$DelegatedAdObjectName = 'gn-delegate')
+        [pscustomobject]@{
+            ActionType              = 'ModifyMailboxFolderAce'
+            AdObjectName            = $AdObjectName
+            MailboxFolderName       = 'Inbox'
+            DelegatedAdObjectName   = $DelegatedAdObjectName
+            AclActionType           = 'Add'
+            AclEntry                = 'FullAccess'
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'KSBL'
+            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        }
+    }
+
+    function New-RenameServices {
+        param([scriptblock]$RenameUser = { param($Ctx, $Data) })
+        [pscustomobject]@{
+            UserProvisioning = [pscustomobject]@{
+                RenameUser = $RenameUser
             }
         }
+    }
 
-        function New-RenameAccountRow {
-            param([string]$AdObjectName = 'gn-source', [string]$TargetAdObjectName = 'gn-target')
-            [pscustomobject]@{
-                ActionType              = 'RenameUserAccount'
-                AdObjectName            = $AdObjectName
-                TargetAdObjectName      = $TargetAdObjectName
-                NewUserId               = 'newuserid'
-                GivenName               = 'Max'
-                SurName                 = 'Mustermann'
-                NewPrimaryEMailAddress  = 'max.mustermann@ksbl.ch'
-                CurrentUserName         = 'Requester'
-                CurrentUserDomainName   = 'KSBL'
-                CurrentUserEMailAddress = 'requester@ksbl.ch'
+    function New-SurnameServices {
+        param([scriptblock]$SetSurname = { param($Ctx, $Data) })
+        [pscustomobject]@{
+            UserProvisioning = [pscustomobject]@{
+                SetSurname = $SetSurname
             }
         }
+    }
 
-        function New-ChangeSurnameRow {
-            param([string]$AdObjectName = 'gn-user')
-            [pscustomobject]@{
-                ActionType              = 'ChangeAccountSurname'
-                AdObjectName            = $AdObjectName
-                GivenName               = 'Max'
-                SurName                 = 'Neuname'
-                NewPrimaryEMailAddress  = 'max.neuname@ksbl.ch'
-                CurrentUserName         = 'Requester'
-                CurrentUserDomainName   = 'KSBL'
-                CurrentUserEMailAddress = 'requester@ksbl.ch'
-            }
-        }
-
-        function New-ModifyMailboxFolderAceRow {
-            param([string]$AdObjectName = 'gn-mailbox', [string]$DelegatedAdObjectName = 'gn-delegate')
-            [pscustomobject]@{
-                ActionType              = 'ModifyMailboxFolderAce'
-                AdObjectName            = $AdObjectName
-                MailboxFolderName       = 'Inbox'
-                DelegatedAdObjectName   = $DelegatedAdObjectName
-                AclActionType           = 'Add'
-                AclEntry                = 'FullAccess'
-                CurrentUserName         = 'Requester'
-                CurrentUserDomainName   = 'KSBL'
-                CurrentUserEMailAddress = 'requester@ksbl.ch'
-            }
-        }
-
-        function New-RenameServices {
-            param([scriptblock]$RenameUser = { param($Ctx, $Data) })
-            [pscustomobject]@{
-                UserProvisioning = [pscustomobject]@{
-                    RenameUser = $RenameUser
-                }
-            }
-        }
-
-        function New-SurnameServices {
-            param([scriptblock]$SetSurname = { param($Ctx, $Data) })
-            [pscustomobject]@{
-                UserProvisioning = [pscustomobject]@{
-                    SetSurname = $SetSurname
-                }
-            }
-        }
-
-        function New-MailboxAceServices {
-            param([scriptblock]$SetMailboxFolderAce = { param($Ctx, $Data) })
-            [pscustomobject]@{
-                UserProvisioning = [pscustomobject]@{
-                    SetMailboxFolderAce = $SetMailboxFolderAce
-                }
+    function New-MailboxAceServices {
+        param([scriptblock]$SetMailboxFolderAce = { param($Ctx, $Data) })
+        [pscustomobject]@{
+            UserProvisioning = [pscustomobject]@{
+                SetMailboxFolderAce = $SetMailboxFolderAce
             }
         }
     }
@@ -135,7 +133,7 @@ Describe 'GenericUser.RenameAccount handler' {
 
     It 'Returns Failed with PARTIAL_FAILURE when one row throws and another succeeds' {
         $script:callCount = 0
-        $service   = {
+        $service = {
             param($Ctx, $Data)
             $script:callCount++
             if ($script:callCount -eq 1) { throw 'Simulated rename error' }
@@ -185,7 +183,7 @@ Describe 'GenericUser.RenameAccount handler' {
 
     It 'Continues processing remaining rows after a row exception' {
         $script:processed = [System.Collections.Generic.List[string]]::new()
-        $service   = {
+        $service = {
             param($Ctx, $Data)
             $script:processed.Add($Data.AdObjectName)
             if ($Data.AdObjectName -eq 'gn-bad') { throw 'Bad row' }
@@ -209,7 +207,7 @@ Describe 'GenericUser.RenameAccount handler' {
 
     It 'Returns Failed with USECASE_ERROR when required fields are missing' {
         $incompleteRow = [pscustomobject]@{
-            ActionType = 'RenameUserAccount'
+            ActionType   = 'RenameUserAccount'
             AdObjectName = 'gn-test'
             # TargetAdObjectName missing
         }
@@ -266,7 +264,7 @@ Describe 'GenericUser.ChangeSurname handler' {
 
     It 'Returns Failed with PARTIAL_FAILURE when one row throws and another succeeds' {
         $script:callCount2 = 0
-        $service    = {
+        $service = {
             param($Ctx, $Data)
             $script:callCount2++
             if ($script:callCount2 -eq 1) { throw 'Simulated surname error' }
@@ -294,7 +292,7 @@ Describe 'GenericUser.ChangeSurname handler' {
 
     It 'Continues processing remaining rows after a row exception' {
         $script:processed2 = [System.Collections.Generic.List[string]]::new()
-        $service     = {
+        $service = {
             param($Ctx, $Data)
             $script:processed2.Add($Data.AdObjectName)
             if ($Data.AdObjectName -eq 'gn-bad') { throw 'Bad row' }
@@ -375,7 +373,7 @@ Describe 'GenericUser.ModifyMailboxFolderAce handler' {
 
     It 'Returns Failed with PARTIAL_FAILURE when one row throws and another succeeds' {
         $script:callCount3 = 0
-        $service    = {
+        $service = {
             param($Ctx, $Data)
             $script:callCount3++
             if ($script:callCount3 -eq 1) { throw 'Simulated ACE error' }
@@ -403,7 +401,7 @@ Describe 'GenericUser.ModifyMailboxFolderAce handler' {
 
     It 'Continues processing remaining rows after a row exception' {
         $script:processed3 = [System.Collections.Generic.List[string]]::new()
-        $service    = {
+        $service = {
             param($Ctx, $Data)
             $script:processed3.Add($Data.AdObjectName)
             if ($Data.AdObjectName -eq 'gn-bad') { throw 'Bad row' }

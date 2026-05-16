@@ -29,11 +29,20 @@ function Ensure-FolderSafe {
     )
 
     if ($WhatIfMode) {
+        $exists = $false
+        try {
+            $exists = Test-Path -Path $Path -PathType Container -ErrorAction Stop
+        }
+        catch {
+            # Treat inaccessible network paths as non-existing during simulation.
+            $exists = $false
+        }
+
         return [pscustomobject]@{
             Simulated = $true
             Action    = 'Ensure-Folder'
             Path      = $Path
-            Changed   = -not (Test-Path -Path $Path -PathType Container -ErrorAction SilentlyContinue)
+            Changed   = -not $exists
         }
     }
 

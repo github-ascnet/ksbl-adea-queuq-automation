@@ -191,7 +191,9 @@ function Set-UserHomeDirectoryAndDfsTarget {
 
     try {
         $result = Update-DfsShareSettingsSafe -SamAccountName $identity -Config $Context.Config -UserPrincipalDomain $domain -WhatIfMode:$Context.WhatIfMode
-        return New-UserHomeDirectoryResult -Success ([bool]$result.Success) -Changed ([bool]$result.Changed) -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryAndDfsTarget' -Identity $identity -HomePath ([string]$result.DfsPath) -Target ([string]$result.DfsTarget) -Message ([string]$result.Message) -ErrorCode ([string]$result.ErrorCode) -Output $result
+        $dfsPath = if ($result.PSObject.Properties['DfsPath']) { [string]$result.DfsPath } else { $null }
+        $dfsTarget = if ($result.PSObject.Properties['DfsTarget']) { [string]$result.DfsTarget } else { $null }
+        return New-UserHomeDirectoryResult -Success ([bool]$result.Success) -Changed ([bool]$result.Changed) -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryAndDfsTarget' -Identity $identity -HomePath $dfsPath -Target $dfsTarget -Message ([string]$result.Message) -ErrorCode ([string]$result.ErrorCode) -Output $result
     }
     catch {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'SetUserHomeDirectoryAndDfsTarget' -Identity $identity -Message $_.Exception.Message -ErrorCode 'USER_HOME_DFS_PROVISIONING_FAILED'
@@ -211,7 +213,8 @@ function Update-UserLegacyDfsShareSettings {
 
     try {
         $result = Update-DfsShareSettingsSafe -SamAccountName $identity -Config $Context.Config -UserPrincipalDomain $domain -WhatIfMode:$Context.WhatIfMode
-        return New-UserHomeDirectoryResult -Success ([bool]$result.Success) -Changed ([bool]$result.Changed) -Simulated $Context.WhatIfMode -Action 'UpdateLegacyDfsShareSettings' -Identity $identity -Target ([string]$result.DfsTarget) -Message ([string]$result.Message) -ErrorCode ([string]$result.ErrorCode) -Output $result
+        $dfsTarget = if ($result.PSObject.Properties['DfsTarget']) { [string]$result.DfsTarget } else { $null }
+        return New-UserHomeDirectoryResult -Success ([bool]$result.Success) -Changed ([bool]$result.Changed) -Simulated $Context.WhatIfMode -Action 'UpdateLegacyDfsShareSettings' -Identity $identity -Target $dfsTarget -Message ([string]$result.Message) -ErrorCode ([string]$result.ErrorCode) -Output $result
     }
     catch {
         return New-UserHomeDirectoryResult -Success $false -Changed $false -Simulated $Context.WhatIfMode -Action 'UpdateLegacyDfsShareSettings' -Identity $identity -Message $_.Exception.Message -ErrorCode 'DFS_UPDATE_FAILED'

@@ -16,8 +16,9 @@ function Invoke-AddGroupMailboxFmaMembers {
 
             $serviceResult = & $Context.Services.GroupMailbox.AddFmaMembers $Context $row
             $results += $serviceResult
+            $requiresRetry = ($serviceResult.PSObject.Properties['RequiresRetry'] -and [bool]$serviceResult.RequiresRetry)
 
-            if ($serviceResult.RequiresRetry) {
+            if ($requiresRetry) {
                 $retryMinutes = if ($serviceResult.PSObject.Properties['RetryAfterMinutes'] -and $serviceResult.RetryAfterMinutes) { [int]$serviceResult.RetryAfterMinutes } else { 15 }
                 $retryAfter   = (Get-Date).AddMinutes($retryMinutes)
                 Write-LogWarn -Logger $Context.Logger -Message "GroupMailbox.AddFmaMembers: transient migration state for '$($row.AdObjectName)'. Scheduling retry after $retryMinutes minutes."

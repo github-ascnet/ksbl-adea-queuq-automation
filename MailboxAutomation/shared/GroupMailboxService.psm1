@@ -274,6 +274,7 @@ function Set-GroupMailboxManager {
             RequiresRetry       = $false
             RetryAfterMinutes   = 0
             AdObjectName        = $adObjectName
+            Manager             = $manager
             ManagerAdObjectName = $manager
             Authority           = 'WhatIf'
             Operations          = @('Add FullAccess (WhatIf)', 'Add SendAs (WhatIf)', 'Set AD manager (WhatIf)')
@@ -294,6 +295,7 @@ function Set-GroupMailboxManager {
             RequiresRetry       = $true
             RetryAfterMinutes   = $resolution.RetryAfterMinutes
             AdObjectName        = $adObjectName
+            Manager             = $manager
             ManagerAdObjectName = $manager
             Authority           = $resolution.ManagementAuthority
             Message             = $resolution.Reason
@@ -316,6 +318,7 @@ function Set-GroupMailboxManager {
             RequiresRetry       = $false
             RetryAfterMinutes   = 0
             AdObjectName        = $adObjectName
+            Manager             = $manager
             ManagerAdObjectName = $manager
             Authority           = $resolution.ManagementAuthority
             Message             = $resolution.Reason
@@ -373,6 +376,7 @@ function Set-GroupMailboxManager {
                     RequiresRetry       = $false
                     RetryAfterMinutes   = 0
                     AdObjectName        = $adObjectName
+                    Manager             = $manager
                     ManagerAdObjectName = $manager
                     Authority           = $resolution.ManagementAuthority
                     Message             = "Cannot determine management authority for group mailbox '$adObjectName'. $($resolution.Reason)"
@@ -390,6 +394,7 @@ function Set-GroupMailboxManager {
             RequiresRetry       = $false
             RetryAfterMinutes   = 0
             AdObjectName        = $adObjectName
+            Manager             = $manager
             ManagerAdObjectName = $manager
             Authority           = $resolution.ManagementAuthority
             Message             = "Error while changing group mailbox manager on '$adObjectName'. $message"
@@ -404,6 +409,7 @@ function Set-GroupMailboxManager {
         RequiresRetry       = $false
         RetryAfterMinutes   = 0
         AdObjectName        = $adObjectName
+        Manager             = $manager
         ManagerAdObjectName = $manager
         Authority           = $resolution.ManagementAuthority
         Message             = "Manager changed for group mailbox '$adObjectName' via $($resolution.ManagementAuthority)."
