@@ -935,11 +935,7 @@ Migrierte Legacy-Bausteine:
 | Legacy-Funktion | Neue Kapselung |
 |---|---|
 | `Get-HomeDrive` | `DfsGateway.Get-HomeDriveSafe` |
-<<<<<<< HEAD
 | `Run-DfsUtil` | ersetzt durch `DfsGateway.Set-DfsPathSafe` mit DFSN-Cmdlets |
-=======
-| `Run-DfsUtil` | `DfsGateway.Invoke-DfsUtilSafe` |
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
 | `Set-UserHomeDirPermissions` | `FileSystemGateway.Set-LegacyHomeDirectoryAclSafe` |
 | `Set-UserApplicationDrivePermissions` | `FileSystemGateway.Set-LegacyApplicationDirectoryAclSafe` |
 | `Update-DfsShareSettings` | `DfsGateway.Update-DfsShareSettingsSafe` und `UserHomeDirectoryService.Update-UserLegacyDfsShareSettings` |
@@ -953,17 +949,12 @@ Die relevante Konfiguration liegt unter `HomeDirectory` in `appsettings.json`:
 - `DefaultTargetRoot`
 - `FileServers`
 - `ShareNamePattern`
-<<<<<<< HEAD
 - `DfsRootNamePattern`
 - `DeletedHomeDirectoryMarker`
-=======
-- `DfsUtilPath`
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d
 - `DefaultUserDomain`
 - `ApplicationDirectoryShare`
 - `DesktopDirectoryShare`
 
-<<<<<<< HEAD
 Im `WhatIfMode` werden keine Ordner erstellt, keine ACLs gesetzt und keine produktiven DFSN-Cmdlets ausgeführt. Die Funktionen geben stattdessen strukturierte Simulationsobjekte zurück.
 
 Wenn produktive DFS- oder Filesystem-Werte fehlen, wird nicht still `Success` gemeldet. Die Funktion liefert einen kontrollierten Fehler wie `HOME_PATH_MISSING`, `USER_IDENTITY_MISSING`, `DFS_UPDATE_FAILED` oder `HOME_DIRECTORY_ACL_FAILED`.
@@ -989,8 +980,3 @@ Die zentrale Orchestrierung erfolgt über:
 - `Set-DfsPathSafe` in `infrastructure/DfsGateway.psm1`
 
 Im `WhatIfMode` werden keine Ordner erstellt, keine ACLs gesetzt und keine DFSN-Cmdlets produktiv ausgeführt. Im Produktivmodus muss das DFSN-Modul verfügbar sein, andernfalls wird kontrolliert mit einem Fehler abgebrochen.
-=======
-Im `WhatIfMode` werden keine Ordner erstellt, keine ACLs gesetzt und kein `dfsutil.exe` ausgeführt. Die Funktionen geben stattdessen strukturierte Simulationsobjekte zurück.
-
-Wenn produktive DFS- oder Filesystem-Werte fehlen, wird nicht still `Success` gemeldet. Die Funktion liefert einen kontrollierten Fehler wie `HOME_PATH_MISSING`, `USER_IDENTITY_MISSING`, `DFS_UPDATE_FAILED` oder `HOME_DIRECTORY_ACL_FAILED`.
->>>>>>> 861b4685841caf3d0e14f2c78dff3c38dab28a8d

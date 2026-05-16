@@ -1,94 +1,97 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableGenericUser.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GenericUser\DisableGenericUser.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableAdAccountWithGracePeriod.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMobilePhoneNumber.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableGenericUser.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\DisableGenericUser.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableAdAccountWithGracePeriod.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMobilePhoneNumber.psm1') -Force
 
-function New-TestLogger {
-    [pscustomobject]@{
-        RunId           = 'test'
-        LogFile         = (Join-Path $TestDrive 'test.log')
-        ConsoleEnabled  = $false
-        FileEnabled     = $false
-        EventLogEnabled = $false
-        EventLogName    = 'Application'
-        EventSource     = 'MailboxAutomation.Tests'
-        VerboseLogging  = $false
-    }
-}
-
-function New-TestContext {
-    param(
-        [object[]]$Payload,
-        [hashtable]$Services,
-        [bool]$WhatIfMode = $true
-    )
-
-    if (-not $Services) {
-        $Services = @{
-            UserProvisioning = [pscustomobject]@{
-                EnableUser            = { param($Context, $Data) Enable-GenericUser -Context $Context -Data $Data }
-                DisableUser           = { param($Context, $Data) Disable-GenericUser -Context $Context -Data $Data }
-                EnableWithGracePeriod = { param($Context, $Data) Enable-GenericUserWithGracePeriod -Context $Context -Data $Data }
-                SetMobilePhoneNumber  = { param($Context, $Data) Set-GenericUserMobilePhoneNumber -Context $Context -Data $Data }
-            }
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
         }
     }
 
-    [pscustomobject]@{
-        Payload    = $Payload
-        Logger     = New-TestLogger
-        WhatIfMode = $WhatIfMode
-        Config     = @{}
-        Services   = [pscustomobject]$Services
-    }
-}
+    function New-TestContext {
+        param(
+            [object[]]$Payload,
+            [hashtable]$Services,
+            [bool]$WhatIfMode = $true
+        )
 
-function New-EnableDisableRow {
-    param(
-        [string]$ActionType = 'EnableNonStdPersonMailbox',
-        [string]$AdObjectName = 'user01'
-    )
+        if (-not $Services) {
+            $Services = @{
+                UserProvisioning = [pscustomobject]@{
+                    EnableUser            = { param($Context, $Data) Enable-GenericUser -Context $Context -Data $Data }
+                    DisableUser           = { param($Context, $Data) Disable-GenericUser -Context $Context -Data $Data }
+                    EnableWithGracePeriod = { param($Context, $Data) Enable-GenericUserWithGracePeriod -Context $Context -Data $Data }
+                    SetMobilePhoneNumber  = { param($Context, $Data) Set-GenericUserMobilePhoneNumber -Context $Context -Data $Data }
+                }
+            }
+        }
 
-    [pscustomobject]@{
-        ActionType              = $ActionType
-        AdObjectName            = $AdObjectName
-        CurrentUserName         = 'Requester'
-        CurrentUserDomainName   = 'DOMAIN'
-        CurrentUserEMailAddress = 'requester@example.org'
+        [pscustomobject]@{
+            Payload    = $Payload
+            Logger     = New-TestLogger
+            WhatIfMode = $WhatIfMode
+            Config     = @{}
+            Services   = [pscustomobject]$Services
+        }
     }
-}
 
-function New-GraceRow {
-    [pscustomobject]@{
-        ActionType              = 'EnableAdAccountWithGracePeriod'
-        AdObjectName            = 'user01'
-        TargetAdObjectName      = 'user01'
-        GracePeriod             = '2099-12-31'
-        CurrentUserName         = 'Requester'
-        CurrentUserDomainName   = 'DOMAIN'
-        CurrentUserEMailAddress = 'requester@example.org'
-    }
-}
+    function New-EnableDisableRow {
+        param(
+            [string]$ActionType = 'EnableNonStdPersonMailbox',
+            [string]$AdObjectName = 'user01'
+        )
 
-function New-MobileRow {
-    [pscustomobject]@{
-        ActionType              = 'ModifyMobilePhoneNumber'
-        AdObjectName            = 'user01'
-        MobileNumber            = '+41791234567'
-        CurrentUserName         = 'Requester'
-        CurrentUserDomainName   = 'DOMAIN'
-        CurrentUserEMailAddress = 'requester@example.org'
+        [pscustomobject]@{
+            ActionType              = $ActionType
+            AdObjectName            = $AdObjectName
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'DOMAIN'
+            CurrentUserEMailAddress = 'requester@example.org'
+        }
     }
+
+    function New-GraceRow {
+        [pscustomobject]@{
+            ActionType              = 'EnableAdAccountWithGracePeriod'
+            AdObjectName            = 'user01'
+            TargetAdObjectName      = 'user01'
+            GracePeriod             = '2099-12-31'
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'DOMAIN'
+            CurrentUserEMailAddress = 'requester@example.org'
+        }
+    }
+
+    function New-MobileRow {
+        [pscustomobject]@{
+            ActionType              = 'ModifyMobilePhoneNumber'
+            AdObjectName            = 'user01'
+            MobileNumber            = '+41791234567'
+            CurrentUserName         = 'Requester'
+            CurrentUserDomainName   = 'DOMAIN'
+            CurrentUserEMailAddress = 'requester@example.org'
+        }
+    }
+
 }
 
 Describe 'GenericUser enable/disable migration handlers' {

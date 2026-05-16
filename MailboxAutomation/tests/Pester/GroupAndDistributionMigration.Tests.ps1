@@ -1,73 +1,76 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\DistributionGroupService.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\AddGroupMailboxFmaMembers.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\ChangeManagerGroupMailbox.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\AddDistributionListResponsibles.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\ChangeManagerDistribList.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\DistributionGroupService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\AddGroupMailboxFmaMembers.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\ChangeManagerGroupMailbox.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\AddDistributionListResponsibles.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\ChangeManagerDistribList.psm1') -Force
 
-function New-TestLogger {
-    [pscustomobject]@{
-        RunId           = 'test'
-        LogFile         = (Join-Path $TestDrive 'test.log')
-        ConsoleEnabled  = $false
-        FileEnabled     = $false
-        EventLogEnabled = $false
-        EventLogName    = 'Application'
-        EventSource     = 'MailboxAutomation.Tests'
-        VerboseLogging  = $false
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
+        }
     }
-}
 
-function New-GroupMailboxFmaRow {
-    [pscustomobject]@{
-        ActionType               = 'AddGroupMailboxFmaMembers'
-        AdObjectName             = 'gmb-test'
-        FullAccessMembers        = 'us001[ADD]!us002[DEL]'
-        EnableSendAs             = 'True'
-        CurrentUserName          = 'Requester'
-        CurrentUserDomainName    = 'DOMAIN'
-        CurrentUserEMailAddress  = 'requester@example.org'
+    function New-GroupMailboxFmaRow {
+        [pscustomobject]@{
+            ActionType               = 'AddGroupMailboxFmaMembers'
+            AdObjectName             = 'gmb-test'
+            FullAccessMembers        = 'us001[ADD]!us002[DEL]'
+            EnableSendAs             = 'True'
+            CurrentUserName          = 'Requester'
+            CurrentUserDomainName    = 'DOMAIN'
+            CurrentUserEMailAddress  = 'requester@example.org'
+        }
     }
-}
 
-function New-GroupMailboxChangeManagerRow {
-    [pscustomobject]@{
-        ActionType               = 'ChangeManagerGroupMailbox'
-        AdObjectName             = 'gmb-test'
-        ManagerAdObjectName      = 'us-manager'
-        CurrentUserName          = 'Requester'
-        CurrentUserDomainName    = 'DOMAIN'
-        CurrentUserEMailAddress  = 'requester@example.org'
+    function New-GroupMailboxChangeManagerRow {
+        [pscustomobject]@{
+            ActionType               = 'ChangeManagerGroupMailbox'
+            AdObjectName             = 'gmb-test'
+            ManagerAdObjectName      = 'us-manager'
+            CurrentUserName          = 'Requester'
+            CurrentUserDomainName    = 'DOMAIN'
+            CurrentUserEMailAddress  = 'requester@example.org'
+        }
     }
-}
 
-function New-DistributionResponsiblesRow {
-    [pscustomobject]@{
-        ActionType               = 'AddDistributionListResponsibles'
-        AdObjectName             = 'dl-test'
-        ManagedByMembers         = 'us001[ADD]!us002[DEL]'
-        CurrentUserName          = 'Requester'
-        CurrentUserDomainName    = 'DOMAIN'
-        CurrentUserEMailAddress  = 'requester@example.org'
+    function New-DistributionResponsiblesRow {
+        [pscustomobject]@{
+            ActionType               = 'AddDistributionListResponsibles'
+            AdObjectName             = 'dl-test'
+            ManagedByMembers         = 'us001[ADD]!us002[DEL]'
+            CurrentUserName          = 'Requester'
+            CurrentUserDomainName    = 'DOMAIN'
+            CurrentUserEMailAddress  = 'requester@example.org'
+        }
     }
-}
 
-function New-DistributionChangeManagerRow {
-    [pscustomobject]@{
-        ActionType               = 'ChangeManagerDistribList'
-        AdObjectName             = 'dl-test'
-        ManagerAdObjectName      = 'us-manager'
-        CurrentUserName          = 'Requester'
-        CurrentUserDomainName    = 'DOMAIN'
-        CurrentUserEMailAddress  = 'requester@example.org'
+    function New-DistributionChangeManagerRow {
+        [pscustomobject]@{
+            ActionType               = 'ChangeManagerDistribList'
+            AdObjectName             = 'dl-test'
+            ManagerAdObjectName      = 'us-manager'
+            CurrentUserName          = 'Requester'
+            CurrentUserDomainName    = 'DOMAIN'
+            CurrentUserEMailAddress  = 'requester@example.org'
+        }
     }
+
 }
 
 Describe 'Migrated GroupMailbox handlers' {

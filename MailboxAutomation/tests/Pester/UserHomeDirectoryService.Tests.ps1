@@ -1,36 +1,39 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'infrastructure\FileSystemGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\UserHomeDirectoryService.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\FileSystemGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\UserHomeDirectoryService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
 
-function New-HomeDirectoryTestContext {
-    [CmdletBinding()]
-    param([bool]$WhatIfMode = $true)
+    function New-HomeDirectoryTestContext {
+        [CmdletBinding()]
+        param([bool]$WhatIfMode = $true)
 
-    [pscustomobject]@{
-        WhatIfMode = $WhatIfMode
-        Logger     = $null
-        Config     = @{
-            HomeDirectory = @{
-                DefaultHomeDrive         = 'H:'
-                CreateFolderIfMissing   = $true
-                SetPermissions           = $true
-                NamespaceRoot            = '\\example.test\HomeDrives'
-                DefaultTargetRoot        = '\\fileserver\home_a'
-                FileServers              = @()
-                WhatIfShareName          = 'home_a'
-                DefaultUserDomain        = 'EXAMPLE'
-                ApplicationDirectoryShare = '\\fileserver\Appdata$'
-                DesktopDirectoryShare     = '\\fileserver\Desktop$'
-                DfsRootNamePattern       = '*\HomeDrives'
-                DeletedHomeDirectoryMarker = '.delete_manually_user_left_company'
+        [pscustomobject]@{
+            WhatIfMode = $WhatIfMode
+            Logger     = $null
+            Config     = @{
+                HomeDirectory = @{
+                    DefaultHomeDrive         = 'H:'
+                    CreateFolderIfMissing   = $true
+                    SetPermissions           = $true
+                    NamespaceRoot            = '\\example.test\HomeDrives'
+                    DefaultTargetRoot        = '\\fileserver\home_a'
+                    FileServers              = @()
+                    WhatIfShareName          = 'home_a'
+                    DefaultUserDomain        = 'EXAMPLE'
+                    ApplicationDirectoryShare = '\\fileserver\Appdata$'
+                    DesktopDirectoryShare     = '\\fileserver\Desktop$'
+                    DfsRootNamePattern       = '*\HomeDrives'
+                    DeletedHomeDirectoryMarker = '.delete_manually_user_left_company'
+                }
             }
+            Services   = [pscustomobject]@{}
         }
-        Services   = [pscustomobject]@{}
     }
+
 }
 
 Describe 'UserHomeDirectoryService legacy migration' {

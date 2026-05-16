@@ -1,64 +1,67 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\JobState.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\PersonMailbox\CreateNonStdPersonMailbox.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobState.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\PersonMailbox\CreateNonStdPersonMailbox.psm1') -Force
 
-function New-TestLogger {
-    [pscustomobject]@{
-        RunId           = 'test'
-        LogFile         = (Join-Path $TestDrive 'test.log')
-        ConsoleEnabled  = $false
-        FileEnabled     = $false
-        EventLogEnabled = $false
-        EventLogName    = 'Application'
-        EventSource     = 'MailboxAutomation.Tests'
-        VerboseLogging  = $false
-    }
-}
-
-function New-PersonMailboxRow {
-    param([string]$EmployeeType = 'P', [string]$MailboxEnable = 'True')
-    [pscustomobject]@{
-        ActionType                 = 'CreateNonStdPersonMailbox'
-        TargetAdObjectName          = 'ex01234'
-        TargetDomain                = 'example.test'
-        TargetUserDomainOU          = 'OU=External,DC=example,DC=test'
-        TargetUserAdDisplayname     = 'Muster Max'
-        TargetUserAdGivenname       = 'Max'
-        TargetUserAdSurname         = 'Muster'
-        TargetUserAdEmployeeType    = $EmployeeType
-        TargetLocation              = 'LI'
-        MailboxEnable               = $MailboxEnable
-        CurrentUserName             = 'Requester'
-        CurrentUserDomainName       = 'EXAMPLE'
-        CurrentUserEMailAddress     = 'requester@example.test'
-    }
-}
-
-function New-TestContext {
-    param([object[]]$Rows, [string]$StableJobKey = 'CreateNonStdPersonMailbox_test_pshjob_')
-    $rootPath = Join-Path $TestDrive 'MailboxAutomation'
-    New-Item -Path (Join-Path $rootPath 'state') -ItemType Directory -Force | Out-Null
-    [pscustomobject]@{
-        JobId          = 'job001'
-        StableJobKey   = $StableJobKey
-        UseCaseName    = 'PersonMailbox.CreateNonStandard'
-        Payload        = $Rows
-        WhatIfMode     = $true
-        Logger         = New-TestLogger
-        RootPath       = $rootPath
-        Config         = @{
-            Paths = @{ StatePath = 'state' }
-            PersonMailbox = @{ PrimaryMailDomain = 'example.test' }
-            ExchangeOnPrem = @{ DefaultMailboxDatabases = @('DB01','DB02'); PrimaryMailDomain = 'example.test' }
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
         }
-        Services       = @{}
     }
+
+    function New-PersonMailboxRow {
+        param([string]$EmployeeType = 'P', [string]$MailboxEnable = 'True')
+        [pscustomobject]@{
+            ActionType                 = 'CreateNonStdPersonMailbox'
+            TargetAdObjectName          = 'ex01234'
+            TargetDomain                = 'example.test'
+            TargetUserDomainOU          = 'OU=External,DC=example,DC=test'
+            TargetUserAdDisplayname     = 'Muster Max'
+            TargetUserAdGivenname       = 'Max'
+            TargetUserAdSurname         = 'Muster'
+            TargetUserAdEmployeeType    = $EmployeeType
+            TargetLocation              = 'LI'
+            MailboxEnable               = $MailboxEnable
+            CurrentUserName             = 'Requester'
+            CurrentUserDomainName       = 'EXAMPLE'
+            CurrentUserEMailAddress     = 'requester@example.test'
+        }
+    }
+
+    function New-TestContext {
+        param([object[]]$Rows, [string]$StableJobKey = 'CreateNonStdPersonMailbox_test_pshjob_')
+        $rootPath = Join-Path $TestDrive 'MailboxAutomation'
+        New-Item -Path (Join-Path $rootPath 'state') -ItemType Directory -Force | Out-Null
+        [pscustomobject]@{
+            JobId          = 'job001'
+            StableJobKey   = $StableJobKey
+            UseCaseName    = 'PersonMailbox.CreateNonStandard'
+            Payload        = $Rows
+            WhatIfMode     = $true
+            Logger         = New-TestLogger
+            RootPath       = $rootPath
+            Config         = @{
+                Paths = @{ StatePath = 'state' }
+                PersonMailbox = @{ PrimaryMailDomain = 'example.test' }
+                ExchangeOnPrem = @{ DefaultMailboxDatabases = @('DB01','DB02'); PrimaryMailDomain = 'example.test' }
+            }
+            Services       = @{}
+        }
+    }
+
 }
 
 Describe 'PersonMailbox.CreateNonStandard migration' {

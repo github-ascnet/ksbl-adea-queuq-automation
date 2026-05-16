@@ -1,43 +1,46 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\GenericUser\AddEmailNickname.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\AddEmailNickname.psm1') -Force
 
-function New-TestLogger {
-    [pscustomobject]@{
-        RunId           = 'test'
-        LogFile         = (Join-Path $TestDrive 'test.log')
-        ConsoleEnabled  = $false
-        FileEnabled     = $false
-        EventLogEnabled = $false
-        EventLogName    = 'Application'
-        EventSource     = 'MailboxAutomation.Tests'
-        VerboseLogging  = $false
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
+        }
     }
-}
 
-function New-AddEmailNicknameRow {
-    param(
-        [string]$ActionType = 'AddEMailNickName',
-        [string]$AdObjectName = 'test.user',
-        [string]$NewPrimaryEMailAddress = 'test.user.alias@example.org',
-        [string]$CurrentUserName = 'Requester',
-        [string]$CurrentUserDomainName = 'DOMAIN',
-        [string]$CurrentUserEMailAddress = 'requester@example.org'
-    )
+    function New-AddEmailNicknameRow {
+        param(
+            [string]$ActionType = 'AddEMailNickName',
+            [string]$AdObjectName = 'test.user',
+            [string]$NewPrimaryEMailAddress = 'test.user.alias@example.org',
+            [string]$CurrentUserName = 'Requester',
+            [string]$CurrentUserDomainName = 'DOMAIN',
+            [string]$CurrentUserEMailAddress = 'requester@example.org'
+        )
 
-    [pscustomobject]@{
-        ActionType               = $ActionType
-        AdObjectName             = $AdObjectName
-        NewPrimaryEMailAddress   = $NewPrimaryEMailAddress
-        CurrentUserName          = $CurrentUserName
-        CurrentUserDomainName    = $CurrentUserDomainName
-        CurrentUserEMailAddress  = $CurrentUserEMailAddress
+        [pscustomobject]@{
+            ActionType               = $ActionType
+            AdObjectName             = $AdObjectName
+            NewPrimaryEMailAddress   = $NewPrimaryEMailAddress
+            CurrentUserName          = $CurrentUserName
+            CurrentUserDomainName    = $CurrentUserDomainName
+            CurrentUserEMailAddress  = $CurrentUserEMailAddress
+        }
     }
+
 }
 
 Describe 'GenericUser.AddEmailNickname handler' {

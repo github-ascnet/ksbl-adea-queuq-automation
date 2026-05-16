@@ -1,59 +1,62 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+BeforeAll {
+    $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'infrastructure\SqlGateway.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force
-Import-Module -Name (Join-Path $root 'shared\HospisPersonService.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\Urgent\InactivateHospisPerson.psm1') -Force
-Import-Module -Name (Join-Path $root 'usecases\UserPerson\HospisPersonUseCase.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\SqlGateway.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'shared\HospisPersonService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\Urgent\InactivateHospisPerson.psm1') -Force
+    Import-Module -Name (Join-Path $root 'usecases\UserPerson\HospisPersonUseCase.psm1') -Force
 
-function New-TestLogger {
-    [pscustomobject]@{
-        RunId           = 'test'
-        LogFile         = (Join-Path $TestDrive 'test.log')
-        ConsoleEnabled  = $false
-        FileEnabled     = $false
-        EventLogEnabled = $false
-        EventLogName    = 'Application'
-        EventSource     = 'MailboxAutomation.Tests'
-        VerboseLogging  = $false
-    }
-}
-
-function New-HospisTestContext {
-    param([object[]]$Rows)
-
-    [pscustomobject]@{
-        Payload        = $Rows
-        WhatIfMode     = $true
-        Logger         = New-TestLogger
-        Config         = @{
-            Paths = @{
-                StatePath = 'state'
-            }
-            Hospis = @{
-                ArchiveRoot = 'D:\IAM\Archive'
-                SqlServerInstance = 'sql.test.local'
-                Database = 'KSBL_Hospis_Staging'
-                ConnectionString = ''
-                AustrittOOOExternalMessage = 'External'
-                AustrittOOOInternalMessage = 'Internal'
-            }
+    function New-TestLogger {
+        [pscustomobject]@{
+            RunId           = 'test'
+            LogFile         = (Join-Path $TestDrive 'test.log')
+            ConsoleEnabled  = $false
+            FileEnabled     = $false
+            EventLogEnabled = $false
+            EventLogName    = 'Application'
+            EventSource     = 'MailboxAutomation.Tests'
+            VerboseLogging  = $false
         }
-        Services       = @{
-            HospisPerson = [pscustomobject]@{
-                SubmitTransaction   = { param($Context, $Data) Submit-HospisPersonTransaction -Context $Context -Data $Data }
-                UrgentInactivation = { param($Context, $Data) Invoke-UrgentHospisPersonInactivation -Context $Context -Data $Data }
-            }
-        }
-        SourceFile     = 'HospisPersonUseCase_sample_pshjob_.csv'
-        WorkingFile    = 'HospisPersonUseCase_sample_pshjob_.csv'
-        RootPath       = [string]$root
     }
+
+    function New-HospisTestContext {
+        param([object[]]$Rows)
+
+        [pscustomobject]@{
+            Payload        = $Rows
+            WhatIfMode     = $true
+            Logger         = New-TestLogger
+            Config         = @{
+                Paths = @{
+                    StatePath = 'state'
+                }
+                Hospis = @{
+                    ArchiveRoot = 'D:\IAM\Archive'
+                    SqlServerInstance = 'sql.test.local'
+                    Database = 'KSBL_Hospis_Staging'
+                    ConnectionString = ''
+                    AustrittOOOExternalMessage = 'External'
+                    AustrittOOOInternalMessage = 'Internal'
+                }
+            }
+            Services       = @{
+                HospisPerson = [pscustomobject]@{
+                    SubmitTransaction   = { param($Context, $Data) Submit-HospisPersonTransaction -Context $Context -Data $Data }
+                    UrgentInactivation = { param($Context, $Data) Invoke-UrgentHospisPersonInactivation -Context $Context -Data $Data }
+                }
+            }
+            SourceFile     = 'HospisPersonUseCase_sample_pshjob_.csv'
+            WorkingFile    = 'HospisPersonUseCase_sample_pshjob_.csv'
+            RootPath       = [string]$root
+        }
+    }
+
 }
 
 Describe 'Hospis person use case migration' {

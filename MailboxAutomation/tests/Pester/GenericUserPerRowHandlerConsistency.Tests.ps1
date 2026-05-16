@@ -1,102 +1,105 @@
-﻿BeforeAll {
-    $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
+BeforeAll {
+    ﻿BeforeAll {
+        $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force
+        Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
+        Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force
+        Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force
+        Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force
+        Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force
+        Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force
 
-    function New-TestLogger {
-        [pscustomobject]@{
-            RunId           = 'test'
-            LogFile         = (Join-Path $TestDrive 'test.log')
-            ConsoleEnabled  = $false
-            FileEnabled     = $false
-            EventLogEnabled = $false
-            EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
-            VerboseLogging  = $false
+        function New-TestLogger {
+            [pscustomobject]@{
+                RunId           = 'test'
+                LogFile         = (Join-Path $TestDrive 'test.log')
+                ConsoleEnabled  = $false
+                FileEnabled     = $false
+                EventLogEnabled = $false
+                EventLogName    = 'Application'
+                EventSource     = 'MailboxAutomation.Tests'
+                VerboseLogging  = $false
+            }
         }
-    }
 
-    function New-RenameAccountRow {
-        param([string]$AdObjectName = 'gn-source', [string]$TargetAdObjectName = 'gn-target')
-        [pscustomobject]@{
-            ActionType              = 'RenameUserAccount'
-            AdObjectName            = $AdObjectName
-            TargetAdObjectName      = $TargetAdObjectName
-            NewUserId               = 'newuserid'
-            GivenName               = 'Max'
-            SurName                 = 'Mustermann'
-            NewPrimaryEMailAddress  = 'max.mustermann@ksbl.ch'
-            CurrentUserName         = 'Requester'
-            CurrentUserDomainName   = 'KSBL'
-            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        function New-RenameAccountRow {
+            param([string]$AdObjectName = 'gn-source', [string]$TargetAdObjectName = 'gn-target')
+            [pscustomobject]@{
+                ActionType              = 'RenameUserAccount'
+                AdObjectName            = $AdObjectName
+                TargetAdObjectName      = $TargetAdObjectName
+                NewUserId               = 'newuserid'
+                GivenName               = 'Max'
+                SurName                 = 'Mustermann'
+                NewPrimaryEMailAddress  = 'max.mustermann@ksbl.ch'
+                CurrentUserName         = 'Requester'
+                CurrentUserDomainName   = 'KSBL'
+                CurrentUserEMailAddress = 'requester@ksbl.ch'
+            }
         }
-    }
 
-    function New-ChangeSurnameRow {
-        param([string]$AdObjectName = 'gn-user')
-        [pscustomobject]@{
-            ActionType              = 'ChangeAccountSurname'
-            AdObjectName            = $AdObjectName
-            GivenName               = 'Max'
-            SurName                 = 'Neuname'
-            NewPrimaryEMailAddress  = 'max.neuname@ksbl.ch'
-            CurrentUserName         = 'Requester'
-            CurrentUserDomainName   = 'KSBL'
-            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        function New-ChangeSurnameRow {
+            param([string]$AdObjectName = 'gn-user')
+            [pscustomobject]@{
+                ActionType              = 'ChangeAccountSurname'
+                AdObjectName            = $AdObjectName
+                GivenName               = 'Max'
+                SurName                 = 'Neuname'
+                NewPrimaryEMailAddress  = 'max.neuname@ksbl.ch'
+                CurrentUserName         = 'Requester'
+                CurrentUserDomainName   = 'KSBL'
+                CurrentUserEMailAddress = 'requester@ksbl.ch'
+            }
         }
-    }
 
-    function New-ModifyMailboxFolderAceRow {
-        param([string]$AdObjectName = 'gn-mailbox', [string]$DelegatedAdObjectName = 'gn-delegate')
-        [pscustomobject]@{
-            ActionType              = 'ModifyMailboxFolderAce'
-            AdObjectName            = $AdObjectName
-            MailboxFolderName       = 'Inbox'
-            DelegatedAdObjectName   = $DelegatedAdObjectName
-            AclActionType           = 'Add'
-            AclEntry                = 'FullAccess'
-            CurrentUserName         = 'Requester'
-            CurrentUserDomainName   = 'KSBL'
-            CurrentUserEMailAddress = 'requester@ksbl.ch'
+        function New-ModifyMailboxFolderAceRow {
+            param([string]$AdObjectName = 'gn-mailbox', [string]$DelegatedAdObjectName = 'gn-delegate')
+            [pscustomobject]@{
+                ActionType              = 'ModifyMailboxFolderAce'
+                AdObjectName            = $AdObjectName
+                MailboxFolderName       = 'Inbox'
+                DelegatedAdObjectName   = $DelegatedAdObjectName
+                AclActionType           = 'Add'
+                AclEntry                = 'FullAccess'
+                CurrentUserName         = 'Requester'
+                CurrentUserDomainName   = 'KSBL'
+                CurrentUserEMailAddress = 'requester@ksbl.ch'
+            }
         }
-    }
 
-    function New-RenameServices {
-        param([scriptblock]$RenameUser = { param($Ctx, $Data) })
-        [pscustomobject]@{
-            UserProvisioning = [pscustomobject]@{
-                RenameUser = $RenameUser
+        function New-RenameServices {
+            param([scriptblock]$RenameUser = { param($Ctx, $Data) })
+            [pscustomobject]@{
+                UserProvisioning = [pscustomobject]@{
+                    RenameUser = $RenameUser
+                }
+            }
+        }
+
+        function New-SurnameServices {
+            param([scriptblock]$SetSurname = { param($Ctx, $Data) })
+            [pscustomobject]@{
+                UserProvisioning = [pscustomobject]@{
+                    SetSurname = $SetSurname
+                }
+            }
+        }
+
+        function New-MailboxAceServices {
+            param([scriptblock]$SetMailboxFolderAce = { param($Ctx, $Data) })
+            [pscustomobject]@{
+                UserProvisioning = [pscustomobject]@{
+                    SetMailboxFolderAce = $SetMailboxFolderAce
+                }
             }
         }
     }
 
-    function New-SurnameServices {
-        param([scriptblock]$SetSurname = { param($Ctx, $Data) })
-        [pscustomobject]@{
-            UserProvisioning = [pscustomobject]@{
-                SetSurname = $SetSurname
-            }
-        }
-    }
-
-    function New-MailboxAceServices {
-        param([scriptblock]$SetMailboxFolderAce = { param($Ctx, $Data) })
-        [pscustomobject]@{
-            UserProvisioning = [pscustomobject]@{
-                SetMailboxFolderAce = $SetMailboxFolderAce
-            }
-        }
-    }
+    # ---------------------------------------------------------------------------
+    # GenericUser.RenameAccount
+    # ---------------------------------------------------------------------------
 }
 
-# ---------------------------------------------------------------------------
-# GenericUser.RenameAccount
-# ---------------------------------------------------------------------------
 Describe 'GenericUser.RenameAccount handler' {
 
     It 'Returns Succeeded with SuccessCount=1 when single row succeeds' {
