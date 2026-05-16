@@ -1,0 +1,2 @@
+﻿ActionType|DisplayName|FirstName|LastName|PrimarySmtpAddress|NewPrimaryEMailAddress|AdObjectName|OrgUnit|HideInAb|Manager|FullAccessMembers|CurrentUserName|CurrentUserDomainName|CurrentUserEMailAddress
+CreateGroupMailbox|Axel Schweiss|Axel|Schweiss|uat10031@ksbl.ch|uat10032@ksbl.ch|uat10031|OU=UAT,OU=Groups,DC=ksbl,DC=local|false|uat10033|uat10035;uat10036|ex00013|ksbl|peter.silie@ksbl.ch

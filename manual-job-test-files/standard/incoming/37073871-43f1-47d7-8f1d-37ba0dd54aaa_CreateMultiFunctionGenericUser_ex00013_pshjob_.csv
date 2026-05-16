@@ -1,0 +1,2 @@
+﻿ActionType|TargetAdObjectName|TargetDomain|TargetUserAdDisplayname|TargetUserAdEmployeeType|Description|Manager|CurrentUserName|CurrentUserDomainName|CurrentUserEMailAddress
+CreateMultiFunctionGenericUser|uat10074|ksbl|Tina Trulla|UAT-Test|Manueller UAT-Test für GenericUser.CreateMultiFunction|uat10075|ex00013|ksbl|peter.silie@ksbl.ch

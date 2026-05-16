@@ -1,0 +1,2 @@
+ActionType|TargetAdObjectName|TargetDomain|TargetUserDomainOU|TargetUserAdDisplayname|TargetUserAdGivenname|TargetUserAdSurname|TargetUserAdEmployeeType|TargetLocation|MailboxEnable|CurrentUserName|CurrentUserDomainName|CurrentUserEMailAddress
+CreateServiceAccount|uat10110|ksbl|OU=UAT,OU=Users,DC=ksbl,DC=local|Luna Tick|Luna|Tick|S|UAT-Basel|true|ex00013|ksbl|peter.silie@ksbl.ch

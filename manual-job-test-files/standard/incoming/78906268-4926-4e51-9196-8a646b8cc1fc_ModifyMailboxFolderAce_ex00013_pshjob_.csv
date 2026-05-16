@@ -1,0 +1,2 @@
+﻿ActionType|AdObjectName|MailboxFolderName|DelegatedAdObjectName|AclActionType|AclEntry|CurrentUserName|CurrentUserDomainName|CurrentUserEMailAddress
+ModifyMailboxFolderAce|uat10091|Kalender|uat10094|Add|Reviewer|ex00013|ksbl|peter.silie@ksbl.ch

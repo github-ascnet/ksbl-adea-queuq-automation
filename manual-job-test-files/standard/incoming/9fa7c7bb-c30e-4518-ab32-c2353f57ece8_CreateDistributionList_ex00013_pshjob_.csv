@@ -1,0 +1,2 @@
+﻿ActionType|DisplayName|PrimarySmtpAddress|AdObjectName|OrgUnit|HideInAb|Manager|CurrentUserName|CurrentUserDomainName|CurrentUserEMailAddress
+CreateDistributionList|Rainer Zufall|uat10007@ksbl.ch|uat10007|OU=UAT,OU=Groups,DC=ksbl,DC=local|false|uat10009|ex00013|ksbl|peter.silie@ksbl.ch
