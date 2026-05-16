@@ -71,6 +71,25 @@ function Invoke-ResolvedPermissionGateway {
             -Message $exec.Reason -ErrorCode $errorCode
     }
 
+    # Execute: route to the correct gateway based on resolved authority.
+    # Important: RemoteUserMailbox/RemoteSharedMailbox permissions are cloud-side operations.
+    # If Exchange Online is required but disabled, return a controlled configuration error before
+    # any gateway call turns this into a generic GATEWAY_ERROR.
+    $exoEnabledForExecute = (
+        $Context.Config.ContainsKey('ExchangeOnline') -and
+        $Context.Config['ExchangeOnline'] -is [hashtable] -and
+        $Context.Config['ExchangeOnline'].ContainsKey('Enabled') -and
+        [bool]$Context.Config['ExchangeOnline']['Enabled']
+    )
+    if ($exec.PermissionAuthority -eq 'ExchangeOnline' -and -not $exoEnabledForExecute) {
+        return New-PermissionOperationResult `
+            -Success $false `
+            -Authority $exec.PermissionAuthority `
+            -Identity $MailboxIdentity -Trustee $Trustee -Operation $Operation `
+            -Message "Exchange Online is required for '$Operation' on '$MailboxIdentity', but ExchangeOnline.Enabled is false." `
+            -ErrorCode 'EXO_REQUIRED_BUT_DISABLED'
+    }
+
     # Execute: route to the correct gateway based on resolved authority
     try {
         switch ($Operation) {

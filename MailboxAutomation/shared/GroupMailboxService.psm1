@@ -335,9 +335,9 @@ function Set-GroupMailboxManager {
                     -Trustee $manager `
                     -Action 'ADD' `
                     -EnableSendAs:$true `
-                    -WhatIfMode:$false `
+                    -WhatIfMode:$Context.WhatIfMode `
                     -Logger $Context.Logger | Out-Null
-                Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$false | Out-Null
+                Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$Context.WhatIfMode | Out-Null
             }
             'ExchangeOnline' {
                 # EXO-hosted mailbox:
@@ -352,18 +352,18 @@ function Set-GroupMailboxManager {
                     InheritanceType = 'All'
                     AutoMapping     = $false
                 }
-                Add-ExoMailboxPermissionSafe -Parameters $faParams -Config $Context.Config -WhatIfMode:$false | Out-Null
+                Add-ExoMailboxPermissionSafe -Parameters $faParams -Config $Context.Config -WhatIfMode:$Context.WhatIfMode | Out-Null
 
                 $saParams = @{
                     Identity     = $adObjectName
                     Trustee      = $manager
-                    AccessRights = 'ExtendedRights'
+                    AccessRights = 'SendAs'
                     Confirm      = $false
                 }
-                Add-ExoSendAsPermissionSafe -Parameters $saParams -Config $Context.Config -WhatIfMode:$false | Out-Null
+                Add-ExoSendAsPermissionSafe -Parameters $saParams -Config $Context.Config -WhatIfMode:$Context.WhatIfMode | Out-Null
 
                 if ($resolution.ExistsOnPrem) {
-                    Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$false | Out-Null
+                    Set-AdUserSafe -Parameters @{ Identity = $adObjectName; Manager = $manager } -WhatIfMode:$Context.WhatIfMode | Out-Null
                 }
             }
             default {
