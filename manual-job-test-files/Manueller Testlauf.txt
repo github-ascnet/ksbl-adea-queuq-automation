@@ -1,0 +1,5 @@
+1. Dateien aus standard/incoming in MailboxAutomation/queues/standard/incoming kopieren
+2. In den Projektordner wechseln: cd MailboxAutomation
+3. CorrelationId erzeugen: $correlationId = [guid]::NewGuid().ToString()
+4. JobProcessor starten
+   .\Invoke-JobProcessor.ps1 -Queue standard -CorrelationId $correlationId -OutputJson

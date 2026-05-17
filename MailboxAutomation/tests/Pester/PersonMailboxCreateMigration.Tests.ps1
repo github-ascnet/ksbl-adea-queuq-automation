@@ -121,4 +121,30 @@ Describe 'PersonMailbox.CreateNonStandard migration' {
         $context = New-TestContext -Rows @($row) -StableJobKey 'CreateNonStdPersonMailbox_alias_pshjob_'
         { Invoke-CreateNonStdPersonMailbox -Context $context } | Should -Not -Throw
     }
+
+    It 'resolves target OU and domain from migrated PersonMailbox configuration when CSV values are missing' {
+        $row = New-PersonMailboxRow -EmployeeType 'A'
+        $row.TargetDomain = ''
+        $row.TargetUserDomainOU = ''
+        $context = New-TestContext -Rows @()
+        $context.Config.ActiveDirectory = @{
+            AdminUserOu = 'OU=Admins,OU=_Users,DC=ksbl,DC=local'
+            UpnDomainName = 'ksbl.ch'
+        }
+        $context.Config.PersonMailbox = @{
+            PrimaryMailDomain = 'ksbl.ch'
+            UpnDomainName = 'ksbl.ch'
+            ScheduledTaskName = 'Hospis Sync to Active Directory'
+            PrincipalsAllowedToRetrieveManagedPassword = 'LG-ADS_GMSA_Domain_Servers'
+            UserProfileDirectoryShares = @('\\sv00701\UserProfiles$','\\sv00702\UserProfiles$')
+        }
+
+        $plan = New-NonStandardPersonMailboxPlan -Context $context -Data $row
+        $plan.TargetUserDomainOU | Should -Be 'OU=Admins,OU=_Users,DC=ksbl,DC=local'
+        $plan.TargetDomain | Should -Be 'ksbl.ch'
+        $plan.PrimarySmtpAddress | Should -Match '@ksbl.ch$'
+        $plan.ScheduledTaskName | Should -Be 'Hospis Sync to Active Directory'
+        $plan.PrincipalsAllowedToRetrieveManagedPassword | Should -Be 'LG-ADS_GMSA_Domain_Servers'
+    }
+
 }

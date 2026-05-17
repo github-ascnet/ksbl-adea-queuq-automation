@@ -294,6 +294,7 @@ function Send-JobNotification {
         [Parameter(Mandatory = $true)][hashtable]$Config,
         [Parameter(Mandatory = $true)][string]$Status,
         [Parameter(Mandatory = $true)][string]$UseCaseName,
+        [object[]]$Payload,
         [string]$Message,
         [object]$JobResult,
         [object]$Metadata,
@@ -326,14 +327,38 @@ function Send-JobNotification {
         return
     }
 
-    # Empfänger bestimmen
+    # Empfänger bestimmen:
+    # To wird dynamisch aus CurrentUserEMailAddress des CSV-Payloads gebildet.
     $toAddresses = @()
-    if ($notifConfig.ContainsKey('To') -and $null -ne $notifConfig['To']) {
-        $toAddresses = @($notifConfig['To'])
+    foreach ($row in @($Payload)) {
+        if ($null -eq $row) { continue }
+
+        $email = $null
+        if ($row -is [hashtable]) {
+            if ($row.ContainsKey('CurrentUserEMailAddress')) {
+                $email = $row['CurrentUserEMailAddress']
+            }
+        }
+        elseif ($row.PSObject -and $row.PSObject.Properties['CurrentUserEMailAddress']) {
+            $email = $row.CurrentUserEMailAddress
+        }
+
+        if ($email) {
+            $normalized = [string]$email
+            if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+                $toAddresses += $normalized.Trim()
+            }
+        }
     }
+    $toAddresses = @($toAddresses | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     if ($toAddresses.Count -eq 0) {
-        if ($Logger) { Write-LogWarn -Logger $Logger -Message 'No notification recipients configured. Skipping mail.' }
+        if ($Logger) { Write-LogWarn -Logger $Logger -Message 'No notification recipients resolved from payload field CurrentUserEMailAddress. Skipping mail.' }
         return
+    }
+
+    $ccAddresses = @()
+    if ($notifConfig.ContainsKey('Cc') -and $null -ne $notifConfig['Cc']) {
+        $ccAddresses = @($notifConfig['Cc']) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { ([string]$_).Trim() } | Select-Object -Unique
     }
 
     $from = if ($notifConfig.ContainsKey('From') -and $notifConfig['From']) { [string]$notifConfig['From'] }       else { 'noreply@example.local' }
@@ -383,6 +408,9 @@ function Send-JobNotification {
             Encoding    = [System.Text.Encoding]::UTF8
             ErrorAction = 'Stop'
         }
+        if (@($ccAddresses).Count -gt 0) {
+            $mailParams['Cc'] = @($ccAddresses)
+        }
         Send-MailMessage @mailParams
         if ($Logger) { Write-LogInfo -Logger $Logger -Message "Notification sent: $subject" }
     }
@@ -401,6 +429,7 @@ function Send-JobFailureNotification {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Config,
         [Parameter(Mandatory = $true)][string]$UseCaseName,
+        [object[]]$Payload,
         [string]$Message,
         [object]$JobResult,
         [object]$Metadata,
@@ -415,6 +444,7 @@ function Send-JobFailureNotification {
         -Config      $Config `
         -Status      'Failed' `
         -UseCaseName $UseCaseName `
+        -Payload     $Payload `
         -Message     $Message `
         -JobResult   $JobResult `
         -Metadata    $Metadata `
@@ -434,6 +464,7 @@ function Send-JobSuccessNotification {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Config,
         [Parameter(Mandatory = $true)][string]$UseCaseName,
+        [object[]]$Payload,
         [string]$Message,
         [object]$JobResult,
         [object]$Metadata,
@@ -448,6 +479,7 @@ function Send-JobSuccessNotification {
         -Config      $Config `
         -Status      'Succeeded' `
         -UseCaseName $UseCaseName `
+        -Payload     $Payload `
         -Message     $Message `
         -JobResult   $JobResult `
         -Metadata    $Metadata `

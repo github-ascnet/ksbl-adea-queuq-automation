@@ -4,6 +4,85 @@
     "Enabled": false
   },
   "ExchangeOnPrem": {
-    "Enabled": true
+    "Enabled": true,
+    "RemotePowerShell": {
+      "User": "ksbl\\ServiceIAMJobs10",
+      "SecretPath": "D:\\iam\\Secrets\\serviceiamjobs10.sec",
+      "ConnectionUri": "http://sv01250.ksbl.local/PowerShell",
+      "Authentication": "Kerberos"
+    },
+    "PrimaryMailDomain": "ksbl.ch",
+    "CloudDomain": "kantonsspitalbl.mail.onmicrosoft.com",
+    "ExchangeAdministrativeGroupDnTemplate": "CN=Exchange Administrative Group (FYDIBOHF23SPDLT),CN=Administrative Groups,CN=KSBL,CN=Microsoft Exchange,CN=Services,{ConfigurationNamingContext}",
+    "MailboxDatabaseLdapFilter": "(&(objectClass=msExchPrivateMDB)(!(name=MAILDB-NODAG))(!name=maildb101)(!name=maildb102)(!name=maildb103)(!name=Mailbox Database*)(!name=maildb*))"
+  },
+  "ActiveDirectory": {
+    "Enabled": true,
+    "DefaultDomain": "ksbl.local",
+    "DefaultDomainNetBios": "ksbl",
+    "UpnDomainName": "ksbl.ch",
+    "PrimaryMailDomain": "ksbl.ch",
+    "CloudDomain": "kantonsspitalbl.mail.onmicrosoft.com",
+    "DomainControllerDiscovery": {
+      "UseRidRoleOwner": true
+    },
+    "InternalUserOu": "OU=Internal,OU=_Users,DC=ksbl,DC=local",
+    "ExternalUserOu": "OU=External,OU=_Users,DC=ksbl,DC=local",
+    "ServiceUserOu": "OU=ServiceAccounts,OU=_Users,DC=ksbl,DC=local",
+    "ManagedServiceUserOu": "CN=Managed Service Accounts,DC=ksbl,DC=local",
+    "AdminUserOu": "OU=Admins,OU=_Users,DC=ksbl,DC=local",
+    "GenericUserOu": "OU=Generics,OU=_Users,DC=ksbl,DC=local",
+    "HomeDirectory": "\\\\ksbl.local\\HomeDrives",
+    "HomeDirectoryDrive": "Z:",
+    "ApplicationDirectoryShare": "\\\\sv00213\\Appdata$",
+    "DesktopDirectoryShare": "\\\\sv00213\\desktop$"
+  },
+  "PersonMailbox": {
+    "PrimaryMailDomain": "ksbl.ch",
+    "MailboxVisibilityRetryMinutes": 5,
+    "UpnDomainName": "ksbl.ch",
+    "CloudDomain": "kantonsspitalbl.mail.onmicrosoft.com",
+    "ScheduledTaskName": "Hospis Sync to Active Directory",
+    "PrincipalsAllowedToRetrieveManagedPassword": "LG-ADS_GMSA_Domain_Servers",
+    "UserProfileDirectoryShares": [
+      "\\\\sv00701\\UserProfiles$",
+      "\\\\sv00702\\UserProfiles$"
+    ]
+  },
+  "HomeDirectory": {
+    "Enabled": true,
+    "DefaultHomeDrive": "Z:",
+    "CreateFolderIfMissing": true,
+    "SetPermissions": true,
+    "DefaultAccessRight": "Modify",
+    "Inheritance": "ContainerInherit,ObjectInherit",
+    "Propagation": "None",
+    "NamespaceRoot": "\\\\ksbl.local\\HomeDrives",
+    "DefaultTargetRoot": "\\\\ksbl.local\\HomeDrives",
+    "FileServers": [
+      "sv01005.ksbl.local",
+      "sv01006.ksbl.local"
+    ],
+    "ShareNamePattern": "home_[a-z]",
+    "WhatIfShareName": "home_a",
+    "DefaultUserDomain": "ksbl",
+    "ApplicationDirectoryShare": "\\\\sv00213\\Appdata$",
+    "DesktopDirectoryShare": "\\\\sv00213\\desktop$",
+    "DfsRootNamePattern": "*\\HomeDrives",
+    "DeletedHomeDirectoryMarker": ".delete_manually_user_left_company",
+    "UserProfileDirectoryShares": [
+      "\\\\sv00701\\UserProfiles$",
+      "\\\\sv00702\\UserProfiles$"
+    ]
+  },
+  "Hospis": {
+    "SqlServerInstance": "SV02037.ksbl.local",
+    "Database": "KSBL_IAM",
+    "AustrittOOOExternalMessage": "Sehr geehrte Damen und Herren </br></br> Dies ist eine automatische Abwesenheitsmeldung durch ein inaktives Postfach. Ihre E-Mail wird nicht gelesen oder weitergeleitet. </br></br> MfG </br> Kantonsspital Baselland",
+    "AustrittOOOInternalMessage": "Sehr geehrte Damen und Herren </br></br> Dies ist eine automatische Abwesenheitsmeldung durch ein inaktives Postfach. Ihre E-Mail wird nicht gelesen oder weitergeleitet. </br></br> MfG </br> Kantonsspital Baselland"
+  },
+  "EventLog": {
+    "LogName": "KSBL Helpdesk GUI",
+    "Source": "Process-PersonMailbox"
   }
 }

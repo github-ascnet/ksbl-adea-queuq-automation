@@ -37,6 +37,136 @@ function Get-ObjectValue {
     return $DefaultValue
 }
 
+
+
+function Get-ConfigValueSafe {
+    [CmdletBinding()]
+    param(
+        [object]$Config,
+        [string[]]$Path,
+        [object]$DefaultValue = $null
+    )
+
+    $current = $Config
+    foreach ($segment in $Path) {
+        if ($null -eq $current) { return $DefaultValue }
+        if ($current -is [hashtable]) {
+            if (-not $current.ContainsKey($segment)) { return $DefaultValue }
+            $current = $current[$segment]
+            continue
+        }
+        if ($current.PSObject.Properties[$segment]) {
+            $current = $current.$segment
+            continue
+        }
+        return $DefaultValue
+    }
+
+    if ($null -eq $current) { return $DefaultValue }
+    return $current
+}
+
+function Resolve-NonStandardPersonMailboxTargetOu {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][object]$Data,
+        [string]$EmployeeType,
+        [string]$ServiceAccountType
+    )
+
+    $targetOu = [string](Get-ObjectValue -Object $Data -Name 'TargetUserDomainOU')
+    if ([string]::IsNullOrWhiteSpace($targetOu)) { $targetOu = [string](Get-ObjectValue -Object $Data -Name 'TargetDomainUserOU') }
+    if (-not [string]::IsNullOrWhiteSpace($targetOu)) { return $targetOu }
+
+    $actionType = [string](Get-ObjectValue -Object $Data -Name 'ActionType')
+    switch ($actionType) {
+        'CreateManagedServiceAccount' { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ManagedServiceUserOu') -DefaultValue '') }
+        'CreateServiceAccount'        { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ServiceUserOu') -DefaultValue '') }
+        'CreateWpaServiceAccount'     { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ServiceUserOu') -DefaultValue '') }
+    }
+
+    switch ($EmployeeType) {
+        'A' { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','AdminUserOu') -DefaultValue '') }
+        'S' {
+            if ($ServiceAccountType -eq 'MANAGED_SERVICE') { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ManagedServiceUserOu') -DefaultValue '') }
+            return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ServiceUserOu') -DefaultValue '')
+        }
+        'E' { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ExternalUserOu') -DefaultValue '') }
+        'HNP' { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ExternalUserOu') -DefaultValue '') }
+        default { return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','InternalUserOu') -DefaultValue '') }
+    }
+}
+
+function Resolve-NonStandardPersonMailboxTargetDomain {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][object]$Data
+    )
+
+    $targetDomain = [string](Get-ObjectValue -Object $Data -Name 'TargetDomain')
+    if (-not [string]::IsNullOrWhiteSpace($targetDomain)) { return $targetDomain }
+
+    $targetDomain = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('PersonMailbox','UpnDomainName') -DefaultValue '')
+    if (-not [string]::IsNullOrWhiteSpace($targetDomain)) { return $targetDomain }
+
+    $targetDomain = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','UpnDomainName') -DefaultValue '')
+    if (-not [string]::IsNullOrWhiteSpace($targetDomain)) { return $targetDomain }
+
+    return [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','DefaultDomain') -DefaultValue '')
+}
+
+function Get-ExchangeAdministrativeGroupDnFromConfig {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    $dn = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','ExchangeAdministrativeGroupDn') -DefaultValue '')
+    if (-not [string]::IsNullOrWhiteSpace($dn)) { return $dn }
+
+    $template = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','ExchangeAdministrativeGroupDnTemplate') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($template)) { return '' }
+
+    if ($template.Contains('{ConfigurationNamingContext}')) {
+        try {
+            $rootDse = [ADSI]'LDAP://rootdse'
+            $configurationNamingContext = [string]$rootDse.ConfigurationNamingContext
+            return $template.Replace('{ConfigurationNamingContext}', $configurationNamingContext)
+        }
+        catch {
+            return $template
+        }
+    }
+
+    return $template
+}
+
+function Get-ConfiguredMailboxDatabaseCandidates {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    $configured = @(Get-ConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','DefaultMailboxDatabases') -DefaultValue @())
+    if ($configured.Count -gt 0) { return $configured }
+
+    if ($Context.WhatIfMode) { return @() }
+
+    $filter = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','MailboxDatabaseLdapFilter') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($filter)) { return @() }
+
+    $adminGroupDn = Get-ExchangeAdministrativeGroupDnFromConfig -Context $Context
+    if ([string]::IsNullOrWhiteSpace($adminGroupDn)) { return @() }
+
+    try {
+        $searchRoot = [ADSI]("LDAP://CN=Databases,$adminGroupDn")
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher($searchRoot, $filter, @('name'))
+        return @($searcher.FindAll() | ForEach-Object { $_.Path.Split(',')[0].Split('=')[1] })
+    }
+    catch {
+        Write-LogWarn -Logger $Context.Logger -Message "Mailbox database discovery failed. $($_.Exception.Message)"
+        return @()
+    }
+}
+
 function ConvertTo-LegacyPersonMailboxNamePart {
     [CmdletBinding()]
     param([string]$Value)
@@ -174,13 +304,13 @@ function New-NonStandardPersonMailboxPlan {
 
     $employeeType = [string](Get-ObjectValue -Object $Data -Name 'TargetUserAdEmployeeType')
     $targetAdObjectName = [string](Get-ObjectValue -Object $Data -Name 'TargetAdObjectName')
-    $targetOu = [string](Get-ObjectValue -Object $Data -Name 'TargetUserDomainOU')
-    if ([string]::IsNullOrWhiteSpace($targetOu)) { $targetOu = [string](Get-ObjectValue -Object $Data -Name 'TargetDomainUserOU') }
 
     $displayName = Get-NonStandardPersonMailboxDisplayName -Data $Data
     $location = Get-NonStandardPersonMailboxLocationAttributes -TargetLocation ([string](Get-ObjectValue -Object $Data -Name 'TargetLocation'))
     $ldapFilter = New-NonStandardPersonMailboxLdapFilter -Data $Data
     $serviceAccountType = Get-NonStandardPersonMailboxServiceAccountType -Data $Data
+    $targetOu = Resolve-NonStandardPersonMailboxTargetOu -Context $Context -Data $Data -EmployeeType $employeeType -ServiceAccountType $serviceAccountType
+    $targetDomain = Resolve-NonStandardPersonMailboxTargetDomain -Context $Context -Data $Data
     $mailboxEnableRaw = [string](Get-ObjectValue -Object $Data -Name 'MailboxEnable')
     $mailboxEnable = $false
     if (-not [string]::IsNullOrWhiteSpace($mailboxEnableRaw)) {
@@ -189,7 +319,7 @@ function New-NonStandardPersonMailboxPlan {
 
     [pscustomobject]@{
         TargetAdObjectName = $targetAdObjectName
-        TargetDomain = [string](Get-ObjectValue -Object $Data -Name 'TargetDomain')
+        TargetDomain = $targetDomain
         TargetUserDomainOU = $targetOu
         DisplayName = $displayName
         GivenName = ConvertTo-LegacyPersonMailboxNamePart -Value ([string](Get-ObjectValue -Object $Data -Name 'TargetUserAdGivenname'))
@@ -206,6 +336,10 @@ function New-NonStandardPersonMailboxPlan {
         RequestedBy = [string](Get-ObjectValue -Object $Data -Name 'CurrentUserName')
         RequestedByDomain = [string](Get-ObjectValue -Object $Data -Name 'CurrentUserDomainName')
         RequestedByEmail = [string](Get-ObjectValue -Object $Data -Name 'CurrentUserEMailAddress')
+        ScheduledTaskName = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('PersonMailbox','ScheduledTaskName') -DefaultValue '')
+        PrincipalsAllowedToRetrieveManagedPassword = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('PersonMailbox','PrincipalsAllowedToRetrieveManagedPassword') -DefaultValue '')
+        CloudDomain = [string](Get-ConfigValueSafe -Config $Context.Config -Path @('PersonMailbox','CloudDomain') -DefaultValue '')
+        UserProfileDirectoryShares = @(Get-ConfigValueSafe -Config $Context.Config -Path @('PersonMailbox','UserProfileDirectoryShares') -DefaultValue @())
     }
 }
 
@@ -248,7 +382,7 @@ function Invoke-PrepareNonStandardPersonMailboxAdAccount {
 
     if ($Context.WhatIfMode) {
         if ($plan.RequiresScheduledTaskPause) {
-            $operations += [pscustomobject]@{ Simulated=$true; Action='CheckScheduledTask'; Reason='Legacy script paused while the IAM user sync task was running. Framework models this as a non-blocking step.' }
+            $operations += [pscustomobject]@{ Simulated=$true; Action='CheckScheduledTask'; ScheduledTaskName=$plan.ScheduledTaskName; Reason='Legacy script paused while the IAM user sync task was running. Framework models this as a non-blocking step.' }
         }
         if ($plan.CanUpdateExistingMatch) {
             $operations += [pscustomobject]@{ Simulated=$true; Action='UpdateExistingOrCreateAdUser'; Identity=$plan.TargetAdObjectName; DisplayName=$plan.DisplayName; OU=$plan.TargetUserDomainOU; EmployeeType=$plan.EmployeeType }
@@ -258,6 +392,9 @@ function Invoke-PrepareNonStandardPersonMailboxAdAccount {
         }
         if ($plan.EmployeeType -eq 'HNP') {
             $operations += [pscustomobject]@{ Simulated=$true; Action='ApplyHnpAttributes'; PasswordNeverExpires=$true; Title='Hausarzt'; AccountExpirationDate='yesterday' }
+        }
+        if ($plan.ServiceAccountType -eq 'MANAGED_SERVICE') {
+            $operations += [pscustomobject]@{ Simulated=$true; Action='CreateOrUpdateGroupManagedServiceAccount'; Identity=$plan.TargetAdObjectName; Path=$plan.TargetUserDomainOU; PrincipalsAllowedToRetrieveManagedPassword=$plan.PrincipalsAllowedToRetrieveManagedPassword }
         }
         if ($plan.EmployeeType -in @('P','E','HNP')) {
             $operations += [pscustomobject]@{ Simulated=$true; Action='SetBadgeAttributes'; Identity=$plan.TargetAdObjectName }
@@ -308,10 +445,7 @@ function Invoke-PrepareNonStandardPersonMailboxMailbox {
         return New-PersonMailboxResult -Success $true -Changed $false -Action 'PrepareMailbox' -AdObjectName $plan.TargetAdObjectName -Message 'MailboxEnable is false; mailbox preparation skipped.' -Output @{ MailboxEnable = $false }
     }
 
-    $dbs = @()
-    if ($Context.Config -and $Context.Config.ContainsKey('ExchangeOnPrem') -and $Context.Config.ExchangeOnPrem.ContainsKey('DefaultMailboxDatabases')) {
-        $dbs = @($Context.Config.ExchangeOnPrem.DefaultMailboxDatabases)
-    }
+    $dbs = @(Get-ConfiguredMailboxDatabaseCandidates -Context $Context)
     $selectedDb = if ($dbs.Count -gt 0) { $dbs | Get-Random } else { $null }
 
     if ($Context.WhatIfMode) {
@@ -450,6 +584,9 @@ Export-ModuleMember -Function @(
     'Get-NonStandardPersonMailboxServiceAccountType',
     'New-NonStandardPersonMailboxLdapFilter',
     'New-NonStandardPersonMailboxEmailAddress',
+    'Resolve-NonStandardPersonMailboxTargetOu',
+    'Resolve-NonStandardPersonMailboxTargetDomain',
+    'Get-ConfiguredMailboxDatabaseCandidates',
     'New-NonStandardPersonMailboxPlan',
     'Resolve-NonStandardPersonMailboxExistingAccount',
     'Invoke-PrepareNonStandardPersonMailboxAdAccount',

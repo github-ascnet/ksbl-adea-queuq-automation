@@ -1,5 +1,84 @@
 Set-StrictMode -Version Latest
 
+
+
+function Get-GroupMailboxConfigValueSafe {
+    [CmdletBinding()]
+    param(
+        [object]$Config,
+        [string[]]$Path,
+        [object]$DefaultValue = $null
+    )
+
+    $current = $Config
+    foreach ($segment in $Path) {
+        if ($null -eq $current) { return $DefaultValue }
+        if ($current -is [hashtable]) {
+            if (-not $current.ContainsKey($segment)) { return $DefaultValue }
+            $current = $current[$segment]
+            continue
+        }
+        if ($current.PSObject.Properties[$segment]) {
+            $current = $current.$segment
+            continue
+        }
+        return $DefaultValue
+    }
+
+    if ($null -eq $current) { return $DefaultValue }
+    return $current
+}
+
+function Get-GroupMailboxExchangeAdministrativeGroupDnFromConfig {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    $dn = [string](Get-GroupMailboxConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','ExchangeAdministrativeGroupDn') -DefaultValue '')
+    if (-not [string]::IsNullOrWhiteSpace($dn)) { return $dn }
+
+    $template = [string](Get-GroupMailboxConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','ExchangeAdministrativeGroupDnTemplate') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($template)) { return '' }
+
+    if ($template.Contains('{ConfigurationNamingContext}')) {
+        try {
+            $rootDse = [ADSI]'LDAP://rootdse'
+            $configurationNamingContext = [string]$rootDse.ConfigurationNamingContext
+            return $template.Replace('{ConfigurationNamingContext}', $configurationNamingContext)
+        }
+        catch {
+            return $template
+        }
+    }
+
+    return $template
+}
+
+function Get-GroupMailboxDatabaseCandidates {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    $configured = @(Get-GroupMailboxConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','DefaultMailboxDatabases') -DefaultValue @())
+    if ($configured.Count -gt 0) { return $configured }
+
+    if ($Context.WhatIfMode) { return @() }
+
+    $filter = [string](Get-GroupMailboxConfigValueSafe -Config $Context.Config -Path @('ExchangeOnPrem','MailboxDatabaseLdapFilter') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($filter)) { return @() }
+
+    $adminGroupDn = Get-GroupMailboxExchangeAdministrativeGroupDnFromConfig -Context $Context
+    if ([string]::IsNullOrWhiteSpace($adminGroupDn)) { return @() }
+
+    try {
+        $searchRoot = [ADSI]("LDAP://CN=Databases,$adminGroupDn")
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher($searchRoot, $filter, @('name'))
+        return @($searcher.FindAll() | ForEach-Object { $_.Path.Split(',')[0].Split('=')[1] })
+    }
+    catch {
+        Write-LogWarn -Logger $Context.Logger -Message "Mailbox database discovery failed. $($_.Exception.Message)"
+        return @()
+    }
+}
+
 function ConvertFrom-LegacyActionToken {
     [CmdletBinding()]
     param(
@@ -547,14 +626,9 @@ function New-GroupMailbox {
             Password = $password
         }
 
-        if ($Context.Config -and $Context.Config.ContainsKey('ExchangeOnPrem')) {
-            $exchangeConfig = $Context.Config.ExchangeOnPrem
-            if ($exchangeConfig -and $exchangeConfig.ContainsKey('DefaultMailboxDatabases')) {
-                $dbs = @($exchangeConfig.DefaultMailboxDatabases)
-                if ($dbs.Count -gt 0) {
-                    $newMailboxParams['Database'] = Get-Random -InputObject $dbs
-                }
-            }
+        $dbs = @(Get-GroupMailboxDatabaseCandidates -Context $Context)
+        if ($dbs.Count -gt 0) {
+            $newMailboxParams['Database'] = Get-Random -InputObject $dbs
         }
 
         New-OnPremMailboxSafe -Parameters $newMailboxParams -WhatIfMode:$false | Out-Null

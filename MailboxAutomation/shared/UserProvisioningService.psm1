@@ -12,6 +12,35 @@ function Get-ObjectPropertyValue {
     return $null
 }
 
+
+
+function Get-UserProvisioningConfigValueSafe {
+    [CmdletBinding()]
+    param(
+        [object]$Config,
+        [string[]]$Path,
+        [object]$DefaultValue = $null
+    )
+
+    $current = $Config
+    foreach ($segment in $Path) {
+        if ($null -eq $current) { return $DefaultValue }
+        if ($current -is [hashtable]) {
+            if (-not $current.ContainsKey($segment)) { return $DefaultValue }
+            $current = $current[$segment]
+            continue
+        }
+        if ($current.PSObject.Properties[$segment]) {
+            $current = $current.$segment
+            continue
+        }
+        return $DefaultValue
+    }
+
+    if ($null -eq $current) { return $DefaultValue }
+    return $current
+}
+
 function New-UserProvisioningResult {
     [CmdletBinding()]
     param(
@@ -58,22 +87,36 @@ function Get-ConfiguredUserOu {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][object]$Context,
-        [Parameter(Mandatory = $true)][string]$SamAccountName
+        [Parameter(Mandatory = $true)][string]$SamAccountName,
+        [string]$EmployeeType = '',
+        [string]$ActionType = ''
     )
 
-    if (-not ($Context.Config -and $Context.Config.ContainsKey('ActiveDirectory'))) {
-        return $null
+    if ($ActionType -eq 'CreateMultiFunctionGenericUser') {
+        $genericOu = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','GenericUserOu') -DefaultValue '')
+        if (-not [string]::IsNullOrWhiteSpace($genericOu)) { return $genericOu }
     }
 
-    $adConfig = $Context.Config.ActiveDirectory
+    switch ($EmployeeType) {
+        'A' {
+            $ou = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','AdminUserOu') -DefaultValue '')
+            if (-not [string]::IsNullOrWhiteSpace($ou)) { return $ou }
+        }
+        'S' {
+            $ou = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ServiceUserOu') -DefaultValue '')
+            if (-not [string]::IsNullOrWhiteSpace($ou)) { return $ou }
+        }
+        'E' {
+            $ou = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ExternalUserOu') -DefaultValue '')
+            if (-not [string]::IsNullOrWhiteSpace($ou)) { return $ou }
+        }
+    }
+
     if ($SamAccountName.StartsWith('ex')) {
-        if ($adConfig.ContainsKey('ExternalUserOu')) { return [string]$adConfig.ExternalUserOu }
-    }
-    else {
-        if ($adConfig.ContainsKey('InternalUserOu')) { return [string]$adConfig.InternalUserOu }
+        return [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ExternalUserOu') -DefaultValue '')
     }
 
-    return $null
+    return [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','InternalUserOu') -DefaultValue '')
 }
 
 function New-GenericUser {
@@ -103,22 +146,19 @@ function New-GenericUser {
     }
 
     $targetOu = $null
-    try { $targetOu = Get-ConfiguredUserOu -Context $Context -SamAccountName $targetAdObjectName } catch { $targetOu = $null }
+    try { $targetOu = Get-ConfiguredUserOu -Context $Context -SamAccountName $targetAdObjectName -EmployeeType $employeeType -ActionType ([string]$Data.ActionType) } catch { $targetOu = $null }
     if ([string]::IsNullOrWhiteSpace($targetOu)) {
         $targetOu = $null
     }
 
-    $homeDirectoryRoot = $null
-    $homeDirectoryDrive = $null
-    $applicationDirectoryShare = $null
-    $desktopDirectoryShare = $null
-    if ($Context.Config -and $Context.Config.ContainsKey('ActiveDirectory')) {
-        $adConfig = $Context.Config.ActiveDirectory
-        if ($adConfig.ContainsKey('HomeDirectory')) { $homeDirectoryRoot = $adConfig.HomeDirectory }
-        if ($adConfig.ContainsKey('HomeDirectoryDrive')) { $homeDirectoryDrive = $adConfig.HomeDirectoryDrive }
-        if ($adConfig.ContainsKey('ApplicationDirectoryShare')) { $applicationDirectoryShare = $adConfig.ApplicationDirectoryShare }
-        if ($adConfig.ContainsKey('DesktopDirectoryShare')) { $desktopDirectoryShare = $adConfig.DesktopDirectoryShare }
-    }
+    $homeDirectoryRoot = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('HomeDirectory','NamespaceRoot') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($homeDirectoryRoot)) { $homeDirectoryRoot = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','HomeDirectory') -DefaultValue '') }
+    $homeDirectoryDrive = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('HomeDirectory','DefaultHomeDrive') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($homeDirectoryDrive)) { $homeDirectoryDrive = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','HomeDirectoryDrive') -DefaultValue '') }
+    $applicationDirectoryShare = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('HomeDirectory','ApplicationDirectoryShare') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($applicationDirectoryShare)) { $applicationDirectoryShare = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','ApplicationDirectoryShare') -DefaultValue '') }
+    $desktopDirectoryShare = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('HomeDirectory','DesktopDirectoryShare') -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace($desktopDirectoryShare)) { $desktopDirectoryShare = [string](Get-UserProvisioningConfigValueSafe -Config $Context.Config -Path @('ActiveDirectory','DesktopDirectoryShare') -DefaultValue '') }
 
     $operations = @()
 
