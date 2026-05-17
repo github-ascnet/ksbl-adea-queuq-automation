@@ -1,5 +1,15 @@
 {
   "EnvironmentName": "Hybrid",
+  "Notifications": {
+    "Enabled": false,
+    "SendSuccess": true,
+    "SendFailure": true,
+    "From": "informatik@ksbl.ch",
+    "Cc": ["ksbl.vl.iam-administrators@ksbl.ch"],
+    "SmtpServer": "relay.ksbl.local",
+    "Port": 25,
+    "UseSsl": false
+  },
   "ExchangeOnline": {
     "Enabled": true,
     "TenantDomain": "kantonsspitalbl.onmicrosoft.com",
@@ -63,10 +73,7 @@
     "Propagation": "None",
     "NamespaceRoot": "\\\\ksbl.local\\HomeDrives",
     "DefaultTargetRoot": "\\\\ksbl.local\\HomeDrives",
-    "FileServers": [
-      "sv01005.ksbl.local",
-      "sv01006.ksbl.local"
-    ],
+    "FileServers": ["sv01005.ksbl.local", "sv01006.ksbl.local"],
     "ShareNamePattern": "home_[a-z]",
     "WhatIfShareName": "home_a",
     "DefaultUserDomain": "ksbl",
@@ -80,6 +87,7 @@
     ]
   },
   "Hospis": {
+    "ArchiveRoot": "D:\\IAM\\Archive",
     "SqlServerInstance": "SV02037.ksbl.local",
     "Database": "KSBL_IAM",
     "AustrittOOOExternalMessage": "Sehr geehrte Damen und Herren </br></br> Dies ist eine automatische Abwesenheitsmeldung durch ein inaktives Postfach. Ihre E-Mail wird nicht gelesen oder weitergeleitet. </br></br> MfG </br> Kantonsspital Baselland",
