@@ -588,6 +588,7 @@ function Invoke-JobEngine {
                         Send-JobFailureNotification `
                             -Config      $mergedConfig `
                             -UseCaseName $useCase.Name `
+                            -Payload     $payload `
                             -Message     $resultMessage `
                             -JobResult   $result `
                             -Metadata    $claimed.Metadata `
@@ -603,6 +604,7 @@ function Invoke-JobEngine {
                         Send-JobSuccessNotification `
                             -Config      $mergedConfig `
                             -UseCaseName $useCase.Name `
+                            -Payload     $payload `
                             -Message     $resultMessage `
                             -JobResult   $result `
                             -Metadata    $claimed.Metadata `

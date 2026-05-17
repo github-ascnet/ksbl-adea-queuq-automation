@@ -340,6 +340,52 @@ Describe 'Send-JobNotification' {
             Should -Invoke Send-MailMessage -Times 0 -ModuleName 'MailNotification'
         }
     }
+
+    Context 'Empfaengeraufloesung aus Payload' {
+
+        It 'Verwendet CurrentUserEMailAddress aus Payload als To und statisches Cc aus Config' {
+            Mock Send-MailMessage { } -ModuleName 'MailNotification'
+
+            $config = @{
+                Notifications = @{
+                    Enabled    = $true
+                    SmtpServer = 'smtp.example.local'
+                    Port       = 25
+                    From       = 'noreply@example.local'
+                    Cc         = @('ksbl.vl.iam-administrators@ksbl.ch')
+                }
+            }
+            $payload = @(
+                [pscustomobject]@{ CurrentUserEMailAddress = 'requester@ksbl.ch' }
+            )
+
+            Send-JobNotification -Config $config -Status 'Succeeded' -UseCaseName 'Test' -Payload $payload
+
+            Should -Invoke Send-MailMessage -Times 1 -ModuleName 'MailNotification' -ParameterFilter {
+                $To -contains 'requester@ksbl.ch' -and $Cc -contains 'ksbl.vl.iam-administrators@ksbl.ch'
+            }
+        }
+
+        It 'Sendet keine Mail wenn im Payload keine CurrentUserEMailAddress vorhanden ist' {
+            Mock Send-MailMessage { } -ModuleName 'MailNotification'
+
+            $config = @{
+                Notifications = @{
+                    Enabled    = $true
+                    SmtpServer = 'smtp.example.local'
+                    Port       = 25
+                    From       = 'noreply@example.local'
+                    Cc         = @('ksbl.vl.iam-administrators@ksbl.ch')
+                }
+            }
+            $payload = @(
+                [pscustomobject]@{ AdObjectName = 'u12345' }
+            )
+
+            Send-JobNotification -Config $config -Status 'Succeeded' -UseCaseName 'Test' -Payload $payload
+            Should -Invoke Send-MailMessage -Times 0 -ModuleName 'MailNotification'
+        }
+    }
 }
 
 Describe 'ConvertTo-HtmlEncodedText' {

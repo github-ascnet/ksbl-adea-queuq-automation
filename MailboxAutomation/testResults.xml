@@ -1,0 +1,124 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="47" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-05-17" time="12:24:05">
+  <environment clr-version="4.0.30319.42000" user-domain="LEGION-PRO-7I16" cwd="C:\Data\Projekte\KSBL\Sources\AdeaAutomation\MailboxAutomation" platform="Microsoft Windows 11 Home|C:\WINDOWS|\Device\Harddisk0\Partition3" machine-name="LEGION-PRO-7I16" nunit-version="2.5.8.0" os-version="10.0.26200" user="sasch" />
+  <culture-info current-culture="en-US" current-uiculture="en-GB" />
+  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="2.486" asserts="0" description="Pester">
+    <results>
+      <test-suite type="TestFixture" name="C:\Data\Projekte\KSBL\Sources\AdeaAutomation\MailboxAutomation\tests\Pester\MailNotification.Tests.ps1" executed="True" result="Success" success="True" time="2.486" asserts="0" description="C:\Data\Projekte\KSBL\Sources\AdeaAutomation\MailboxAutomation\tests\Pester\MailNotification.Tests.ps1">
+        <results>
+          <test-suite type="TestFixture" name="New-JobNotificationHtmlBody" executed="True" result="Success" success="True" time="0.7338" asserts="0" description="New-JobNotificationHtmlBody">
+            <results>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur" executed="True" result="Success" success="True" time="0.3665" asserts="0" description="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur">
+                <results>
+                  <test-case description="Erzeugt einen String, der mit DOCTYPE beginnt" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.Erzeugt einen String, der mit DOCTYPE beginnt" time="0.1916" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Erzeugt einen HTML-Body mit -Tag" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.Erzeugt einen HTML-Body mit -Tag" time="0.0207" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt eine BegrÃ¼ssung (Guten Tag)" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.EnthÃ¤lt eine BegrÃ¼ssung (Guten Tag)" time="0.011" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt eine Beschreibung (Automationsauftrag)" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.EnthÃ¤lt eine Beschreibung (Automationsauftrag)" time="0.01" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt eine Tabelle" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.EnthÃ¤lt eine Tabelle" time="0.0108" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Tabellenheader enthÃ¤lt hellblaue Hintergrundfarbe (#d9ecff)" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.Tabellenheader enthÃ¤lt hellblaue Hintergrundfarbe (#d9ecff)" time="0.0103" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Tabellenzellen haben weissen Hintergrund (#ffffff)" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.Tabellenzellen haben weissen Hintergrund (#ffffff)" time="0.0103" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt Zeitpunkt in der Tabelle" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.EnthÃ¤lt Zeitpunkt in der Tabelle" time="0.0109" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt den UseCase-Namen in der Tabelle" name="New-JobNotificationHtmlBody.Allgemeine HTML-Struktur.EnthÃ¤lt den UseCase-Namen in der Tabelle" time="0.0123" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.Status Success" executed="True" result="Success" success="True" time="0.4113" asserts="0" description="New-JobNotificationHtmlBody.Status Success">
+                <results>
+                  <test-case description="EnthÃ¤lt Status Success im HTML-Badge" name="New-JobNotificationHtmlBody.Status Success.EnthÃ¤lt Status Success im HTML-Badge" time="0.0096" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt das Wort Success" name="New-JobNotificationHtmlBody.Status Success.EnthÃ¤lt das Wort Success" time="0.0091" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt Beschreibung fÃ¼r erfolgreichen Abschluss" name="New-JobNotificationHtmlBody.Status Success.EnthÃ¤lt Beschreibung fÃ¼r erfolgreichen Abschluss" time="0.0096" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt keinen Fehlerblock-DIV bei Success" name="New-JobNotificationHtmlBody.Status Success.EnthÃ¤lt keinen Fehlerblock-DIV bei Success" time="0.0112" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.Status Failed" executed="True" result="Success" success="True" time="0.5611" asserts="0" description="New-JobNotificationHtmlBody.Status Failed">
+                <results>
+                  <test-case description="EnthÃ¤lt Status Failed im HTML-Badge" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt Status Failed im HTML-Badge" time="0.0114" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt das Wort Failed" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt das Wort Failed" time="0.0104" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt Beschreibung fÃ¼r fehlgeschlagenen Auftrag" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt Beschreibung fÃ¼r fehlgeschlagenen Auftrag" time="0.0738" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt einen Fehlerblock (error-box)" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt einen Fehlerblock (error-box)" time="0.0116" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt die Fehlermeldung im Fehlerblock" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt die Fehlermeldung im Fehlerblock" time="0.0101" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt den ErrorCode aus JobResult" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt den ErrorCode aus JobResult" time="0.0146" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt Exception-Meldung aus JobResult" name="New-JobNotificationHtmlBody.Status Failed.EnthÃ¤lt Exception-Meldung aus JobResult" time="0.0131" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.FailedRows" executed="True" result="Success" success="True" time="0.6127" asserts="0" description="New-JobNotificationHtmlBody.FailedRows">
+                <results>
+                  <test-case description="Zeigt FailedRows in einer Fehlertabelle an" name="New-JobNotificationHtmlBody.FailedRows.Zeigt FailedRows in einer Fehlertabelle an" time="0.0214" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Zeigt maximal 20 FailedRows an" name="New-JobNotificationHtmlBody.FailedRows.Zeigt maximal 20 FailedRows an" time="0.026" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.HTML-Encoding dynamischer Werte" executed="True" result="Success" success="True" time="0.6516" asserts="0" description="New-JobNotificationHtmlBody.HTML-Encoding dynamischer Werte">
+                <results>
+                  <test-case description="Enkodiert Sonderzeichen in UseCaseName" name="New-JobNotificationHtmlBody.HTML-Encoding dynamischer Werte.Enkodiert Sonderzeichen in UseCaseName" time="0.0113" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Enkodiert Sonderzeichen in der Fehlermeldung" name="New-JobNotificationHtmlBody.HTML-Encoding dynamischer Werte.Enkodiert Sonderzeichen in der Fehlermeldung" time="0.0121" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Enkodiert Sonderzeichen in Message" name="New-JobNotificationHtmlBody.HTML-Encoding dynamischer Werte.Enkodiert Sonderzeichen in Message" time="0.0112" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="New-JobNotificationHtmlBody.Optionale Felder" executed="True" result="Success" success="True" time="0.7088" asserts="0" description="New-JobNotificationHtmlBody.Optionale Felder">
+                <results>
+                  <test-case description="EnthÃ¤lt Queue in der Tabelle wenn angegeben" name="New-JobNotificationHtmlBody.Optionale Felder.EnthÃ¤lt Queue in der Tabelle wenn angegeben" time="0.0113" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt JobId in der Tabelle wenn angegeben" name="New-JobNotificationHtmlBody.Optionale Felder.EnthÃ¤lt JobId in der Tabelle wenn angegeben" time="0.0115" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt Dateiname aus SourceFile in der Tabelle" name="New-JobNotificationHtmlBody.Optionale Felder.EnthÃ¤lt Dateiname aus SourceFile in der Tabelle" time="0.0142" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="EnthÃ¤lt MovedPath in der Tabelle wenn angegeben" name="New-JobNotificationHtmlBody.Optionale Felder.EnthÃ¤lt MovedPath in der Tabelle wenn angegeben" time="0.0126" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="New-JobNotificationSubject" executed="True" result="Success" success="True" time="0.8235" asserts="0" description="New-JobNotificationSubject">
+            <results>
+              <test-case description="Erzeugt Betreff mit [Success] fÃ¼r Succeeded" name="New-JobNotificationSubject.Erzeugt Betreff mit [Success] fÃ¼r Succeeded" time="0.0141" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="Erzeugt Betreff mit [Failed] fÃ¼r Failed" name="New-JobNotificationSubject.Erzeugt Betreff mit [Failed] fÃ¼r Failed" time="0.0115" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="EnthÃ¤lt UseCase-Namen im Betreff" name="New-JobNotificationSubject.EnthÃ¤lt UseCase-Namen im Betreff" time="0.0127" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="EnthÃ¤lt JobId im Betreff wenn angegeben" name="New-JobNotificationSubject.EnthÃ¤lt JobId im Betreff wenn angegeben" time="0.0149" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="EnthÃ¤lt keine JobId wenn nicht angegeben" name="New-JobNotificationSubject.EnthÃ¤lt keine JobId wenn nicht angegeben" time="0.0127" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="EnthÃ¤lt MailboxAutomation im Betreff" name="New-JobNotificationSubject.EnthÃ¤lt MailboxAutomation im Betreff" time="0.0189" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="Send-JobNotification" executed="True" result="Success" success="True" time="1.6125" asserts="0" description="Send-JobNotification">
+            <results>
+              <test-suite type="TestFixture" name="Send-JobNotification.Notifications deaktiviert" executed="True" result="Success" success="True" time="0.221" asserts="0" description="Send-JobNotification.Notifications deaktiviert">
+                <results>
+                  <test-case description="Sendet keine Mail wenn Notifications.Enabled = false" name="Send-JobNotification.Notifications deaktiviert.Sendet keine Mail wenn Notifications.Enabled = false" time="0.1923" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Sendet keine Mail wenn Notifications-Sektion fehlt" name="Send-JobNotification.Notifications deaktiviert.Sendet keine Mail wenn Notifications-Sektion fehlt" time="0.0192" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Send-JobNotification.SendSuccess deaktiviert" executed="True" result="Success" success="True" time="0.2445" asserts="0" description="Send-JobNotification.SendSuccess deaktiviert">
+                <results>
+                  <test-case description="Sendet keine Success-Mail wenn SendSuccess = false" name="Send-JobNotification.SendSuccess deaktiviert.Sendet keine Success-Mail wenn SendSuccess = false" time="0.0175" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Send-JobNotification.SendFailure deaktiviert" executed="True" result="Success" success="True" time="0.2669" asserts="0" description="Send-JobNotification.SendFailure deaktiviert">
+                <results>
+                  <test-case description="Sendet keine Failure-Mail wenn SendFailure = false" name="Send-JobNotification.SendFailure deaktiviert.Sendet keine Failure-Mail wenn SendFailure = false" time="0.016" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Send-JobNotification.Mailversand-Fehler" executed="True" result="Success" success="True" time="0.3122" asserts="0" description="Send-JobNotification.Mailversand-Fehler">
+                <results>
+                  <test-case description="Wirft keine Exception wenn Mailversand fehlschlÃ¤gt" name="Send-JobNotification.Mailversand-Fehler.Wirft keine Exception wenn Mailversand fehlschlÃ¤gt" time="0.0404" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Send-JobNotification.Kein SMTP-Server konfiguriert" executed="True" result="Success" success="True" time="0.3319" asserts="0" description="Send-JobNotification.Kein SMTP-Server konfiguriert">
+                <results>
+                  <test-case description="Sendet keine Mail wenn SmtpServer leer ist" name="Send-JobNotification.Kein SMTP-Server konfiguriert.Sendet keine Mail wenn SmtpServer leer ist" time="0.0142" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+              <test-suite type="TestFixture" name="Send-JobNotification.Empfaengeraufloesung aus Payload" executed="True" result="Success" success="True" time="0.5424" asserts="0" description="Send-JobNotification.Empfaengeraufloesung aus Payload">
+                <results>
+                  <test-case description="Verwendet CurrentUserEMailAddress aus Payload als To und statisches Cc aus Config" name="Send-JobNotification.Empfaengeraufloesung aus Payload.Verwendet CurrentUserEMailAddress aus Payload als To und statisches Cc aus Config" time="0.1974" asserts="0" success="True" result="Success" executed="True" />
+                  <test-case description="Sendet keine Mail wenn im Payload keine CurrentUserEMailAddress vorhanden ist" name="Send-JobNotification.Empfaengeraufloesung aus Payload.Sendet keine Mail wenn im Payload keine CurrentUserEMailAddress vorhanden ist" time="0.0095" asserts="0" success="True" result="Success" executed="True" />
+                </results>
+              </test-suite>
+            </results>
+          </test-suite>
+          <test-suite type="TestFixture" name="ConvertTo-HtmlEncodedText" executed="True" result="Success" success="True" time="1.7005" asserts="0" description="ConvertTo-HtmlEncodedText">
+            <results>
+              <test-case description="Enkodiert &lt;" name="ConvertTo-HtmlEncodedText.Enkodiert &lt;" time="0.06" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="Enkodiert &amp;" name="ConvertTo-HtmlEncodedText.Enkodiert &amp;" time="0.0081" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="Gibt leeren String fÃ¼r null zurÃ¼ck" name="ConvertTo-HtmlEncodedText.Gibt leeren String fÃ¼r null zurÃ¼ck" time="0.0077" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="Gibt normalen Text unverÃ¤ndert zurÃ¼ck" name="ConvertTo-HtmlEncodedText.Gibt normalen Text unverÃ¤ndert zurÃ¼ck" time="0.0084" asserts="0" success="True" result="Success" executed="True" />
+            </results>
+          </test-suite>
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>

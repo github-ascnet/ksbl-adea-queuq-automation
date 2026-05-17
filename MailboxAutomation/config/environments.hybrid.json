@@ -2,12 +2,18 @@
   "EnvironmentName": "Hybrid",
   "ExchangeOnline": {
     "Enabled": true,
-    "TenantDomain": "contoso.onmicrosoft.com",
-    "Organization": "contoso.onmicrosoft.com",
-    "AppId": "00000000-0000-0000-0000-000000000000",
-    "CertificateThumbprint": "0000000000000000000000000000000000000000"
+    "TenantDomain": "kantonsspitalbl.onmicrosoft.com",
+    "Organization": "kantonsspitalbl.onmicrosoft.com",
+    "AppId": "98972cc8-f5bc-4dcd-8bcc-ac82925d2bf2",
+    "CertificateThumbprint": "EE3A37116AF905168D5334A8CA74970B692F4491"
   },
   "ExchangeOnPrem": {
-    "Enabled": true
+    "Enabled": true,
+    "RemotePowerShell": {
+      "User": "ksbl\\ServiceIAMJobs10",
+      "SecretPath": "D:\\iam\\Secrets\\serviceiamjobs10.sec",
+      "ConnectionUri": "http://sv00516.ksbl.local/PowerShell",
+      "Authentication": "Kerberos"
+    }
   }
 }

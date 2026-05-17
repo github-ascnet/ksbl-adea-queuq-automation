@@ -4,6 +4,12 @@
     "Enabled": false
   },
   "ExchangeOnPrem": {
-    "Enabled": true
+    "Enabled": true,
+    "RemotePowerShell": {
+      "User": "ksbl\\ServiceIAMJobs10",
+      "SecretPath": "D:\\iam\\Secrets\\serviceiamjobs10.sec",
+      "ConnectionUri": "http://sv01250.ksbl.local/PowerShell",
+      "Authentication": "Kerberos"
+    }
   }
 }
