@@ -13,7 +13,7 @@
   "ExchangeOnline": {
     "Enabled": true,
     "TenantDomain": "kantonsspitalbl.onmicrosoft.com",
-    "Organization": "kantonsspitalbl.onmicrosoft.com",
+    "Organization": "97510138-5404-4fdc-8d5c-f13fcff51593",
     "AppId": "98972cc8-f5bc-4dcd-8bcc-ac82925d2bf2",
     "CertificateThumbprint": "EE3A37116AF905168D5334A8CA74970B692F4491"
   },
