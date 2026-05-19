@@ -1,2 +1,2 @@
-Set-Location .\MailboxAutomation
+Set-Location .\AdeaJobEngine
 Invoke-Pester -Path .\tests\Pester

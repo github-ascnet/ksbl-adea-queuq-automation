@@ -1,4 +1,4 @@
-﻿# MailboxAutomation
+﻿# AdeaJobEngine
 
 ## 1. Ziel der Loesung
 Dieses Projekt refaktoriert eine historisch gewachsene AD-/Exchange-On-Prem-Automation in ein modulares, testbares und erweiterbares JobProcessor-Framework.
@@ -98,7 +98,7 @@ Exchange Online ist per Config deaktivierbar. Bei deaktivierter EXO-Nutzung werd
 4. Testdaten und Pester-Test ergaenzen.
 
 ## 12. Runner starten
-Aus Projektwurzel MailboxAutomation:
+Aus Projektwurzel AdeaJobEngine:
 
 ```powershell
 .\Invoke-JobProcessor.ps1
@@ -108,31 +108,31 @@ Aus Projektwurzel MailboxAutomation:
 Standard-Queue:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor.ps1 -Queue standard -WhatIfMode $true
+powershell -ExecutionPolicy Bypass -File .\AdeaJobEngine\Invoke-JobProcessor.ps1 -Queue standard -WhatIfMode $true
 ```
 
 Urgent-Queue:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor.ps1 -Queue urgent -WhatIfMode $true
+powershell -ExecutionPolicy Bypass -File .\AdeaJobEngine\Invoke-JobProcessor.ps1 -Queue urgent -WhatIfMode $true
 ```
 
 LongRunning-Queue (PersonMailbox):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -WhatIfMode $true
+powershell -ExecutionPolicy Bypass -File .\AdeaJobEngine\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -WhatIfMode $true
 ```
 
 LongRunning-Queue inklusive faelliger paused Jobs:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -IncludePaused $true -WhatIfMode $true
+powershell -ExecutionPolicy Bypass -File .\AdeaJobEngine\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -IncludePaused $true -WhatIfMode $true
 ```
 
 LongRunning-Queue mit ResumePaused-Scan:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\MailboxAutomation\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -ResumePaused $true -WhatIfMode $true
+powershell -ExecutionPolicy Bypass -File .\AdeaJobEngine\Invoke-JobProcessor.ps1 -Queue person-mailbox-longrunning -ResumePaused $true -WhatIfMode $true
 ```
 
 ## 14. WhatIfMode

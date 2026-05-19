@@ -1,5 +1,5 @@
-1. Dateien aus standard/incoming in MailboxAutomation/queues/standard/incoming kopieren
-2. In den Projektordner wechseln: cd MailboxAutomation
+1. Dateien aus standard/incoming in AdeaJobEngine/queues/standard/incoming kopieren
+2. In den Projektordner wechseln: cd AdeaJobEngine
 3. CorrelationId erzeugen: $correlationId = [guid]::NewGuid().ToString()
 4. JobProcessor starten
    .\Invoke-JobProcessor.ps1 -Queue standard -CorrelationId $correlationId -OutputJson

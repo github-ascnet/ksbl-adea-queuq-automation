@@ -1,6 +1,6 @@
 # Legacy Variable Migration Report
 
-Diese Version migriert die produktiven Werte aus den Legacy-Skripten in die aktive JSON-Konfiguration der modularen MailboxAutomation.
+Diese Version migriert die produktiven Werte aus den Legacy-Skripten in die aktive JSON-Konfiguration der modularen AdeaJobEngine.
 
 ## Konfiguration
 

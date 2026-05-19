@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
     Import-Module -Name (Join-Path $root 'infrastructure\FileSystemGateway.psm1') -Force

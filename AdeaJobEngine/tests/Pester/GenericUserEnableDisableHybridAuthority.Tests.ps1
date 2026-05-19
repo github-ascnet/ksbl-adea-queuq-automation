@@ -1,4 +1,4 @@
-$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
+﻿$root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
 Import-Module -Name (Join-Path $root 'core\JobResult.psm1')        -Force
 Import-Module -Name (Join-Path $root 'core\Validation.psm1')       -Force
@@ -22,7 +22,7 @@ BeforeAll {
             FileEnabled     = $false
             EventLogEnabled = $false
             EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
+            EventSource     = 'AdeaJobEngine.Tests'
             VerboseLogging  = $false
         }
     }
@@ -108,7 +108,7 @@ BeforeAll {
 
     # Preset resolver snapshots (used in MockWith scriptblocks via $script: scope)
 
-    # UserMailbox — on-prem mailbox; all operations stay on-prem
+    # UserMailbox â€” on-prem mailbox; all operations stay on-prem
     $script:ExecUserMailbox = [pscustomobject]@{
         Identity               = 'gn-enable@example.org'
         ExistsOnPrem           = $true
@@ -129,7 +129,7 @@ BeforeAll {
         Reason                 = 'UserMailbox found on-prem.'
     }
 
-    # RemoteUserMailbox — on-prem proxy, mailbox in EXO; synchronized features via Set-RemoteMailbox
+    # RemoteUserMailbox â€” on-prem proxy, mailbox in EXO; synchronized features via Set-RemoteMailbox
     $script:ExecRemoteUser = [pscustomobject]@{
         Identity               = 'gn-enable@example.org'
         ExistsOnPrem           = $true
@@ -150,7 +150,7 @@ BeforeAll {
         Reason                 = 'RemoteUserMailbox found on-prem. Synchronized attributes managed via On-Prem Exchange.'
     }
 
-    # EXO-only — no on-prem proxy; not supported for GenericUser Enable/Disable
+    # EXO-only â€” no on-prem proxy; not supported for GenericUser Enable/Disable
     $script:ExecCloudOnly = [pscustomobject]@{
         Identity               = 'gn-enable@example.org'
         ExistsOnPrem           = $false
@@ -171,7 +171,7 @@ BeforeAll {
         Reason                 = 'EXO-only mailbox found.'
     }
 
-    # Retry — migration transient state (RemoteSharedMailbox, EXO not yet visible)
+    # Retry â€” migration transient state (RemoteSharedMailbox, EXO not yet visible)
     $script:ExecRetry = [pscustomobject]@{
         Identity               = 'gn-enable@example.org'
         ExistsOnPrem           = $true
@@ -192,7 +192,7 @@ BeforeAll {
         Reason                 = 'RemoteSharedMailbox found on-prem but EXO mailbox not yet visible. Transient migration sync state.'
     }
 
-    # EXO disabled — RemoteSharedMailbox with EXO configuration disabled
+    # EXO disabled â€” RemoteSharedMailbox with EXO configuration disabled
     $script:ExecExoDisabled = [pscustomobject]@{
         Identity               = 'gn-enable@example.org'
         ExistsOnPrem           = $true
@@ -215,9 +215,9 @@ BeforeAll {
 }
 
 # ---------------------------------------------------------------------------
-# 1. HybridMailboxResolver — FeatureAuthority for GenericUser recipient types
+# 1. HybridMailboxResolver â€” FeatureAuthority for GenericUser recipient types
 # ---------------------------------------------------------------------------
-Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAuthority for GenericUser types' {
+Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext â€” FeatureAuthority for GenericUser types' {
 
     Context 'UserMailbox (on-prem)' {
         It 'returns FeatureAuthority=OnPremExchange for UserMailbox' {
@@ -298,9 +298,9 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
 }
 
 # ---------------------------------------------------------------------------
-# 2. MailboxFeatureService — Set-MailboxVisibility hybrid routing
+# 2. MailboxFeatureService â€” Set-MailboxVisibility hybrid routing
 # ---------------------------------------------------------------------------
-Describe 'MailboxFeatureService.Set-MailboxVisibility — hybrid routing' {
+Describe 'MailboxFeatureService.Set-MailboxVisibility â€” hybrid routing' {
 
     Context 'UserMailbox (no Resolution)' {
         It 'calls Set-OnPremMailboxSafe when no Resolution provided' {
@@ -351,9 +351,9 @@ Describe 'MailboxFeatureService.Set-MailboxVisibility — hybrid routing' {
 }
 
 # ---------------------------------------------------------------------------
-# 3. UserProvisioningService.Enable-GenericUser — hybrid routing
+# 3. UserProvisioningService.Enable-GenericUser â€” hybrid routing
 # ---------------------------------------------------------------------------
-Describe 'UserProvisioningService.Enable-GenericUser — hybrid routing' {
+Describe 'UserProvisioningService.Enable-GenericUser â€” hybrid routing' {
 
     Context 'WhatIf mode' {
         It 'returns simulated result without calling resolver or AD in WhatIf mode' {
@@ -415,7 +415,7 @@ Describe 'UserProvisioningService.Enable-GenericUser — hybrid routing' {
         }
     }
 
-    Context 'RemoteUserMailbox routing — AD stays on-prem, features via Set-RemoteMailbox' {
+    Context 'RemoteUserMailbox routing â€” AD stays on-prem, features via Set-RemoteMailbox' {
         BeforeEach {
             Mock -ModuleName 'UserProvisioningService' Get-AdUserBySamAccountNameSafe {
                 New-MockAdUser -Sam 'gn-enable' -MailNickname 'gn-enable' -Enabled $false
@@ -461,7 +461,7 @@ Describe 'UserProvisioningService.Enable-GenericUser — hybrid routing' {
         }
     }
 
-    Context 'Migration transient — Retry' {
+    Context 'Migration transient â€” Retry' {
         It 'returns RequiresRetry=true and MAILBOX_MIGRATION_TRANSIENT' {
             Mock -ModuleName 'UserProvisioningService' Get-AdUserBySamAccountNameSafe {
                 New-MockAdUser -Sam 'gn-enable' -MailNickname 'gn-enable' -Enabled $false
@@ -512,9 +512,9 @@ Describe 'UserProvisioningService.Enable-GenericUser — hybrid routing' {
 }
 
 # ---------------------------------------------------------------------------
-# 4. UserProvisioningService.Disable-GenericUser — hybrid routing
+# 4. UserProvisioningService.Disable-GenericUser â€” hybrid routing
 # ---------------------------------------------------------------------------
-Describe 'UserProvisioningService.Disable-GenericUser — hybrid routing' {
+Describe 'UserProvisioningService.Disable-GenericUser â€” hybrid routing' {
 
     Context 'WhatIf mode' {
         It 'returns simulated result without calling resolver or AD in WhatIf mode' {
@@ -554,7 +554,7 @@ Describe 'UserProvisioningService.Disable-GenericUser — hybrid routing' {
             Mock -ModuleName 'UserProvisioningService' Set-MailboxVisibility  {}
         }
 
-        It 'calls Disable-AdAccountSafe (on-prem AD) for UserMailbox — AD deactivation never goes to EXO' {
+        It 'calls Disable-AdAccountSafe (on-prem AD) for UserMailbox â€” AD deactivation never goes to EXO' {
             $ctx = New-TestContext
             Disable-GenericUser -Context $ctx -Data (New-DisableRow) | Out-Null
             Should -Invoke 'Disable-AdAccountSafe' -ModuleName 'UserProvisioningService' -Times 1
@@ -574,7 +574,7 @@ Describe 'UserProvisioningService.Disable-GenericUser — hybrid routing' {
         }
     }
 
-    Context 'RemoteUserMailbox routing — AD stays on-prem' {
+    Context 'RemoteUserMailbox routing â€” AD stays on-prem' {
         BeforeEach {
             Mock -ModuleName 'UserProvisioningService' Get-AdUserBySamAccountNameSafe {
                 New-MockAdUser -Sam 'gn-disable' -MailNickname 'gn-disable' -Enabled $true
@@ -613,7 +613,7 @@ Describe 'UserProvisioningService.Disable-GenericUser — hybrid routing' {
         }
     }
 
-    Context 'Migration transient — Retry' {
+    Context 'Migration transient â€” Retry' {
         It 'returns RequiresRetry=true and MAILBOX_MIGRATION_TRANSIENT for Retry state' {
             Mock -ModuleName 'UserProvisioningService' Get-AdUserBySamAccountNameSafe {
                 New-MockAdUser -Sam 'gn-disable' -MailNickname 'gn-disable' -Enabled $true
@@ -644,9 +644,9 @@ Describe 'UserProvisioningService.Disable-GenericUser — hybrid routing' {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Invoke-EnableGenericUser handler — RequiresRetry propagation
+# 5. Invoke-EnableGenericUser handler â€” RequiresRetry propagation
 # ---------------------------------------------------------------------------
-Describe 'Invoke-EnableGenericUser handler — RequiresRetry propagation and result handling' {
+Describe 'Invoke-EnableGenericUser handler â€” RequiresRetry propagation and result handling' {
 
     Context 'RequiresRetry from service' {
         It 'returns JobResult.Status=Retry when service signals RequiresRetry=true' {
@@ -715,9 +715,9 @@ Describe 'Invoke-EnableGenericUser handler — RequiresRetry propagation and res
 }
 
 # ---------------------------------------------------------------------------
-# 6. Invoke-DisableGenericUser handler — RequiresRetry propagation
+# 6. Invoke-DisableGenericUser handler â€” RequiresRetry propagation
 # ---------------------------------------------------------------------------
-Describe 'Invoke-DisableGenericUser handler — RequiresRetry propagation and result handling' {
+Describe 'Invoke-DisableGenericUser handler â€” RequiresRetry propagation and result handling' {
 
     Context 'RequiresRetry from service' {
         It 'returns JobResult.Status=Retry when service signals RequiresRetry=true' {

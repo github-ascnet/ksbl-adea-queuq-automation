@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
@@ -13,7 +13,7 @@ Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1')         
 Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\AddGroupMailboxFmaMembers.psm1') -Force
 
 # ---------------------------------------------------------------------------
-# Shared test infrastructure — helpers defined in BeforeAll for execution scope
+# Shared test infrastructure â€” helpers defined in BeforeAll for execution scope
 # ---------------------------------------------------------------------------
 
 BeforeAll {
@@ -25,7 +25,7 @@ BeforeAll {
             FileEnabled     = $false
             EventLogEnabled = $false
             EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
+            EventSource     = 'AdeaJobEngine.Tests'
             VerboseLogging  = $false
         }
     }
@@ -118,7 +118,7 @@ BeforeAll {
 }
 
 # ---------------------------------------------------------------------------
-# HybridMailboxResolver — unit tests
+# HybridMailboxResolver â€” unit tests
 # ---------------------------------------------------------------------------
 
 Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
@@ -136,7 +136,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
         }
     }
 
-    Context 'RemoteSharedMailbox — EXO enabled and EXO mailbox found' {
+    Context 'RemoteSharedMailbox â€” EXO enabled and EXO mailbox found' {
         It 'returns ExchangeOnline authority with Execute action' {
             Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
@@ -153,7 +153,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
         }
     }
 
-    Context 'RemoteSharedMailbox — EXO enabled but EXO mailbox not yet visible (transient)' {
+    Context 'RemoteSharedMailbox â€” EXO enabled but EXO mailbox not yet visible (transient)' {
         It 'returns ExchangeOnline authority with Retry action and IsMigrationTransient true' {
             Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
@@ -168,7 +168,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
         }
     }
 
-    Context 'RemoteSharedMailbox — EXO disabled' {
+    Context 'RemoteSharedMailbox â€” EXO disabled' {
         It 'returns ExchangeOnline authority with Fail action' {
             Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
@@ -208,7 +208,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
 }
 
 # ---------------------------------------------------------------------------
-# MailboxPermissionService — unit tests
+# MailboxPermissionService â€” unit tests
 # ---------------------------------------------------------------------------
 
 Describe 'MailboxPermissionService.Add-MailboxFullAccess' {
@@ -357,7 +357,7 @@ Describe 'MailboxPermissionService.Remove-MailboxFullAccess' {
 }
 
 # ---------------------------------------------------------------------------
-# GroupMailboxService.Add-GroupMailboxFmaMembers — unit tests
+# GroupMailboxService.Add-GroupMailboxFmaMembers â€” unit tests
 # ---------------------------------------------------------------------------
 
 Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
@@ -376,7 +376,7 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
         }
     }
 
-    Context 'On-Prem SharedMailbox — ADD token with SendAs' {
+    Context 'On-Prem SharedMailbox â€” ADD token with SendAs' {
         It 'calls Add-MailboxFullAccess and Add-MailboxSendAs once each, returns Success=$true' {
             Mock -ModuleName 'GroupMailboxService' Add-MailboxFullAccess {
                 [pscustomobject]@{ Success = $true; Changed = $true; RequiresRetry = $false; RetryAfterMinutes = 0; Authority = 'OnPremExchange'; ErrorCode = $null; Message = 'ok' }
@@ -396,7 +396,7 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
         }
     }
 
-    Context 'Exchange Online routing — ADD token' {
+    Context 'Exchange Online routing â€” ADD token' {
         It 'succeeds with ExchangeOnline authority' {
             Mock -ModuleName 'GroupMailboxService' Add-MailboxFullAccess {
                 [pscustomobject]@{ Success = $true; Changed = $true; RequiresRetry = $false; RetryAfterMinutes = 0; Authority = 'ExchangeOnline'; ErrorCode = $null; Message = 'ok' }
@@ -429,7 +429,7 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
         }
     }
 
-    Context 'SendAs disabled — ADD token' {
+    Context 'SendAs disabled â€” ADD token' {
         It 'calls Add-MailboxFullAccess but not Add-MailboxSendAs' {
             Mock -ModuleName 'GroupMailboxService' Add-MailboxFullAccess {
                 [pscustomobject]@{ Success = $true; Changed = $true; RequiresRetry = $false; RetryAfterMinutes = 0; Authority = 'OnPremExchange'; ErrorCode = $null; Message = 'ok' }
@@ -443,7 +443,7 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
         }
     }
 
-    Context 'Transient migration state — RequiresRetry propagation' {
+    Context 'Transient migration state â€” RequiresRetry propagation' {
         It 'returns RequiresRetry=$true immediately when FullAccess returns retry' {
             Mock -ModuleName 'GroupMailboxService' Add-MailboxFullAccess {
                 [pscustomobject]@{ Success = $false; Changed = $false; RequiresRetry = $true; RetryAfterMinutes = 15; Authority = 'ExchangeOnline'; ErrorCode = 'MAILBOX_MIGRATION_TRANSIENT'; Message = 'Transient.' }
@@ -457,7 +457,7 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
         }
     }
 
-    Context 'Partial failure — one member fails, another succeeds' {
+    Context 'Partial failure â€” one member fails, another succeeds' {
         It 'returns Success=$false with FailedMembers list' {
             $callCount = 0
             Mock -ModuleName 'GroupMailboxService' Add-MailboxFullAccess {
@@ -480,10 +480,10 @@ Describe 'GroupMailboxService.Add-GroupMailboxFmaMembers' {
 }
 
 # ---------------------------------------------------------------------------
-# Handler Invoke-AddGroupMailboxFmaMembers — RequiresRetry → JobRetryResult
+# Handler Invoke-AddGroupMailboxFmaMembers â€” RequiresRetry â†’ JobRetryResult
 # ---------------------------------------------------------------------------
 
-Describe 'Invoke-AddGroupMailboxFmaMembers handler — RequiresRetry propagation' {
+Describe 'Invoke-AddGroupMailboxFmaMembers handler â€” RequiresRetry propagation' {
 
     It 'returns Retry status when service returns RequiresRetry=$true' {
         $context = New-TestContext -AddFmaMembers {

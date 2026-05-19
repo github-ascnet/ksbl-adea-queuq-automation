@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
@@ -27,7 +27,7 @@ BeforeAll {
             FileEnabled     = $false
             EventLogEnabled = $false
             EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
+            EventSource     = 'AdeaJobEngine.Tests'
             VerboseLogging  = $false
         }
     }
@@ -211,10 +211,10 @@ BeforeAll {
 }
 
 # ===========================================================================
-# 1. HybridMailboxResolver — GenericUser recipient types
+# 1. HybridMailboxResolver â€” GenericUser recipient types
 # ===========================================================================
 
-Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — GenericUser types' {
+Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext â€” GenericUser types' {
 
     Context 'On-Prem UserMailbox' {
         It 'returns OnPremExchange RecipientAuthority and Execute action' {
@@ -261,7 +261,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — GenericUser 
             }
             Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe { throw 'EXO should not be called for RemoteUserMailbox' }
             $config = @{ ExchangeOnline = @{ Enabled = $true; AppId = 'x'; CertThumbprint = 'x'; Organization = 'x'; TenantDomain = 'x' } }
-            # Should NOT throw — EXO lookup should be skipped for RemoteUserMailbox
+            # Should NOT throw â€” EXO lookup should be skipped for RemoteUserMailbox
             { Resolve-MailboxExecutionContext -Identity 'gn-remote' -Config $config } | Should -Not -Throw
         }
 
@@ -307,10 +307,10 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — GenericUser 
 }
 
 # ===========================================================================
-# 2. UserProvisioningService.Rename-GenericUser — hybrid routing
+# 2. UserProvisioningService.Rename-GenericUser â€” hybrid routing
 # ===========================================================================
 
-Describe 'UserProvisioningService.Rename-GenericUser — hybrid routing' {
+Describe 'UserProvisioningService.Rename-GenericUser â€” hybrid routing' {
 
     Context 'WhatIf mode' {
         It 'returns a simulated result without calling any gateway' {
@@ -404,10 +404,10 @@ Describe 'UserProvisioningService.Rename-GenericUser — hybrid routing' {
 }
 
 # ===========================================================================
-# 3. UserProvisioningService.Set-GenericUserSurname — hybrid routing
+# 3. UserProvisioningService.Set-GenericUserSurname â€” hybrid routing
 # ===========================================================================
 
-Describe 'UserProvisioningService.Set-GenericUserSurname — hybrid routing' {
+Describe 'UserProvisioningService.Set-GenericUserSurname â€” hybrid routing' {
 
     Context 'WhatIf mode' {
         It 'returns a simulated result without calling any gateway' {
@@ -480,10 +480,10 @@ Describe 'UserProvisioningService.Set-GenericUserSurname — hybrid routing' {
 }
 
 # ===========================================================================
-# 4. UserProvisioningService.Add-GenericUserEmailNickname — hybrid routing
+# 4. UserProvisioningService.Add-GenericUserEmailNickname â€” hybrid routing
 # ===========================================================================
 
-Describe 'UserProvisioningService.Add-GenericUserEmailNickname — hybrid routing' {
+Describe 'UserProvisioningService.Add-GenericUserEmailNickname â€” hybrid routing' {
 
     Context 'WhatIf mode' {
         It 'returns a simulated result without calling the resolver or any gateway' {
@@ -598,10 +598,10 @@ Describe 'UserProvisioningService.Add-GenericUserEmailNickname — hybrid routin
 }
 
 # ===========================================================================
-# 5. Handler: Invoke-RenameUserAccount — RequiresRetry propagation
+# 5. Handler: Invoke-RenameUserAccount â€” RequiresRetry propagation
 # ===========================================================================
 
-Describe 'Invoke-RenameUserAccount handler — RequiresRetry propagation' {
+Describe 'Invoke-RenameUserAccount handler â€” RequiresRetry propagation' {
 
     Context 'Service returns RequiresRetry=true' {
         It 'returns a Retry job result' {
@@ -646,10 +646,10 @@ Describe 'Invoke-RenameUserAccount handler — RequiresRetry propagation' {
 }
 
 # ===========================================================================
-# 6. Handler: Invoke-ChangeAccountSurname — RequiresRetry propagation
+# 6. Handler: Invoke-ChangeAccountSurname â€” RequiresRetry propagation
 # ===========================================================================
 
-Describe 'Invoke-ChangeAccountSurname handler — RequiresRetry propagation' {
+Describe 'Invoke-ChangeAccountSurname handler â€” RequiresRetry propagation' {
 
     Context 'Service returns RequiresRetry=true' {
         It 'returns a Retry job result' {
@@ -673,10 +673,10 @@ Describe 'Invoke-ChangeAccountSurname handler — RequiresRetry propagation' {
 }
 
 # ===========================================================================
-# 7. Handler: Invoke-AddEmailNickname — RequiresRetry propagation
+# 7. Handler: Invoke-AddEmailNickname â€” RequiresRetry propagation
 # ===========================================================================
 
-Describe 'Invoke-AddEmailNickname handler — RequiresRetry propagation' {
+Describe 'Invoke-AddEmailNickname handler â€” RequiresRetry propagation' {
 
     Context 'Service returns RequiresRetry=true' {
         It 'returns a Retry job result' {

@@ -91,7 +91,7 @@ Export-ModuleMember -Function 'Invoke-TestE2EHandler'
   "CsvDelimiter":  ";",
   "Queue":         { "StaleLockMinutes": 60 },
   "Logging":       { "ConsoleEnabled": false, "FileEnabled": false, "EventLogEnabled": false, "VerboseLogging": false, "LogFileName": "test.log" },
-  "EventLog":      { "LogName": "Application", "Source": "MailboxAutomation" },
+  "EventLog":      { "LogName": "Application", "Source": "AdeaJobEngine" },
   "Notifications": { "Enabled": false },
   "ExchangeOnline":{ "Enabled": false }
 }

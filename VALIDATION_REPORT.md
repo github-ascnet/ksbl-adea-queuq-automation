@@ -23,7 +23,7 @@ Das Projekt wurde statisch gegen den aktuellen Projektstand validiert. PowerShel
 
 ## Durchgeführte Anpassungen
 
-1. MailboxAutomation/config/appsettings.json
+1. AdeaJobEngine/config/appsettings.json
 
 CsvDelimiter wurde von Semikolon auf Pipe umgestellt, damit die manuellen produktionsnahen Queue-Dateien mit dem Trennzeichen | direkt verarbeitet werden können.
 

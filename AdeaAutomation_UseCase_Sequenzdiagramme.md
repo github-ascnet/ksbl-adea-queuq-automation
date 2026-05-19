@@ -1,4 +1,4 @@
-# AdeaAutomation / MailboxAutomation - Mermaid Sequenzdiagramme je UseCase
+# AdeaAutomation / AdeaJobEngine - Mermaid Sequenzdiagramme je UseCase
 
 Diese Datei beschreibt für jeden aktiven UseCase, wo der UseCase im Code beginnt, welche zentralen Skripte, Handler, Services und Gateways durchlaufen werden und wo der UseCase im Datei-Lifecycle endet.
 

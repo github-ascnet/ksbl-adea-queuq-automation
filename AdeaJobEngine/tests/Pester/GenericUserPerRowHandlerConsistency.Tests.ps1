@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
 
     Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
@@ -16,7 +16,7 @@ BeforeAll {
             FileEnabled     = $false
             EventLogEnabled = $false
             EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
+            EventSource     = 'AdeaJobEngine.Tests'
             VerboseLogging  = $false
         }
     }

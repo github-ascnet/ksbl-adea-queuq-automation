@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
@@ -13,7 +13,7 @@ Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1')         
 Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\ChangeManagerGroupMailbox.psm1')   -Force
 
 # ---------------------------------------------------------------------------
-# Shared test infrastructure — all helpers in BeforeAll for execution scope
+# Shared test infrastructure â€” all helpers in BeforeAll for execution scope
 # ---------------------------------------------------------------------------
 BeforeAll {
     function New-TestLogger {
@@ -24,7 +24,7 @@ BeforeAll {
             FileEnabled     = $false
             EventLogEnabled = $false
             EventLogName    = 'Application'
-            EventSource     = 'MailboxAutomation.Tests'
+            EventSource     = 'AdeaJobEngine.Tests'
             VerboseLogging  = $false
         }
     }
@@ -76,7 +76,7 @@ BeforeAll {
         }
     }
 
-    # Pre-built execution context snapshots — used in MockWith blocks
+    # Pre-built execution context snapshots â€” used in MockWith blocks
     # (must be $script: scope so they are reachable from MockWith scriptblocks)
     $script:ExecOnPrem = [pscustomobject]@{
         Identity               = 'gmb-it'
@@ -155,7 +155,7 @@ BeforeAll {
 }
 
 # ---------------------------------------------------------------------------
-# GroupMailboxService.Set-GroupMailboxManager — hybrid routing
+# GroupMailboxService.Set-GroupMailboxManager â€” hybrid routing
 # ---------------------------------------------------------------------------
 Describe 'GroupMailboxService.Set-GroupMailboxManager' {
 
@@ -214,7 +214,7 @@ Describe 'GroupMailboxService.Set-GroupMailboxManager' {
             $result.Authority | Should -Be 'ExchangeOnline'
             Should -Invoke Add-ExoMailboxPermissionSafe -ModuleName 'GroupMailboxService' -Times 1
             Should -Invoke Add-ExoSendAsPermissionSafe  -ModuleName 'GroupMailboxService' -Times 1
-            # RemoteSharedMailbox still has an on-prem proxy → AD manager must also be updated
+            # RemoteSharedMailbox still has an on-prem proxy â†’ AD manager must also be updated
             Should -Invoke Set-AdUserSafe               -ModuleName 'GroupMailboxService' -Times 1
         }
     }
@@ -287,7 +287,7 @@ Describe 'GroupMailboxService.Set-GroupMailboxManager' {
         }
     }
 
-    Context 'WhatIf mode — no EXO connection required' {
+    Context 'WhatIf mode â€” no EXO connection required' {
         It 'returns Simulated=$true without importing or calling any EXO cmdlets' {
             # Even when EXO is enabled, WhatIf must not trigger any EXO connection
             Mock -ModuleName 'GroupMailboxService' Resolve-MailboxExecutionContext { throw 'Should not be called in WhatIf' }
@@ -302,7 +302,7 @@ Describe 'GroupMailboxService.Set-GroupMailboxManager' {
         }
     }
 
-    Context 'WhatIf mode — no On-Prem Exchange cmdlets required' {
+    Context 'WhatIf mode â€” no On-Prem Exchange cmdlets required' {
         It 'returns Simulated=$true without calling any On-Prem cmdlets' {
             Mock -ModuleName 'GroupMailboxService' Invoke-LegacyMailboxPermissionMutation { throw 'Should not be called in WhatIf' }
             Mock -ModuleName 'GroupMailboxService' Set-AdUserSafe { throw 'Should not be called in WhatIf' }
@@ -318,7 +318,7 @@ Describe 'GroupMailboxService.Set-GroupMailboxManager' {
 }
 
 # ---------------------------------------------------------------------------
-# Invoke-ChangeManagerGroupMailbox handler — RequiresRetry and routing
+# Invoke-ChangeManagerGroupMailbox handler â€” RequiresRetry and routing
 # ---------------------------------------------------------------------------
 Describe 'Invoke-ChangeManagerGroupMailbox handler' {
 

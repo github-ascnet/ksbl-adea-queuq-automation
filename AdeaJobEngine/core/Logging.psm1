@@ -25,7 +25,7 @@ function New-Logger {
         FileEnabled     = [bool]$Config.Logging.FileEnabled
         EventLogEnabled = [bool]$Config.Logging.EventLogEnabled
         EventLogName    = if ($Config.EventLog.LogName) { $Config.EventLog.LogName } else { 'Application' }
-        EventSource     = if ($Config.EventLog.Source) { $Config.EventLog.Source } else { 'MailboxAutomation' }
+        EventSource     = if ($Config.EventLog.Source) { $Config.EventLog.Source } else { 'AdeaJobEngine' }
         VerboseLogging  = [bool]($VerboseLogging.IsPresent -or $Config.Logging.VerboseLogging)
     }
 }
@@ -36,7 +36,7 @@ function Write-Log {
         [Parameter(Mandatory = $true)]
         [object]$Logger,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('DEBUG','INFO','WARN','ERROR')]
+        [ValidateSet('DEBUG', 'INFO', 'WARN', 'ERROR')]
         [string]$Level,
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -70,7 +70,7 @@ function Write-Log {
 
             $entryType = switch ($Level) {
                 'ERROR' { 'Error' }
-                'WARN'  { 'Warning' }
+                'WARN' { 'Warning' }
                 default { 'Information' }
             }
 

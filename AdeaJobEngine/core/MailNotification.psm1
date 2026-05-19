@@ -37,8 +37,8 @@ function New-HtmlTableRow {
 # ---------------------------------------------------------------------------
 # Erzeugt die Betreffzeile der Benachrichtigungsmail.
 # Format:
-#   [Success] MailboxAutomation - UseCaseName
-#   [Failed]  MailboxAutomation - UseCaseName - JobId
+#   [Success] AdeaJobEngine - UseCaseName
+#   [Failed]  AdeaJobEngine - UseCaseName - JobId
 function New-JobNotificationSubject {
     [CmdletBinding()]
     param(
@@ -50,9 +50,9 @@ function New-JobNotificationSubject {
     $tag = if ($Status -eq 'Succeeded') { 'Success' } else { 'Failed' }
 
     if ($JobId) {
-        return "[$tag] MailboxAutomation - $UseCaseName - $JobId"
+        return "[$tag] AdeaJobEngine - $UseCaseName - $JobId"
     }
-    return "[$tag] MailboxAutomation - $UseCaseName"
+    return "[$tag] AdeaJobEngine - $UseCaseName"
 }
 
 
@@ -261,7 +261,7 @@ $css
 </head>
 <body>
 <div class="container">
-<h2>MailboxAutomation &ndash; Auftragsverarbeitung</h2>
+<h2>AdeaJobEngine &ndash; Auftragsverarbeitung</h2>
 <p>Guten Tag</p>
 <p>Der folgende Automationsauftrag wurde verarbeitet.</p>
 <p>$(ConvertTo-HtmlEncodedText -Value $description)</p>
@@ -272,7 +272,7 @@ $tableRows
 </table>
 $errorBlockHtml
 <div class="footer">
-Diese Nachricht wurde automatisch von MailboxAutomation generiert. Bitte nicht antworten.
+Diese Nachricht wurde automatisch von AdeaJobEngine generiert. Bitte nicht antworten.
 </div>
 </div>
 </body>

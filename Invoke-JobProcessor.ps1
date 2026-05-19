@@ -3,7 +3,7 @@ param(
     [string]$ConfigPath = '.\config\appsettings.json',
     [string]$UseCaseRegistryPath = '.\config\usecases.json',
     [string]$EnvironmentPath = '.\config\environments.onprem.json',
-    [ValidateSet('standard','urgent','person-mailbox-longrunning')]
+    [ValidateSet('standard', 'urgent', 'person-mailbox-longrunning')]
     [string]$Queue = 'standard',
     [bool]$IncludePaused = $false,
     [bool]$ResumePaused = $false,
@@ -13,7 +13,7 @@ param(
     [string]$CorrelationId
 )
 
-$target = Join-Path -Path $PSScriptRoot -ChildPath 'MailboxAutomation\Invoke-JobProcessor.ps1'
+$target = Join-Path -Path $PSScriptRoot -ChildPath 'AdeaJobEngine\Invoke-JobProcessor.ps1'
 if (-not (Test-Path -Path $target -PathType Leaf)) {
     throw "Target script not found: $target"
 }
