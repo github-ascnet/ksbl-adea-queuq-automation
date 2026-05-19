@@ -1,0 +1,919 @@
+R = Rolle
+
+Du bist ein sehr erfahrener ASP.NET-Core-MVC-, Hangfire-, PowerShell-, Active-Directory-, Exchange-Hybrid- und Enterprise-Automation-Architekt.
+
+Du arbeitest in einer bestehenden ASP.NET Core MVC Applikation, nicht in einem neuen Greenfield-Projekt.
+
+Die bestehende MVC-Applikation erzeugt bereits IAM-Queue-Dateien über:
+
+Utils/IamQueueService.cs
+
+Die Controller rufen aktuell in verschiedenen HttpPost-Actions sinngemäss auf:
+
+await _facadeServices.IamQueueService.CreateIamQueueFileAsync(IamQueueFileContent)
+
+Danach gibt es in mehreren Controllern noch einen alten Platzhalter über:
+
+_facadeServices.PowerShellRemoteExecService.RunScriptAsync("path/to/your/script.ps1")
+
+Dieser alte Platzhalter soll durch eine saubere Hangfire-basierte AutomationEngine-Ansteuerung ersetzt werden.
+
+Die PowerShell-Fachlogik liegt nicht in der MVC-Applikation, sondern in der separaten bestehenden PowerShell-Automation:
+
+AdeaAutomation / AdeaJobEngine
+
+Die ASP.NET Core MVC Applikation soll die PowerShell-JobEngine nur anstossen, nicht fachlich nachbauen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Erweitere die bestehende ASP.NET Core MVC Applikation so, dass nach erfolgreichem Erzeugen eines IAM-Queue-Files automatisch die PowerShell-AutomationEngine über Hangfire angesteuert wird.
+
+Der Ablauf soll sein:
+
+1. Benutzer führt eine bestehende HttpPost-Action aus.
+2. Controller baut wie bisher IamQueueFileContent.
+3. Controller ruft IamQueueService auf und schreibt die Queue-Datei.
+4. Direkt nach erfolgreichem Queue-File-Schreiben wird ein Automation Job erzeugt.
+5. Hangfire startet im Hintergrund Invoke-JobProcessor.ps1.
+6. Invoke-JobProcessor.ps1 wird mit Queue, CorrelationId, OutputJson und möglichst gezieltem QueueFileName gestartet.
+7. stdout wird als JSON geparst.
+8. stderr wird separat geloggt.
+9. Jobstatus und Events werden persistiert.
+10. Ein JobController stellt Status und Events per REST bereit.
+11. Optional wird SignalR vorbereitet, damit der Client Statusänderungen live erhalten kann.
+
+Wichtig:
+
+Hangfire ersetzt nicht die PowerShell-JobEngine.
+
+Hangfire ist nur der technische Background Runner.
+
+Die fachliche Wahrheit bleibt:
+
+AdeaJobEngine Invoke-JobProcessor.ps1
+AdeaJobEngine JobEngine
+Queue-Dateien
+.meta.json
+OutputJson
+
+────────────────────────────────────────
+
+K = Bestehender Code im API-Projekt
+
+Im angehängten API-Projekt sind unter anderem vorhanden:
+
+Utils/IamQueueService.cs
+
+Diese Datei enthält:
+
+ExecutableAction enum
+HospisUseCase enum
+IIamQueueService
+IamQueueService
+
+Aktuelles Verhalten von IamQueueService:
+
+CreateIamQueueFileAsync nimmt IamQueueFileContent entgegen.
+Es prüft ActionType und CurrentUserName.
+Es bildet einen Dateinamen im Format:
+
+    {Guid}_{executableAction}_{currentUserName}_pshjob_.csv
+
+Es schreibt die Datei aktuell auf ein UNC-Share aus AppSettingsService:
+
+    \\{IamServer}\{OutputShareName}
+
+Es gibt aktuell nur einen string zurück:
+
+    success
+
+oder eine Fehlermeldung.
+
+Bei ServiceAccount-Varianten wird executableAction auf CreateNonStdPersonMailbox normalisiert.
+
+Bei Hospis-Fällen wird der ActionName um HospisPersonUseCase oder HospisPersonUrgentUseCase erweitert.
+
+Weitere relevante Datei:
+
+Utils/PowerShellRemoteExecService.cs
+
+Diese Datei enthält aktuell nur einen einfachen direkten PowerShell-Prozessstart mit scriptPath.
+
+Dieser Service ist zu generisch und verwendet in den Controllern teilweise noch den Platzhalter:
+
+path/to/your/script.ps1
+
+Weitere relevante Datei:
+
+ControllerServicesFacade.cs
+
+Diese stellt aktuell unter anderem bereit:
+
+Context
+EventLogService
+AppSettingsService
+UserInfoService
+SamAccountTracker
+IamQueueService
+ActiveDirectoryService
+ListComparisonService
+StringSanitizerService
+PowerShellRemoteExecService
+
+Bestehende Controller:
+
+DistributionGroupsController
+GroupMailboxesController
+UserAccountsController
+HospisActionsController
+
+Diese Controller bauen bereits IamQueueFileContent und rufen CreateIamQueueFileAsync auf.
+
+────────────────────────────────────────
+
+K = Bestehender PowerShell-Stand
+
+Die separate PowerShell-Automation AdeaJobEngine ist bereits vorbereitet.
+
+Invoke-JobProcessor.ps1 unterstützt:
+
+Queue
+OutputJson
+CorrelationId
+
+Beispiel:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File Invoke-JobProcessor.ps1 -Queue standard -CorrelationId GUID -OutputJson
+
+Gültige Queue-Werte:
+
+standard
+urgent
+person-mailbox-longrunning
+
+Ungültig:
+
+longrunning
+
+Die physische Queue-Struktur ist flach:
+
+queues/incoming
+queues/processing
+queues/done
+queues/failed
+queues/retry
+queues/paused
+queues/archive
+
+Es gibt keine physischen Unterordner wie:
+
+standard/incoming
+
+Die fachliche Queue wird über den Parameter Queue bestimmt.
+
+OutputJson liefert am Ende ein maschinenlesbares JSON über stdout.
+
+stdout ist die maschinenlesbare Quelle.
+
+stderr ist nur technischer Diagnosekanal.
+
+CorrelationId wird in der PowerShell-JobEngine als ExternalCorrelationId in die .meta.json übernommen.
+
+Wichtiger Architekturhinweis:
+
+Wenn Invoke-JobProcessor.ps1 nur mit Queue gestartet wird, kann er potentiell mehrere Dateien aus queues/incoming verarbeiten.
+
+Für die API-/Hangfire-Ansteuerung soll deshalb geprüft werden, ob ein optionaler Parameter für eine gezielte Datei bereits existiert.
+
+Falls nicht vorhanden, soll die PowerShell-Seite minimal erweitert werden, damit ein konkretes Queue-File gezielt verarbeitet werden kann.
+
+Empfohlenes neues Argument:
+
+QueueFileName
+
+oder:
+
+SourceFileName
+
+Ziel:
+
+Invoke-JobProcessor.ps1 -Queue standard -QueueFileName "GUID_Action_User_pshjob_.csv" -CorrelationId "GUID" -OutputJson
+
+Damit wird verhindert, dass ein API-Request versehentlich mehrere fremde Pending-Jobs mit derselben CorrelationId verarbeitet.
+
+Wenn die PowerShell-Seite nicht im aktuellen Workspace enthalten ist, dokumentiere diesen Punkt als zwingende Voraussetzung und implementiere die API so, dass QueueFileName bereits gespeichert und an den Runner übergeben wird.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Keine Fachlogik aus PowerShell nach C# migrieren.
+
+Keine AD-, Exchange-, EXO-, DFS-, SQL- oder Mailbox-Operationen in der MVC-Applikation implementieren.
+
+Die MVC-Applikation darf nur:
+
+Queue-Datei erzeugen
+JobRequest speichern
+Hangfire Job enqueuen
+PowerShell-Prozess starten
+stdout JSON parsen
+stderr loggen
+Status persistieren
+Status per Controller bereitstellen
+optional Status per SignalR pushen
+
+Die bestehende Queue-Datei-Erzeugung über IamQueueService bleibt zentral.
+
+Bestehende Controller sollen nicht fachlich umgebaut werden.
+
+Bestehende Validierungen in den Controllern bleiben erhalten.
+
+Die bestehende ControllerServicesFacade soll gezielt erweitert werden, damit Controller weiterhin über _facadeServices arbeiten können.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Code im Workspace, insbesondere:
+
+Utils/IamQueueService.cs
+Utils/PowerShellRemoteExecService.cs
+Controllers/ControllerServicesFacade.cs
+Controllers/DistributionGroupsController.cs
+Controllers/GroupMailboxesController.cs
+Controllers/UserAccountsController.cs
+Controllers/HospisActionsController.cs
+Program.cs
+appsettings.json
+vorhandene DI-Registrierungen
+vorhandene Datenbank-/DbContext-Struktur
+vorhandene Authentifizierung
+vorhandene Logging-Struktur
+
+Danach implementiere gezielt die folgenden Änderungen.
+
+────────────────────────────────────────
+
+IamQueueService rückwärtskompatibel erweitern
+
+Das aktuelle CreateIamQueueFileAsync gibt nur string zurück.
+
+Für Hangfire und Status braucht die API aber zusätzliche Informationen:
+
+Dateiname
+Dateipfad
+ExecutableAction
+CurrentUserName
+Queue
+CorrelationId oder JobRequestId
+Erfolg/Fehler
+
+Erstelle deshalb ein neues Ergebnisobjekt:
+
+IamQueueFileCreateResult
+
+Eigenschaften:
+
+Success
+Message
+FileName
+FilePath
+ExecutableAction
+CurrentUserName
+CurrentUserDomainName
+CurrentUserEMailAddress
+Queue
+IamQueueFileContent
+CorrelationId
+
+Erweitere IIamQueueService um eine neue Methode:
+
+CreateIamQueueFileWithResultAsync
+
+Diese Methode soll die bestehende Logik aus CreateIamQueueFileAsync verwenden oder intern zentralisieren.
+
+Wichtig:
+
+Die bestehende Methode CreateIamQueueFileAsync muss aus Kompatibilitätsgründen erhalten bleiben und weiterhin string zurückgeben.
+
+CreateIamQueueFileAsync kann intern CreateIamQueueFileWithResultAsync aufrufen und bei Success den string success zurückgeben, sonst Message.
+
+CreateIamQueueFileWithResultAsync soll nach erfolgreichem Schreiben FileName und FilePath zurückgeben.
+
+Der erzeugte Guid-Anteil des Dateinamens soll als CorrelationId verwendet werden oder zumindest im Result verfügbar sein.
+
+Empfehlung:
+
+Die CorrelationId soll identisch mit dem Guid-Anteil im Dateinamen sein.
+
+Beispiel:
+
+37edbe91-7ed1-4ae6-bdc5-d8b297785468_EnableNonStdPersonMailbox_ex00013_pshjob_.csv
+
+CorrelationId:
+
+37edbe91-7ed1-4ae6-bdc5-d8b297785468
+
+Wenn das nicht möglich ist, dann eine eigene JobRequestId erzeugen und sauber speichern.
+
+Besser ist jedoch:
+
+FileGuid = CorrelationId
+
+────────────────────────────────────────
+
+Queue-Ermittlung
+
+Die Queue darf nicht anhand von beliebigen Annahmen geraten werden.
+
+Nutze bevorzugt eine Registry aus der PowerShell-Automation:
+
+AdeaJobEngine/config/usecases.json
+
+Erstelle dafür:
+
+IUseCaseRegistryService
+UseCaseRegistryService
+
+Aufgabe:
+
+usecases.json lesen
+Enabled UseCases laden
+Pattern gegen erzeugten FileName matchen
+Queue ermitteln
+UseCaseName ermitteln
+RequiredFields optional validieren
+
+Wenn usecases.json im API-Projekt nicht verfügbar ist, mache den Pfad konfigurierbar:
+
+AutomationEngine:UseCasesJsonPath
+
+Falls kein Pattern matcht, soll CreateIamQueueFileWithResultAsync oder der Scheduler einen klaren Fehler liefern.
+
+Fallback nur wenn nötig:
+
+urgent = true ergibt Queue urgent
+CreateNonStdPersonMailbox ergibt Queue person-mailbox-longrunning
+alles andere standard
+
+Aber der Pattern-Match gegen usecases.json ist zu bevorzugen.
+
+────────────────────────────────────────
+
+AutomationEngine-Konfiguration ergänzen
+
+Ergänze in der MVC-Konfiguration einen Bereich:
+
+AutomationEngine
+
+Benötigte Werte:
+
+Enabled
+AdeaJobEngineRoot
+InvokeJobProcessorPath
+QueuesRoot
+IncomingPath
+UseCasesJsonPath
+PowerShellExecutable
+DefaultTimeoutSeconds
+UseNoProfile
+ExecutionPolicyBypass
+EnvironmentName
+EnableMetaPolling
+MetaPollingIntervalMilliseconds
+HangfireAutomaticRetryAttempts
+
+Beispielwerte:
+
+Enabled = true
+AdeaJobEngineRoot = D:\iam\AdeaAutomation\AdeaJobEngine
+InvokeJobProcessorPath = D:\iam\AdeaAutomation\AdeaJobEngine\Invoke-JobProcessor.ps1
+QueuesRoot = D:\iam\AdeaAutomation\AdeaJobEngine\queues
+IncomingPath = D:\iam\AdeaAutomation\AdeaJobEngine\queues\incoming
+UseCasesJsonPath = D:\iam\AdeaAutomation\AdeaJobEngine\config\usecases.json
+PowerShellExecutable = powershell.exe
+DefaultTimeoutSeconds = 900
+UseNoProfile = true
+ExecutionPolicyBypass = true
+EnvironmentName = hybrid
+EnableMetaPolling = true
+MetaPollingIntervalMilliseconds = 1000
+HangfireAutomaticRetryAttempts = 0
+
+Keine Pfade hart im Code verdrahten.
+
+────────────────────────────────────────
+
+Hangfire einbinden
+
+Füge Hangfire in die MVC-Applikation ein.
+
+Prüfe zuerst, ob Hangfire bereits vorhanden ist.
+
+Falls nicht vorhanden, ergänze:
+
+Hangfire.AspNetCore
+
+Für Entwicklung oder minimalen Start:
+
+Hangfire.MemoryStorage
+
+Falls SQL Server im Projekt bereits verwendet werden soll:
+
+Hangfire.SqlServer
+
+Konfiguration in Program.cs oder Startup.cs gemäss bestehender Projektstruktur.
+
+Registriere:
+
+AddHangfire
+AddHangfireServer
+
+Optional:
+
+UseHangfireDashboard
+
+Dashboard nur geschützt oder nur intern aktivieren.
+
+Setze AutomaticRetry für den Automation Runner auf 0 oder maximal 1.
+
+Begründung:
+
+Fachlicher Retry liegt in der PowerShell-JobEngine, nicht in Hangfire.
+
+────────────────────────────────────────
+
+JobStatus-Persistenz erstellen
+
+Erstelle einen schlanken JobStatusStore.
+
+Falls EF Core bereits im Projekt vorhanden ist und sich sauber erweitern lässt, können Entities verwendet werden.
+
+Wenn eine DB-Migration zu gross wäre, erstelle zunächst einen File-basierten Store.
+
+Interface:
+
+IJobStatusStore
+
+Methoden:
+
+CreateJobAsync
+UpdateJobStatusAsync
+AddEventAsync
+GetJobAsync
+GetEventsAsync
+SaveFinalResultAsync
+
+Modelle:
+
+AutomationJobRequest
+AutomationJobStatusEvent
+AutomationJobProcessorResult
+AutomationJobProcessorError
+
+AutomationJobRequest Felder:
+
+Id
+UseCaseName
+ExecutableAction
+Queue
+CurrentUserName
+CurrentUserDomainName
+CurrentUserEMailAddress
+SourceFileName
+SourceFilePath
+Status
+Message
+CreatedAt
+QueuedAt
+StartedAt
+UpdatedAt
+CompletedAt
+PowerShellExitCode
+FinalResultJson
+LastErrorMessage
+
+AutomationJobStatusEvent Felder:
+
+Id
+JobRequestId
+Status
+PreviousStatus
+Level
+Message
+CreatedAt
+RawDataJson
+
+Statuswerte:
+
+Accepted
+Queued
+ProcessorStarted
+Processing
+Succeeded
+Failed
+WaitingForRetry
+Paused
+NoWork
+CompletedWithWarnings
+Rejected
+Timeout
+Unknown
+
+Wichtig:
+
+StatusEvents zuerst persistieren, danach optional SignalR senden.
+
+SignalR ist Transport, nicht Wahrheit.
+
+────────────────────────────────────────
+
+AutomationEngineScheduler erstellen
+
+Erstelle:
+
+IAutomationEngineScheduler
+AutomationEngineScheduler
+
+Aufgabe:
+
+Nach erfolgreicher Queue-Datei-Erzeugung JobRequest erstellen und Hangfire Job enqueuen.
+
+Methode:
+
+ScheduleAsync(IamQueueFileCreateResult queueFileResult, CancellationToken cancellationToken)
+
+Ablauf:
+
+1. Prüfen, ob AutomationEngine.Enabled true ist.
+2. Prüfen, ob queueFileResult.Success true ist.
+3. Queue aus queueFileResult.Queue verwenden.
+4. JobRequestId aus queueFileResult.CorrelationId verwenden.
+5. JobRequest im Store speichern.
+6. Event Accepted speichern.
+7. Event Queued speichern.
+8. Hangfire Job enqueuen:
+
+    IJobProcessorRunner.RunAsync(jobRequestId)
+
+9. JobRequestId zurückgeben.
+
+Wenn AutomationEngine.Enabled false ist, kein Hangfire starten, aber sauber protokollieren.
+
+────────────────────────────────────────
+
+ControllerServicesFacade erweitern
+
+Erweitere ControllerServicesFacade um:
+
+IAutomationEngineScheduler AutomationEngineScheduler
+
+Registriere den Service in DI.
+
+Ziel:
+
+Bestehende Controller können nach erfolgreichem Queue-File-Schreiben aufrufen:
+
+_facadeServices.AutomationEngineScheduler.ScheduleAsync(queueFileResult, HttpContext.RequestAborted)
+
+────────────────────────────────────────
+
+Bestehende Controller gezielt anpassen
+
+Suche alle Stellen in diesen Controllern:
+
+DistributionGroupsController
+GroupMailboxesController
+UserAccountsController
+HospisActionsController
+
+an denen aktuell steht:
+
+await _facadeServices.IamQueueService.CreateIamQueueFileAsync(IamQueueFileContent)
+
+Ersetze dort gezielt durch die neue Result-Methode:
+
+CreateIamQueueFileWithResultAsync
+
+Ablauf pro Stelle:
+
+1. Queue-Datei wie bisher bauen.
+2. queueResult = await CreateIamQueueFileWithResultAsync(...)
+3. Wenn queueResult.Success false:
+   bestehende Fehlerbehandlung beibehalten.
+4. Wenn queueResult.Success true:
+   await _facadeServices.AutomationEngineScheduler.ScheduleAsync(queueResult, HttpContext.RequestAborted)
+5. SuccessMessage setzen oder bestehende Erfolgsmeldung beibehalten.
+6. Redirect wie bisher.
+
+Wichtig:
+
+Die Controller-Fachlogik nicht umbauen.
+
+Keine Validierungen entfernen.
+
+Bestehende TempData-Meldungen möglichst beibehalten.
+
+Die alten Platzhalter-Aufrufe zu PowerShellRemoteExecService.RunScriptAsync("path/to/your/script.ps1") sollen entfernt oder nicht mehr verwendet werden.
+
+PowerShellRemoteExecService kann bestehen bleiben, falls er anderswo gebraucht wird, aber für die AutomationEngine soll ein neuer Runner verwendet werden.
+
+────────────────────────────────────────
+
+JobProcessorRunner erstellen
+
+Erstelle:
+
+IJobProcessorRunner
+JobProcessorRunner
+
+Aufgabe:
+
+Hangfire ruft diesen Runner im Hintergrund auf.
+
+Methode:
+
+RunAsync(Guid jobRequestId)
+
+Ablauf:
+
+1. JobRequest aus IJobStatusStore laden.
+2. Status ProcessorStarted speichern.
+3. PowerShell-Prozess starten:
+
+    PowerShellExecutable
+    -NoProfile
+    -ExecutionPolicy Bypass
+    -File InvokeJobProcessorPath
+    -Queue {Queue}
+    -CorrelationId {JobRequestId}
+    -OutputJson
+    -QueueFileName {SourceFileName}
+
+Falls QueueFileName auf PowerShell-Seite noch nicht existiert, diesen Punkt als TODO markieren und alternativ vorerst ohne QueueFileName starten. Aber dokumentiere das Risiko, dass sonst mehrere Dateien der Queue verarbeitet werden könnten.
+
+4. WorkingDirectory = AdeaJobEngineRoot.
+5. stdout vollständig lesen.
+6. stderr vollständig lesen.
+7. ExitCode speichern.
+8. stdout als AutomationJobProcessorResult parsen.
+9. stderr separat als technisches Log/Event speichern.
+10. finalen Status aus result.status übernehmen.
+11. FinalResultJson speichern.
+12. StatusEvent für finalen Status speichern.
+13. Bei JSON-Parsefehler Status Failed setzen.
+14. Bei Timeout Prozess beenden und Status Timeout setzen.
+
+Wichtig:
+
+stdout ist die primäre maschinenlesbare Quelle.
+
+stderr darf nie als JSON interpretiert werden.
+
+stderr darf stdout nicht vermischen.
+
+ExitCode ist technisches Zusatzsignal, aber der fachliche Status kommt aus OutputJson.
+
+────────────────────────────────────────
+
+PowerShell-Aufruf kapseln
+
+Erstelle:
+
+IPowerShellJobProcessorInvoker
+PowerShellJobProcessorInvoker
+
+Damit JobProcessorRunner testbar bleibt.
+
+PowerShellJobProcessorInvoker gibt zurück:
+
+ExitCode
+StandardOutput
+StandardError
+TimedOut
+StartedAt
+CompletedAt
+
+Tests sollen dieses Interface mocken können.
+
+────────────────────────────────────────
+
+Optional .meta.json-Polling
+
+Falls AutomationEngine.EnableMetaPolling true ist:
+
+JobProcessorRunner soll während der Prozess läuft .meta.json Dateien beobachten.
+
+Suchordner:
+
+queues/processing
+queues/done
+queues/failed
+queues/retry
+queues/paused
+
+Gesucht wird nach:
+
+ExternalCorrelationId = JobRequestId
+
+Wenn Status oder LastMessage sich ändert:
+
+StatusEvent speichern
+optional SignalR senden
+
+Wichtig:
+
+Meta-Polling ist optional.
+
+Wenn keine .meta.json gefunden wird, darf der Runner nicht abbrechen.
+
+OutputJson bleibt finaler Abschlusskanal.
+
+────────────────────────────────────────
+
+JobController erstellen
+
+Erstelle:
+
+Controllers/JobsController.cs
+
+Endpunkte:
+
+GET /api/jobs/{jobRequestId}
+GET /api/jobs/{jobRequestId}/events
+
+Optional zusätzlich:
+
+POST /api/jobs/retry
+POST /api/jobs/{jobRequestId}/status-refresh
+
+Aber nur wenn sinnvoll.
+
+Für den ersten Schritt reichen GET Status und GET Events.
+
+GET /api/jobs/{jobRequestId} liefert:
+
+JobRequestId
+UseCaseName
+ExecutableAction
+Queue
+Status
+Message
+SourceFileName
+CreatedAt
+StartedAt
+UpdatedAt
+CompletedAt
+PowerShellExitCode
+FinalResultJson
+LastErrorMessage
+
+GET /api/jobs/{jobRequestId}/events liefert die Statushistorie.
+
+Falls Job nicht gefunden:
+
+HTTP 404
+
+────────────────────────────────────────
+
+Optional SignalR vorbereiten
+
+Falls SignalR bereits im Projekt genutzt wird oder einfach ergänzbar ist:
+
+Erstelle:
+
+Hubs/JobStatusHub.cs
+
+Methoden:
+
+JoinJobGroup(jobRequestId)
+LeaveJobGroup(jobRequestId)
+
+Event an Client:
+
+jobStatusChanged
+
+Payload:
+
+jobRequestId
+status
+message
+level
+createdAt
+data
+
+Wenn SignalR zu viel Aufwand ist, implementiere zuerst REST vollständig und dokumentiere SignalR als nächsten Schritt.
+
+────────────────────────────────────────
+
+Wichtige Sicherheits- und Betriebsregeln
+
+Hangfire Dashboard nicht öffentlich ohne Schutz anbieten.
+
+Keine Secrets in appsettings.json schreiben.
+
+Keine AD-/Exchange-Fachlogik in die MVC-App aufnehmen.
+
+PowerShell-Prozess unter einem klar definierten technischen Konto ausführen.
+
+Timeout konfigurieren.
+
+Parallelität begrenzen.
+
+Verhindern, dass mehrere Hangfire-Jobs gleichzeitig dieselbe Queue unkontrolliert verarbeiten.
+
+Wenn PowerShell nur queueweit arbeiten kann, ist ein optionaler QueueFileName-Filter auf PowerShell-Seite zwingend zu prüfen.
+
+────────────────────────────────────────
+
+Tests
+
+Ergänze Tests passend zum bestehenden Testframework.
+
+Mindestens testen:
+
+IamQueueService.CreateIamQueueFileWithResultAsync gibt FileName, FilePath, ExecutableAction, CurrentUserName und CorrelationId zurück.
+Dateiname entspricht {Guid}_{executableAction}_{currentUserName}_pshjob_.csv.
+CorrelationId entspricht Guid-Anteil des Dateinamens.
+Queue wird über usecases.json Pattern korrekt ermittelt.
+Ungültige Queue oder kein Pattern-Match erzeugt Fehler.
+AutomationEngineScheduler legt JobRequest an.
+AutomationEngineScheduler speichert Accepted und Queued Events.
+AutomationEngineScheduler enqueued Hangfire Job.
+JobProcessorRunner startet Invoker mit Queue, CorrelationId, OutputJson und SourceFileName.
+JobProcessorRunner parst gültiges OutputJson.
+JobProcessorRunner behandelt Fehler-JSON.
+JobProcessorRunner behandelt ungültiges JSON als Failed.
+stderr wird separat gespeichert.
+GET /api/jobs/{id} liefert Status.
+GET /api/jobs/{id}/events liefert Events.
+
+Falls Hangfire selbst schwer testbar ist:
+
+IBackgroundJobClient abstrahieren oder mocken.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+QueueFileColumnHeaders
+ExecutableAction enum, ausser zwingend nötig
+bestehende fachliche Controller-Validierungen
+bestehende ViewModels
+bestehende AD-/Datenbank-Lookups
+bestehende Queue-Datei-Inhalte
+PowerShell-Fachlogik
+UseCase-Fachlogik
+MailNotification-Fachlogik
+Hybrid-Routing
+DFSN/HomeDirectory
+bestehende Legacy-Skripte
+
+Keine produktiven Pfade hart im Code einbauen.
+
+────────────────────────────────────────
+
+Erwarteter Abschlussbericht
+
+Gib am Ende einen technischen Bericht aus mit:
+
+Geänderte Dateien
+Neue Services und Modelle
+Wie IamQueueService erweitert wurde
+Wie CorrelationId erzeugt wird
+Wie Queue aus usecases.json ermittelt wird
+Welche Controller angepasst wurden
+Wo nach CreateIamQueueFileWithResultAsync die AutomationEngine angestossen wird
+Wie Hangfire registriert wurde
+Wie Invoke-JobProcessor.ps1 gestartet wird
+Wie stdout und stderr verarbeitet werden
+Wie JobController Status und Events liefert
+Welche Tests ergänzt wurden
+Testergebnis
+Offene Punkte, insbesondere ob QueueFileName auf PowerShell-Seite schon unterstützt wird
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Die bestehende ASP.NET Core MVC Applikation bleibt die Annahme- und Queue-Erzeugungsoberfläche.
+
+Die bestehende PowerShell-JobEngine bleibt die fachliche AutomationEngine.
+
+Hangfire verbindet beide Welten:
+
+MVC Controller
+  → IamQueueService schreibt Queue-Datei
+  → AutomationEngineScheduler erstellt JobRequest
+  → Hangfire startet JobProcessorRunner
+  → JobProcessorRunner ruft Invoke-JobProcessor.ps1 auf
+  → OutputJson wird ausgewertet
+  → JobController liefert Status und Events
+
+Keine fachliche Doppelimplementierung in C#.
+
