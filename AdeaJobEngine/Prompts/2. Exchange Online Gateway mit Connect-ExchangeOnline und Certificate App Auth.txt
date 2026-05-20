@@ -1,0 +1,433 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange Online-, Microsoft-365-, App-only-Authentication-, Zertifikats-, ExchangeOnlineManagement-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten ExchangeOnline-Cmdlets in Handlern oder Services.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue ExchangeOnlineGateway.psm1 so aus, dass es autonom sicherstellt, dass eine gültige Exchange-Online-Verbindung besteht, bevor Exchange-Online-Befehle ausgeführt werden.
+
+Exchange Online darf nicht wie Exchange OnPrem behandelt werden.
+
+Exchange Online verwendet:
+
+ExchangeOnlineManagement Modul
+Connect-ExchangeOnline
+AppId
+Organization oder TenantDomain
+CertificateThumbprint
+Get-ConnectionInformation
+
+Nicht verwenden:
+
+New-PSSession zu EXO
+Import-PSSession zu EXO
+OnPrem Invoke-Command-Sessionmodell
+
+────────────────────────────────────────
+
+K = Produktive Hybrid-Konfiguration
+
+Die Werte müssen aus environments.hybrid.json gelesen werden.
+
+Config-Pfad:
+
+ExchangeOnline
+
+Erwartete produktive Werte:
+
+Enabled = true
+AppId = 98972cc8-f5bc-4dcd-8bcc-ac82925d2bf2
+Organization = kantonsspitalbl.onmicrosoft.com
+TenantDomain = kantonsspitalbl.onmicrosoft.com
+CertificateThumbprint = EE3A37116AF905168D5334A8CA74970B692F4491
+ShowBanner = false
+
+Optional sinnvolle Zusatzwerte:
+
+ReuseSession = true
+ReconnectOnFailure = true
+MaxReconnectAttempts = 1
+ValidateConnectionWithCommand = true
+ConnectionValidationCommand = Get-EXORecipient
+ConnectionValidationResultSize = 1
+
+Wichtig:
+
+Diese produktiven Werte gehören in environments.hybrid.json, nicht in appsettings.json.
+
+appsettings.json darf nur neutrale Defaults enthalten.
+
+────────────────────────────────────────
+
+K = Bekannter Zertifikatsbefund
+
+Ein früherer Connect-ExchangeOnline-Test zeigte:
+
+Der Schlüsselsatz ist nicht vorhanden.
+
+Das bedeutet:
+
+Zertifikat wurde gefunden,
+aber der Private Key war nicht nutzbar.
+
+Das Gateway soll bei solchen Fehlern eine klare Fehlermeldung liefern, die auf Zertifikat, Private Key und Berechtigung hinweist.
+
+Es soll nicht verschleiern, dass das Problem lokal am Zertifikat oder Private-Key-Zugriff liegt.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+ExchangeOnlineGateway.psm1 muss vor EXO-Befehlen sicherstellen:
+
+ExchangeOnline.Enabled = true
+ExchangeOnlineManagement Modul ist verfügbar
+AppId ist gesetzt
+Organization oder TenantDomain ist gesetzt
+CertificateThumbprint ist gesetzt
+Zertifikat mit Thumbprint existiert lokal
+Zertifikat hat Private Key
+ExchangeOnline-Verbindung ist aktiv oder wird aufgebaut
+
+Die Verbindung wird geprüft über:
+
+Get-ConnectionInformation
+
+Optional zusätzlich:
+
+Get-EXORecipient -ResultSize 1
+
+oder ein anderer leichter EXO-Lesebefehl, wenn ValidateConnectionWithCommand = true ist.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst:
+
+infrastructure/ExchangeOnlineGateway.psm1
+config/appsettings.json
+config/environments.hybrid.json
+config/environments.onprem.json
+Services, die ExchangeOnlineGateway verwenden
+tests/Pester
+
+Danach implementiere gezielt die EXO-Verbindungslogik.
+
+────────────────────────────────────────
+
+Erforderliche Funktionen
+
+Implementiere mindestens folgende Funktionen:
+
+Get-ExchangeOnlineRemotePowerShellConfig
+
+Aufgabe:
+
+ExchangeOnline-Konfiguration aus Context.Config oder Config-Objekt lesen.
+Pflichtfelder validieren.
+Organization bevorzugen.
+Falls Organization leer ist, TenantDomain verwenden.
+Kontrollierte Fehler erzeugen, wenn Enabled = false oder Pflichtfelder fehlen.
+
+────────────────────────────────────────
+
+Test-ExchangeOnlineCertificate
+
+Aufgabe:
+
+Zertifikat anhand CertificateThumbprint im lokalen Zertifikatsspeicher suchen.
+Mindestens Cert:\LocalMachine\My prüfen.
+Optional Cert:\CurrentUser\My prüfen, falls konfiguriert.
+Prüfen:
+    Zertifikat existiert
+    HasPrivateKey = true
+    NotAfter nicht abgelaufen
+Bei Fehler klare Diagnose liefern:
+    Zertifikat nicht gefunden
+    Private Key fehlt
+    Zertifikat abgelaufen
+    Private-Key-Zugriff vermutlich nicht möglich
+
+Wichtig:
+
+Das Gateway soll keine PFX-Dateien importieren.
+Es prüft nur, ob die Runtime korrekt vorbereitet ist.
+
+────────────────────────────────────────
+
+Import-ExchangeOnlineManagementModule
+
+Aufgabe:
+
+Prüfen, ob Modul ExchangeOnlineManagement vorhanden ist.
+Falls nicht geladen, Import-Module ausführen.
+Bei fehlendem Modul kontrollierten Fehler erzeugen.
+
+────────────────────────────────────────
+
+Test-ExchangeOnlineSession
+
+Aufgabe:
+
+Get-ConnectionInformation aufrufen.
+Prüfen, ob eine Verbindung vorhanden ist.
+Optional leichten EXO-Testbefehl ausführen, wenn ValidateConnectionWithCommand = true ist.
+Keine Exception ungefiltert durchreichen, sondern kontrolliert false zurückgeben oder klaren Fehler werfen.
+
+────────────────────────────────────────
+
+Connect-ExchangeOnlineSession
+
+Aufgabe:
+
+Config lesen.
+ExchangeOnlineManagement Modul laden.
+Zertifikat prüfen.
+Connect-ExchangeOnline mit AppId, Organization und CertificateThumbprint ausführen.
+ShowBanner aus Config verwenden.
+Keine Secrets im Code.
+Keine interaktive Anmeldung.
+
+Beispielziel:
+
+Connect-ExchangeOnline -AppId {AppId} -CertificateThumbprint {Thumbprint} -Organization {Organization} -ShowBanner:$false
+
+────────────────────────────────────────
+
+Ensure-ExchangeOnlineSession
+
+Aufgabe:
+
+Wenn Enabled = false, kontrolliert abbrechen.
+Wenn gültige Verbindung vorhanden ist, wiederverwenden.
+Wenn keine Verbindung vorhanden ist, Connect-ExchangeOnlineSession aufrufen.
+Danach Verbindung erneut prüfen.
+Bei Fehler klare Diagnose liefern.
+
+────────────────────────────────────────
+
+Reset-ExchangeOnlineSession
+
+Aufgabe:
+
+Disconnect-ExchangeOnline -Confirm:$false ausführen.
+Fehler beim Disconnect nicht eskalieren, wenn Session bereits weg ist.
+
+────────────────────────────────────────
+
+Invoke-ExchangeOnlineCommand
+
+Aufgabe:
+
+Ensure-ExchangeOnlineSession aufrufen.
+ScriptBlock oder delegierte Gateway-Funktion ausführen.
+Bei EXO-Verbindungsfehler:
+    wenn ReconnectOnFailure = true:
+        Reset-ExchangeOnlineSession,
+        Connect erneut,
+        einmal erneut versuchen.
+    sonst:
+        kontrollierten Fehler werfen.
+
+Wichtig:
+
+Exchange Online Cmdlets werden lokal über ExchangeOnlineManagement verfügbar gemacht, nicht per OnPrem Invoke-Command.
+
+────────────────────────────────────────
+
+Bestehende Gateway-Funktionen anpassen
+
+Prüfe vorhandene EXO-Funktionen, zum Beispiel:
+
+Get-ExchangeOnlineMailboxSafe
+Set-ExchangeOnlineMailboxSafe
+Add-ExchangeOnlineMailboxPermissionSafe
+Remove-ExchangeOnlineMailboxPermissionSafe
+Add-ExchangeOnlineRecipientPermissionSafe
+Remove-ExchangeOnlineRecipientPermissionSafe
+
+Diese Funktionen müssen vor Ausführung sicherstellen:
+
+Ensure-ExchangeOnlineSession
+
+Falls es eine zentrale Funktion Invoke-ExchangeOnlineCommand gibt, sollen diese Funktionen darüber laufen.
+
+────────────────────────────────────────
+
+Zertifikatsdiagnose verbessern
+
+Bei Fehlern wie:
+
+Der Schlüsselsatz ist nicht vorhanden.
+
+soll die Fehlermeldung im Gateway klar sagen:
+
+Exchange Online App-only Authentication konnte das Zertifikat finden, aber der private Schlüssel ist nicht nutzbar.
+Prüfe, ob das Zertifikat als PFX mit Private Key im Zertifikatsspeicher liegt.
+Prüfe HasPrivateKey.
+Prüfe Private-Key-Leserecht für das ausführende Servicekonto.
+
+Diese Diagnose ist wichtig für Betrieb und Support.
+
+────────────────────────────────────────
+
+Pester-Modus und Mockbarkeit
+
+Tests dürfen keine echte ExchangeOnline-Verbindung aufbauen.
+
+Folgende Cmdlets müssen mockbar sein:
+
+Import-Module
+Get-Module
+Get-ConnectionInformation
+Connect-ExchangeOnline
+Disconnect-ExchangeOnline
+Get-EXORecipient
+Get-ChildItem für Cert:
+Get-Date
+
+Falls nötig, Wrapper-Funktionen einführen:
+
+Import-ExchangeOnlineManagementModuleInternal
+Connect-ExchangeOnlineInternal
+Disconnect-ExchangeOnlineInternal
+Get-ExchangeOnlineConnectionInformationInternal
+Get-ExchangeOnlineCertificateInternal
+Invoke-ExchangeOnlineValidationCommandInternal
+
+Wrapper enthalten keine Fachlogik, nur technische Aufrufe, damit Pester sauber mocken kann.
+
+────────────────────────────────────────
+
+Pester-Tests
+
+Ergänze Tests unter:
+
+tests/Pester
+
+Empfohlen:
+
+tests/Pester/ExchangeOnlineSession.Tests.ps1
+tests/Pester/ExchangeOnlineGatewayConnection.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Mindestens testen:
+
+Test 1:
+
+ExchangeOnline Config wird korrekt gelesen.
+
+Test 2:
+
+Bei ExchangeOnline.Enabled = false wird kontrolliert abgebrochen.
+
+Test 3:
+
+Bei fehlender AppId wird kontrolliert abgebrochen.
+
+Test 4:
+
+Bei fehlender Organization und TenantDomain wird kontrolliert abgebrochen.
+
+Test 5:
+
+Bei fehlendem CertificateThumbprint wird kontrolliert abgebrochen.
+
+Test 6:
+
+Bei fehlendem Zertifikat wird kontrollierte Diagnose erzeugt.
+
+Test 7:
+
+Bei Zertifikat ohne Private Key wird kontrollierte Diagnose erzeugt.
+
+Test 8:
+
+Bei abgelaufenem Zertifikat wird kontrollierte Diagnose erzeugt.
+
+Test 9:
+
+Wenn Get-ConnectionInformation eine aktive Verbindung liefert, wird kein Connect-ExchangeOnline ausgeführt.
+
+Test 10:
+
+Wenn keine Verbindung vorhanden ist, wird Connect-ExchangeOnline mit AppId, Organization und CertificateThumbprint aufgerufen.
+
+Test 11:
+
+Bei Connect-Fehler „Der Schlüsselsatz ist nicht vorhanden“ wird eine verständliche Zertifikats-/Private-Key-Diagnose erzeugt.
+
+Test 12:
+
+Bei ReconnectOnFailure = true wird Disconnect und Connect genau einmal erneut versucht.
+
+Test 13:
+
+Produktive Werte stehen nicht in appsettings.json.
+
+Test 14:
+
+AppId, Organization und CertificateThumbprint stehen in environments.hybrid.json.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+ExchangeOnPremGateway.psm1 fachlich umbauen
+OnPrem New-PSSession / Invoke-Command Logik
+Hybrid-Routing-Entscheidungen
+Handler
+UseCases
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+usecases.json
+Queue-Mechanik
+Legacy-Skripte
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue Funktionen
+Wie Exchange Online Session geprüft wird
+Wie Connect-ExchangeOnline aufgerufen wird
+Wie Zertifikat und Private Key geprüft werden
+Wie Reconnect funktioniert
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken
+
+Wichtigste Zielregel:
+
+ExchangeOnlineGateway muss seine Exchange-Online-Verbindung selbst sicherstellen.
+
+Kein Handler und kein Service darf voraussetzen, dass vorher manuell Connect-ExchangeOnline ausgeführt wurde.

@@ -1,0 +1,630 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Active-Directory-, IAM-, Naming-Convention-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-Cmdlets in Handlern oder UseCases.
+Produktive AD-Zugriffe müssen über ActiveDirectoryGateway oder eine klar gekapselte Gateway-Funktion erfolgen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Ersetze die aktuelle Platzhalterlogik in Get-NextAvailableAccountName durch eine echte, prefixbasierte sAMAccountName-Generierung.
+
+Aktueller Zustand:
+
+function Get-NextAvailableAccountName {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$BaseName)
+
+    # TODO: Migrate legacy logic here
+    # Placeholder strategy: return base name as-is.
+    ConvertTo-SafeAccountName -InputValue $BaseName
+}
+
+Dieser Placeholder ist fachlich falsch, weil er keinen freien Accountnamen im On-Prem Active Directory ermittelt.
+
+Ziel ist eine deterministische, testbare und AD-gestützte Funktion:
+
+Get-NextAvailableSamAccountName
+
+Diese Funktion ermittelt für die erlaubten Prefixe gmb, us und ex den nächsten freien sAMAccountName anhand der bestehenden Namen im On-Prem Active Directory.
+
+────────────────────────────────────────
+
+K = Verbindliche Master-Regel
+
+Für die Generierung von sAMAccountName ist ausschliesslich das On-Prem Active Directory der Master.
+
+Die Prüfung auf bestehende Namen erfolgt nur gegen das lokale On-Prem AD.
+
+Nicht prüfen gegen:
+
+Exchange Online
+Entra ID
+Microsoft 365
+Exchange OnPrem Recipient Cmdlets
+Exchange Online Recipient Cmdlets
+SQL-Datenbank als führende Quelle
+CSV-Dateien
+Cache-Dateien
+
+Die SQL-Datenbank kann nachgelagert Daten aus dem AD erhalten, ist aber nicht die führende Quelle für die Eindeutigkeit von sAMAccountName.
+
+Die Exchange- oder M365-Welt darf bei dieser Funktion keine Rolle spielen.
+
+Zielregel:
+
+Get-NextAvailableSamAccountName
+  → liest bestehende sAMAccountName-Werte aus dem On-Prem AD
+  → ermittelt den nächsten freien Wert im definierten Nummernkreis
+  → gibt den neuen Namen zurück
+
+────────────────────────────────────────
+
+K = Fachliche Prefix-Vorgabe
+
+Es gibt genau drei erlaubte Prefixe.
+
+Prefix	Nummernkreis	Startwert	Format	Beispiel
+gmb	4-stellig	1	gmb0001	gmb0001
+us	5-stellig	10000	us10000	us10000
+ex	5-stellig	100	ex00100	ex00100
+
+Logik pro Prefix:
+
+gmb
+  StartValue = 1
+  Width = 4
+  MaxValue = 9999
+
+us
+  StartValue = 10000
+  Width = 5
+  MaxValue = 99999
+
+ex
+  StartValue = 100
+  Width = 5
+  MaxValue = 99999
+
+Der Prefix ist case-insensitive zu behandeln, das Ergebnis soll aber immer lower-case zurückgegeben werden.
+
+Beispiele:
+
+Get-NextAvailableSamAccountName -Prefix gmb
+  → sucht den ersten freien Wert ab gmb0001
+
+Get-NextAvailableSamAccountName -Prefix us
+  → sucht den ersten freien Wert ab us10000
+
+Get-NextAvailableSamAccountName -Prefix ex
+  → sucht den ersten freien Wert ab ex00100
+
+Get-NextAvailableSamAccountName -Prefix gmb -UseHighestPlusOne
+  → nimmt den höchsten bestehenden gmb-Wert und addiert 1
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Implementiere bevorzugt eine neue Funktion:
+
+Get-NextAvailableSamAccountName
+
+Parameter:
+
+Prefix
+UseHighestPlusOne
+
+Prefix:
+
+Mandatory
+ValidateSet: gmb, us, ex
+case-insensitive behandeln
+
+UseHighestPlusOne:
+
+optionaler Switch
+
+DomainController und SearchBase sollen in dieser Umsetzung nicht implementiert werden, weil die Prüfung immer gegen das On-Prem AD im Standardkontext erfolgen soll.
+
+Wenn es im Projekt bereits eine AD-Konfigurationslogik oder einen DomainController-Resolver gibt, darf diese intern im ActiveDirectoryGateway verwendet werden. Die öffentliche Funktion Get-NextAvailableSamAccountName soll aber einfach bleiben.
+
+Nicht einbauen:
+
+DomainController als öffentlicher Parameter
+SearchBase als öffentlicher Parameter
+Exchange-Abfragen
+EXO-Abfragen
+SQL-Abfragen
+M365-Abfragen
+freie neue Prefixe
+
+────────────────────────────────────────
+
+A = Positionierung im Code
+
+Analysiere zuerst, wo Get-NextAvailableAccountName aktuell definiert ist.
+
+Prüfe danach alle Aufrufer von:
+
+Get-NextAvailableAccountName
+
+und prüfe, ob die Aufrufer fachlich bereits einen Prefix ableiten können oder ob sie BaseName übergeben.
+
+Die vorhandene Funktion Get-NextAvailableAccountName darf nicht ersatzlos gelöscht werden, solange noch Aufrufer existieren.
+
+Empfohlene Zielstruktur:
+
+Get-NextAvailableSamAccountName
+  → neue fachlich korrekte Funktion
+
+Get-NextAvailableAccountName
+  → rückwärtskompatibler Wrapper, falls weiterhin benötigt
+
+Der Wrapper darf nicht mehr einfach ConvertTo-SafeAccountName zurückgeben.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Workspace:
+
+Wo Get-NextAvailableAccountName definiert ist
+Wo Get-NextAvailableAccountName aufgerufen wird
+Ob ActiveDirectoryGateway bereits Funktionen für Account- oder User-Suche enthält
+Ob bestehende Tests für Accountnamen, PersonMailbox, GenericUser oder UserProvisioning vorhanden sind
+Welche Module aktuell ConvertTo-SafeAccountName verwenden
+Ob Get-ADUser oder DirectorySearcher bereits im Gateway gekapselt sind
+
+Danach implementiere gezielt.
+
+────────────────────────────────────────
+
+Get-NextAvailableSamAccountName implementieren
+
+Erstelle eine neue Funktion:
+
+Get-NextAvailableSamAccountName
+
+Parameter:
+
+[Parameter(Mandatory = $true)]
+[ValidateSet("gmb", "us", "ex")]
+[string]$Prefix
+
+[switch]$UseHighestPlusOne
+
+Die Funktion soll:
+
+Prefix nach lower-case normalisieren
+Prefix-Konfiguration laden
+bestehende sAMAccountName-Werte aus dem On-Prem AD lesen
+nur passende Namen auswerten
+Nummernteil extrahieren
+Werte ausserhalb des Nummernkreises ignorieren
+nächsten freien Wert bestimmen
+formatierten sAMAccountName zurückgeben
+
+────────────────────────────────────────
+
+AD-Suche sauber kapseln
+
+Die Suche nach bestehenden Accounts muss gegen das On-Prem Active Directory erfolgen.
+
+Wenn ActiveDirectoryGateway.psm1 vorhanden ist, erweitere es um eine kleine, klar benannte Funktion, zum Beispiel:
+
+Get-ExistingSamAccountNamesByPrefix
+
+oder:
+
+Get-AdSamAccountNamesByPrefix
+
+Aufgabe dieser Gateway-Funktion:
+
+On-Prem AD nach sAMAccountName-Werten mit dem Prefix durchsuchen
+nur sAMAccountName-Werte zurückgeben
+keine Namensgenerierungslogik enthalten
+keine Exchange-/M365-/SQL-Logik enthalten
+
+Beispielhafte interne Logik im Gateway:
+
+LDAP-Filter auf User-Accounts mit sAMAccountName prefix*
+Properties: sAMAccountName
+Rückgabe: Liste von Strings
+
+Der LDAP-Filter soll sinngemäss auf User-Accounts zielen:
+
+sAMAccountType = 805306368
+sAMAccountName beginnt mit Prefix
+
+Wichtig:
+
+Get-ADUser oder DirectorySearcher darf nur in der Gateway-Schicht verwendet werden.
+Die Namenslogik selbst soll testbar bleiben.
+AD-Zugriffe müssen in Pester gemockt werden können.
+
+────────────────────────────────────────
+
+Bestehende Namen auswerten
+
+Die Logik darf nur bestehende Namen berücksichtigen, die exakt dem Muster entsprechen:
+
+Prefix plus Ziffern
+
+Gültige Beispiele:
+
+gmb0001
+gmb1234
+us10000
+us54321
+ex00100
+ex99999
+
+Ungültige Beispiele, die ignoriert werden müssen:
+
+gmb-test
+gmbABC
+gmb0001_old
+usadmin
+ex00100_old
+user00100
+adm00013
+
+Regex-Logik sinngemäss:
+
+^prefix(\d+)$
+
+Die extrahierten Nummern werden als Integer interpretiert.
+
+Nur Nummern zwischen StartValue und MaxValue berücksichtigen.
+
+Doppelte Werte entfernen.
+
+Aufsteigend sortieren.
+
+────────────────────────────────────────
+
+Standardlogik: erste freie Lücke suchen
+
+Ohne UseHighestPlusOne gilt:
+
+Starte bei StartValue.
+Gehe durch die sortierten bestehenden Nummern.
+Wenn bestehende Nummer gleich nextNumber ist:
+  nextNumber erhöhen.
+Wenn bestehende Nummer grösser als nextNumber ist:
+  Lücke gefunden, abbrechen.
+Ergebnis ist Prefix plus gepaddete nextNumber.
+
+Beispiele:
+
+Prefix gmb
+vorhanden: keine
+Ergebnis: gmb0001
+
+Prefix gmb
+vorhanden: gmb0001, gmb0002
+Ergebnis: gmb0003
+
+Prefix gmb
+vorhanden: gmb0001, gmb0002, gmb0004
+Ergebnis: gmb0003
+
+Prefix us
+vorhanden: keine
+Ergebnis: us10000
+
+Prefix ex
+vorhanden: ex00100, ex00101
+Ergebnis: ex00102
+
+────────────────────────────────────────
+
+UseHighestPlusOne-Logik
+
+Wenn UseHighestPlusOne gesetzt ist:
+
+Wenn bestehende gültige Nummern vorhanden sind:
+  höchste Nummer nehmen und plus 1 rechnen.
+Wenn keine bestehenden gültigen Nummern vorhanden sind:
+  StartValue verwenden.
+
+Beispiele:
+
+Prefix gmb
+vorhanden: gmb0001, gmb0002, gmb0004
+Ergebnis: gmb0005
+
+Prefix us
+vorhanden: us10000, us10003
+Ergebnis: us10004
+
+Prefix ex
+vorhanden: keine
+Ergebnis: ex00100
+
+────────────────────────────────────────
+
+Nummernkreis erschöpft
+
+Wenn die berechnete nextNumber grösser als MaxValue ist, muss ein kontrollierter Fehler geworfen werden.
+
+Fehlermeldung sinngemäss:
+
+Der Nummernkreis für Prefix 'gmb' ist ausgeschöpft. Maximalwert: 9999.
+
+Diese Prüfung gilt sowohl für die Standardlogik als auch für UseHighestPlusOne.
+
+────────────────────────────────────────
+
+Rückwärtskompatibilität für Get-NextAvailableAccountName
+
+Prüfe, ob Get-NextAvailableAccountName weiterhin benötigt wird.
+
+Falls ja, implementiere diese Funktion als Wrapper.
+
+Der Wrapper soll:
+
+BaseName trimmen
+Prefix aus BaseName ableiten
+bei gmb... Prefix gmb verwenden
+bei us... Prefix us verwenden
+bei ex... Prefix ex verwenden
+Get-NextAvailableSamAccountName -Prefix Prefix aufrufen
+bei unbekanntem Prefix einen kontrollierten Fehler werfen
+
+Beispiele:
+
+Get-NextAvailableAccountName -BaseName "gmb"
+  → ruft Get-NextAvailableSamAccountName -Prefix gmb
+
+Get-NextAvailableAccountName -BaseName "gmbTest"
+  → ruft Get-NextAvailableSamAccountName -Prefix gmb
+
+Get-NextAvailableAccountName -BaseName "us"
+  → ruft Get-NextAvailableSamAccountName -Prefix us
+
+Get-NextAvailableAccountName -BaseName "ex00100"
+  → ruft Get-NextAvailableSamAccountName -Prefix ex
+
+Get-NextAvailableAccountName -BaseName "admin"
+  → kontrollierter Fehler
+
+Wichtig:
+
+Der Wrapper darf nicht mehr ConvertTo-SafeAccountName als Ersatzstrategie verwenden.
+
+Wenn alle Aufrufer sauber auf Get-NextAvailableSamAccountName umgestellt werden können, darf Get-NextAvailableAccountName als deprecated Wrapper bestehen bleiben, damit alte Pfade nicht brechen.
+
+────────────────────────────────────────
+
+Keine fremden Zielsysteme verwenden
+
+Die Funktion und ihre Tests müssen sicherstellen:
+
+ExchangeOnPremGateway wird nicht verwendet.
+ExchangeOnlineGateway wird nicht verwendet.
+Connect-ExchangeOnline wird nicht verwendet.
+New-PSSession wird nicht verwendet.
+Get-Mailbox wird nicht verwendet.
+Get-Recipient wird nicht verwendet.
+Get-EXORecipient wird nicht verwendet.
+SQL wird nicht als führende Quelle verwendet.
+
+Nur On-Prem AD ist massgeblich.
+
+────────────────────────────────────────
+
+Pester-Modus und Mockbarkeit
+
+Die Tests dürfen keine echte AD-Abfrage ausführen.
+
+AD-Zugriffe müssen mockbar sein.
+
+Wenn eine Gateway-Funktion verwendet wird, sollen Tests diese mocken und vorbereitete sAMAccountName-Listen zurückgeben.
+
+Falls intern Get-ADUser oder DirectorySearcher verwendet wird, muss dieser Zugriff in einer Gateway-Funktion gekapselt sein, damit Tests nicht gegen echtes AD laufen.
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+────────────────────────────────────────
+
+Pester-Tests
+
+Ergänze oder passe Tests unter tests/Pester an.
+
+Empfohlene Testdatei:
+
+tests/Pester/AccountNameGeneration.Tests.ps1
+
+Mindestens folgende Tests implementieren:
+
+Test 1:
+
+Prefix gmb ohne bestehende Accounts ergibt gmb0001.
+
+Test 2:
+
+Prefix us ohne bestehende Accounts ergibt us10000.
+
+Test 3:
+
+Prefix ex ohne bestehende Accounts ergibt ex00100.
+
+Test 4:
+
+gmb mit bestehenden gmb0001 und gmb0002 ergibt gmb0003.
+
+Test 5:
+
+gmb mit bestehender Lücke gmb0001, gmb0002, gmb0004 ergibt gmb0003.
+
+Test 6:
+
+gmb mit UseHighestPlusOne und gmb0001, gmb0002, gmb0004 ergibt gmb0005.
+
+Test 7:
+
+us mit bestehenden us10000 und us10001 ergibt us10002.
+
+Test 8:
+
+ex mit bestehenden ex00100 und ex00101 ergibt ex00102.
+
+Test 9:
+
+Namen mit falschem Format werden ignoriert.
+
+Beispielwerte:
+
+gmbABC
+gmb0001_old
+user00100
+
+Test 10:
+
+Werte ausserhalb des Nummernkreises werden ignoriert.
+
+Test 11:
+
+Bei ausgeschöpftem Nummernkreis wird ein kontrollierter Fehler geworfen.
+
+Test 12:
+
+Prefix ist case-insensitive.
+
+Beispiel:
+
+GMB ergibt gmb0001
+
+Test 13:
+
+Ungültiger Prefix wird durch ValidateSet oder kontrollierten Fehler abgewiesen.
+
+Test 14:
+
+Get-NextAvailableAccountName mit BaseName gmbTest verwendet die gmb-Logik.
+
+Test 15:
+
+Get-NextAvailableAccountName mit BaseName usTest verwendet die us-Logik.
+
+Test 16:
+
+Get-NextAvailableAccountName mit BaseName exTest verwendet die ex-Logik.
+
+Test 17:
+
+Get-NextAvailableAccountName mit unbekanntem BaseName wirft kontrollierten Fehler.
+
+Test 18:
+
+Die AD-Suche wird über die On-Prem-AD-Gateway-Funktion gemockt.
+
+Test 19:
+
+Es wird keine echte AD-Abfrage ausgeführt.
+
+Test 20:
+
+ExchangeOnPremGateway wird bei der sAMAccountName-Ermittlung nicht verwendet.
+
+Test 21:
+
+ExchangeOnlineGateway wird bei der sAMAccountName-Ermittlung nicht verwendet.
+
+Test 22:
+
+Es werden keine EXO-/M365-Cmdlets für die Namensprüfung aufgerufen.
+
+Test 23:
+
+SQL wird nicht als führende Quelle für die sAMAccountName-Eindeutigkeit verwendet.
+
+Test 24:
+
+Ergebnis ist immer lower-case.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+UseCase-Registry
+Queue-Mechanik
+JobEngine
+Hybrid-Routing
+ExchangeOnPremGateway
+ExchangeOnlineGateway
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+OutputJson
+CorrelationId
+ExternalCorrelationId
+produktive Environment-Konfiguration
+Legacy-Skripte
+
+Keine neuen Prefixe einführen.
+
+Keine SearchBase-/DomainController-Pflicht einbauen.
+
+Keine produktiven AD-Server hardcoden.
+
+Keine M365-/EXO-/SQL-Prüfung ergänzen.
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Wo Get-NextAvailableSamAccountName implementiert wurde
+Was mit Get-NextAvailableAccountName passiert ist
+Welche Aufrufer angepasst wurden
+Wie die Prefix-Konfiguration umgesetzt wurde
+Wie die On-Prem-AD-Suche gekapselt wurde
+Bestätigung, dass nur On-Prem AD als Master verwendet wird
+Bestätigung, dass Exchange Online, Entra ID, M365 und SQL nicht verwendet werden
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Die sAMAccountName-Generierung muss deterministisch, prefixbasiert, testbar und ausschliesslich On-Prem-AD-gestützt sein.
+
+Master für sAMAccountName ist immer das On-Prem Active Directory.
+
+gmb beginnt bei gmb0001.
+us beginnt bei us10000.
+ex beginnt bei ex00100.
+
+Ohne UseHighestPlusOne wird die erste freie Lücke gesucht.
+
+Mit UseHighestPlusOne wird der höchste bestehende Wert plus 1 verwendet.
+
+Exchange Online, Entra ID, Microsoft 365 und SQL dürfen für diese Entscheidung nicht als führende Quelle verwendet werden.

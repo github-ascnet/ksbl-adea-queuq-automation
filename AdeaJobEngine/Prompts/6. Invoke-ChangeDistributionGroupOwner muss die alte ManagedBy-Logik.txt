@@ -1,0 +1,482 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-OnPrem-, Active-Directory-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven Exchange-Cmdlets in Handlern, wenn bereits ein Gateway/Service vorhanden ist.
+Distribution Groups bleiben OnPrem-authoritativ.
+Keine Exchange-Online-Logik für Distribution Groups einführen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Bereinige den DistributionGroup-Bereich wie folgt:
+
+1. Entferne die überflüssige Funktion Invoke-ModifyDistributionGroupMembers, sofern sie nicht mehr verwendet wird.
+2. Implementiere die noch offene TODO-Logik in Invoke-ChangeDistributionGroupOwner.
+3. Die Funktion muss für Distribution Groups explizit das Exchange-OnPrem-Feld ManagedBy mutieren.
+4. Die alte Legacy-Logik aus dem Old Script dient als fachliche Referenz.
+5. Die Umsetzung muss über die bestehende Gateway-/Service-Architektur erfolgen und Pester-testbar bleiben.
+
+────────────────────────────────────────
+
+K = Fachlicher Kontext
+
+Die bestehende Funktion sieht aktuell sinngemäss so aus:
+
+Set-StrictMode -Version Latest
+
+function Invoke-ChangeDistributionGroupOwner {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    try {
+        $rows = @($Context.Payload)
+        Assert-RequiredCsvFields -Rows $rows -RequiredFields @('GroupIdentity', 'OwnerIdentity')
+
+        foreach ($row in $rows) {
+            # TODO: Migrate legacy logic here
+        }
+
+        Write-LogInfo -Logger $Context.Logger -Message "Invoke-ChangeDistributionGroupOwner processed ..."
+        New-JobSucceededResult -Message "Invoke-ChangeDistributionGroupOwner succeeded."
+    }
+    catch {
+        Write-LogError -Logger $Context.Logger -Message "Invoke-ChangeDistributionGroupOwner failed." -Exception $_.Exception
+        New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
+    }
+}
+
+Export-ModuleMember -Function @('Invoke-ChangeDistributionGroupOwner')
+
+Die alte Legacy-Logik war:
+
+foreach ($managedByMember in $managedByMembers) {
+
+    if ($managedByMember.EndsWith("[DEL]")) {
+        $memberToAddRemove = $managedByMember.Split("[]")[0]
+        Set-DistributionGroup -Identity $workingFileEntry.AdObjectName -ManagedBy @{Remove=$memberToAddRemove} -BypassSecurityGroupManagerCheck -DomainController $dc -ErrorAction Ignore
+    }
+
+    if ($managedByMember.EndsWith("[ADD]")) {
+        $memberToAddRemove = $managedByMember.Split("[]")[0]
+        Set-DistributionGroup -Identity $workingFileEntry.AdObjectName -ManagedBy @{Add=$memberToAddRemove} -BypassSecurityGroupManagerCheck -DomainController $dc -ErrorAction Ignore
+    }
+}
+
+Die neue Funktion soll diese Logik sauber, modular und testbar übernehmen.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Distribution Groups sind OnPrem-authoritativ.
+
+Für ChangeDistributionGroupOwner darf keine Exchange-Online-Logik eingeführt werden.
+
+Nicht erlaubt:
+
+Get-EXORecipient
+Set-EXO...
+Connect-ExchangeOnline
+ExchangeOnlineGateway
+M365-Routing
+HybridMailboxResolver
+TenantState
+direkte Fachlogik in JobEngine.psm1
+neue UseCases
+Änderung an usecases.json, ausser zwingend für Bereinigung nötig
+
+Erlaubt und erwartet:
+
+ExchangeOnPremGateway
+OnPrem Set-DistributionGroup
+ManagedBy Add / Remove
+BypassSecurityGroupManagerCheck
+Gateway-Funktion für Set-DistributionGroup ManagedBy
+Pester-Mocking ohne echte Exchange-Verbindung
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Workspace.
+
+Suche insbesondere nach:
+
+Invoke-ModifyDistributionGroupMembers
+Invoke-ChangeDistributionGroupOwner
+DistributionGroup.ChangeManager
+ChangeDistributionGroupOwner
+ChangeManagerDistribList
+ExchangeOnPremGateway.psm1
+DistributionGroupService.psm1
+tests/Pester
+
+Prüfe alle Referenzen, bevor du etwas entfernst.
+
+────────────────────────────────────────
+
+Invoke-ModifyDistributionGroupMembers entfernen
+
+Prüfe zuerst, ob Invoke-ModifyDistributionGroupMembers noch irgendwo referenziert wird.
+
+Suche in:
+
+usecases.json
+usecases/
+shared/
+tests/
+README / Doku
+Export-ModuleMember
+Import-Module Stellen
+
+Wenn keine produktive Referenz mehr existiert:
+
+Funktion entfernen
+Export-ModuleMember bereinigen
+veraltete Tests entfernen oder anpassen
+keine UseCase-Registry ändern, falls sie nicht referenziert wird
+
+Wenn noch Referenzen existieren:
+
+Nicht blind löschen.
+Dokumentiere im Abschlussbericht, wo sie noch referenziert wird.
+Nur entfernen, wenn diese Referenzen fachlich veraltet sind und sicher ersetzt werden können.
+
+────────────────────────────────────────
+
+Invoke-ChangeDistributionGroupOwner implementieren
+
+Implementiere die Funktion so, dass sie die CSV-/Payload-Daten aus Context.Payload verarbeitet.
+
+Pflichtfelder:
+
+GroupIdentity
+OwnerIdentity
+
+Falls im vorhandenen CSV-Format andere Feldnamen verwendet werden, zum Beispiel:
+
+AdObjectName
+ManagedByMembers
+
+dann prüfe bestehende RequiredFields und Handler-Konventionen und unterstütze die bestehenden Feldnamen rückwärtskompatibel.
+
+Wichtig:
+
+Der Handler soll nicht direkt Set-DistributionGroup ausführen, sofern ExchangeOnPremGateway bereits zuständig ist.
+
+Stattdessen soll er einen Service oder Gateway aufrufen.
+
+Bevorzugte Zielkette:
+
+Invoke-ChangeDistributionGroupOwner
+  → DistributionGroupService
+  → ExchangeOnPremGateway
+  → Set-DistributionGroup -ManagedBy @{Add=...} oder @{Remove=...}
+
+Wenn DistributionGroupService bereits existiert, ergänze dort eine Methode.
+
+Möglicher Funktionsname im Service:
+
+Set-DistributionGroupManagedByMembers
+
+oder:
+
+Update-DistributionGroupManagedBy
+
+Möglicher Funktionsname im Gateway:
+
+Set-OnPremDistributionGroupManagedBySafe
+
+oder:
+
+Update-OnPremDistributionGroupManagedBy
+
+────────────────────────────────────────
+
+OwnerIdentity / ManagedByMembers parsing
+
+Die alte Logik verarbeitet Einträge mit Suffix:
+
+[ADD]
+[DEL]
+
+Beispiele:
+
+user1[ADD]
+user2[DEL]
+
+Die neue Logik soll diese Semantik übernehmen.
+
+Parsing-Regel:
+
+Wenn OwnerIdentity oder ManagedByMember mit [ADD] endet:
+    Operation = Add
+    MemberIdentity = Wert ohne [ADD]
+
+Wenn OwnerIdentity oder ManagedByMember mit [DEL] endet:
+    Operation = Remove
+    MemberIdentity = Wert ohne [DEL]
+
+Wenn kein Suffix vorhanden ist:
+    kontrollierter Fehler oder, falls bestehende Fachlogik das erwartet, Default = Add
+
+Empfehlung:
+
+Kein stiller Default, ausser bestehende Tests/Legacy-Daten verlangen es.
+Besser kontrollierten Fehler mit klarer Meldung erzeugen:
+OwnerIdentity must end with [ADD] or [DEL].
+
+Mehrfachwerte:
+
+Falls OwnerIdentity mehrere Werte enthält, prüfe bestehende CSV-Konvention.
+
+Unterstütze nur vorhandene Konventionen, zum Beispiel:
+
+Semikolon-getrennt
+Komma-getrennt
+Pipe ist Feldtrenner und darf nicht als Mehrwerttrenner verwendet werden
+Array aus Payload
+
+Keine neue Mehrwertsyntax erfinden, wenn im bestehenden Projekt bereits eine Konvention vorhanden ist.
+
+────────────────────────────────────────
+
+Exchange OnPrem Mutation
+
+Die fachliche Operation ist:
+
+Set-DistributionGroup -Identity GroupIdentity -ManagedBy @{Add=MemberIdentity} -BypassSecurityGroupManagerCheck
+
+oder:
+
+Set-DistributionGroup -Identity GroupIdentity -ManagedBy @{Remove=MemberIdentity} -BypassSecurityGroupManagerCheck
+
+DomainController:
+
+Die alte Legacy-Logik verwendete:
+
+-DomainController $dc
+
+Wenn das neue ExchangeOnPremGateway bereits eine DomainController-Konfiguration unterstützt, verwende sie.
+
+Wenn nicht, nicht hart codieren.
+
+Falls DomainController weiterhin fachlich benötigt wird, lies ihn aus Config oder vorhandener AD-/ExchangeOnPrem-Konfiguration.
+
+Keine produktiven DC-Werte hardcoden.
+
+────────────────────────────────────────
+
+Fehlerbehandlung
+
+Die alte Logik hat pro Member Fehler ins EventLog geschrieben und weitergemacht.
+
+Die neue Logik soll kontrolliert und jobkonform arbeiten.
+
+Empfehlung:
+
+Pro Zeile und pro Owner-Operation Fehler sammeln.
+Einzelne Owner-Fehler als FailedRows oder Errors im JobResult dokumentieren.
+Wenn mindestens ein Fehler auftritt, soll der Job kontrolliert Failed oder CompletedWithWarnings zurückgeben, je nach bestehendem JobResult-Modell.
+Bestehende Projektkonventionen für New-JobSucceededResult, New-JobFailedResult und FailedRows verwenden.
+
+Wenn die bestehende UseCase-Konvention bei Teilfehlern keinen CompletedWithWarnings kennt, dann sauber New-JobFailedResult verwenden.
+
+Loggen:
+
+Write-LogInfo bei erfolgreichem Add/Remove
+Write-LogError bei Fehler
+keine rohen Exceptions ungefiltert verlieren
+
+────────────────────────────────────────
+
+Gateway-Funktion mockbar bauen
+
+Falls eine neue Gateway-Funktion erstellt wird, muss sie testbar sein.
+
+Beispiel-Ziel:
+
+Set-OnPremDistributionGroupManagedBySafe
+
+Parameter:
+
+Identity
+MemberIdentity
+Operation
+Context oder Config
+BypassSecurityGroupManagerCheck
+
+Operation erlaubte Werte:
+
+Add
+Remove
+
+Intern:
+
+Bei InvokeCommand-Modus:
+    Invoke-ExchangeOnPremCommand mit ScriptBlock, der Set-DistributionGroup ausführt.
+
+Bei optionalem ImportPSSession-Modus:
+    Set-DistributionGroup lokal, falls Cmdlet importiert wurde.
+
+Falls ExchangeOnPremGateway bereits auf InvokeCommand umgebaut wurde, diese Logik verwenden.
+
+Keine echte Exchange-Verbindung in Tests.
+
+────────────────────────────────────────
+
+Pester-Modus und Tests
+
+Ergänze oder passe Tests unter tests/Pester an.
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Mocke alle Exchange-Zugriffe.
+
+Mindestens folgende Tests:
+
+Test 1:
+
+Invoke-ModifyDistributionGroupMembers ist nicht mehr exportiert, wenn die Funktion entfernt wurde.
+
+Test 2:
+
+Invoke-ModifyDistributionGroupMembers wird nirgendwo mehr referenziert, falls entfernt.
+
+Test 3:
+
+Invoke-ChangeDistributionGroupOwner verlangt GroupIdentity und OwnerIdentity oder die bestehenden äquivalenten Feldnamen.
+
+Test 4:
+
+OwnerIdentity mit [ADD] erzeugt Operation Add.
+
+Test 5:
+
+OwnerIdentity mit [DEL] erzeugt Operation Remove.
+
+Test 6:
+
+[ADD] wird vor Übergabe an Gateway aus MemberIdentity entfernt.
+
+Test 7:
+
+[DEL] wird vor Übergabe an Gateway aus MemberIdentity entfernt.
+
+Test 8:
+
+Add ruft Gateway mit ManagedBy Add auf.
+
+Test 9:
+
+Remove ruft Gateway mit ManagedBy Remove auf.
+
+Test 10:
+
+BypassSecurityGroupManagerCheck wird verwendet.
+
+Test 11:
+
+ExchangeOnlineGateway wird nicht aufgerufen.
+
+Test 12:
+
+Connect-ExchangeOnline wird nicht aufgerufen.
+
+Test 13:
+
+Set-DistributionGroup wird nicht direkt im Handler aufgerufen, wenn Gateway vorhanden ist.
+
+Test 14:
+
+Fehler pro Owner werden geloggt und kontrolliert im JobResult abgebildet.
+
+Test 15:
+
+Bei gültiger Payload gibt Invoke-ChangeDistributionGroupOwner ein Success-Result zurück.
+
+Test 16:
+
+Bei fehlendem Suffix [ADD]/[DEL] wird kontrolliert abgebrochen oder die bestehende Projektkonvention angewendet.
+
+Test 17:
+
+Keine echte Exchange-Verbindung wird im Test aufgebaut.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+usecases.json, ausser eine veraltete Referenz muss zwingend entfernt werden
+JobEngine.psm1
+JobFileQueue.psm1
+Queue-Mechanik
+ExchangeOnlineGateway
+HybridMailboxResolver
+TenantState
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+OutputJson
+CorrelationId
+ExternalCorrelationId
+produktive Environment-Konfiguration
+Legacy-Skripte
+
+Keine neuen DistributionGroup-UseCases hinzufügen.
+
+Keine M365-/EXO-Logik für Distribution Groups einbauen.
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Ob Invoke-ModifyDistributionGroupMembers entfernt wurde
+Wo die Funktion noch referenziert war, falls sie nicht entfernt werden konnte
+Wie Invoke-ChangeDistributionGroupOwner implementiert wurde
+Wie [ADD] und [DEL] verarbeitet werden
+Welche Gateway-/Service-Funktion ManagedBy mutiert
+Wie Set-DistributionGroup -ManagedBy Add/Remove ausgeführt wird
+Bestätigung, dass Exchange Online nicht verwendet wird
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Distribution Groups bleiben OnPrem-authoritativ.
+
+Invoke-ChangeDistributionGroupOwner muss ManagedBy über Exchange OnPrem ändern.
+
+Die alte Legacy-Semantik bleibt erhalten:
+
+owner[ADD] → Set-DistributionGroup -ManagedBy @{Add=owner}
+owner[DEL] → Set-DistributionGroup -ManagedBy @{Remove=owner}
+
+Invoke-ModifyDistributionGroupMembers wird entfernt, wenn keine produktive Referenz mehr besteht.

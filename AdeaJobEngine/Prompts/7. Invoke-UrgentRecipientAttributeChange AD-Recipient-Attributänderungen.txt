@@ -1,0 +1,686 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Active-Directory-, Exchange-OnPrem-, SQL-Server-, Hospis-/IAM-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-, Exchange- oder SQL-Befehle in Handlern.
+Keine fachliche Logik in JobEngine.psm1.
+Keine produktiven Werte hardcoden.
+Keine Legacy-Skripte unkontrolliert umbauen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Bearbeite den Urgent-Bereich der AdeaJobEngine sachgemäss.
+
+Es gibt aktuell ein TODO in:
+
+Invoke-UrgentRecipientAttributeChange
+
+Die Funktion sieht aktuell sinngemäss so aus:
+
+Set-StrictMode -Version Latest
+
+function Invoke-UrgentRecipientAttributeChange {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    try {
+        $rows = @($Context.Payload)
+        Assert-RequiredCsvFields -Rows $rows -RequiredFields @('Identity', 'AttributeName', 'AttributeValue')
+
+        foreach ($row in $rows) {
+            # TODO: Migrate legacy logic here
+        }
+
+        Write-LogInfo -Logger $Context.Logger -Message "Invoke-UrgentRecipientAttributeChange processed ..."
+        New-JobSucceededResult -Message "Invoke-UrgentRecipientAttributeChange succeeded."
+    }
+    catch {
+        Write-LogError -Logger $Context.Logger -Message "Invoke-UrgentRecipientAttributeChange failed." -Exception $_.Exception
+        New-JobFailedResult -Message $_.Exception.Message -ErrorCode 'USECASE_ERROR' -Exception $_.Exception
+    }
+}
+
+Export-ModuleMember -Function @('Invoke-UrgentRecipientAttributeChange')
+
+Wichtig:
+
+Der bereitgestellte Legacy-Code darf nicht 1:1 komplett in Invoke-UrgentRecipientAttributeChange kopiert werden.
+
+Der Legacy-Code enthält verschiedene fachliche Verantwortlichkeiten:
+
+AD-Benutzer deaktivieren
+Mailbox-Features / Hidden State ändern
+MailboxAutoReplyConfiguration setzen
+SQL EMailRevocations aktualisieren
+bestimmte Gruppenmitgliedschaften entfernen
+Tenant-/Entra-Sync-Attribute löschen
+Description setzen
+SQL-Transaktion für urgent inaktivieren erzeugen
+
+Diese Logik gehört fachlich überwiegend zu:
+
+Invoke-InactivateHospisPerson
+HospisPersonService.UrgentInactivation
+
+und nicht vollständig zu einer generischen Funktion:
+
+Invoke-UrgentRecipientAttributeChange
+
+────────────────────────────────────────
+
+K = Fachlicher Kontext aus dem Legacy-Code
+
+Der Legacy-Code macht bei dringender Inaktivierung sinngemäss:
+
+1. Resource-Forest-Userobjekte verarbeiten.
+2. AD-Konto deaktivieren.
+3. Falls homeMdb gesetzt ist:
+   Mailbox Features / State auf HIDE setzen.
+   MailboxAutoReplyConfiguration setzen.
+   SQL EMailRevocations.ValidTo auf GetDate setzen.
+4. Bestimmte Gruppenmitgliedschaften entfernen:
+   CN=TPL-...
+   CN=GG-KSBL-VDI-Remote...
+   CN=GG-OneSign...
+5. Tenant-/Entra-Sync deaktivieren:
+   Set-TenantState -Mode TenantDisable
+6. extensionAttribute6 löschen.
+7. msDS-cloudExtensionAttribute15 löschen.
+8. Description setzen:
+   Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+9. Bei ActionType Inaktivieren:
+   SQL Stored Procedure ausführen:
+   KSBL_Hospis_Staging.dbo.usp_create_urgent_inaktivieren_transaction
+
+Wichtig:
+
+TenantState.psm1 enthält aktuell noch Placeholder-/TODO-Logik und darf in diesem Schritt nicht produktiv verdrahtet werden.
+
+Die fachlich relevante Entra-Sync-Deaktivierung soll aktuell über das Leeren von msDS-cloudExtensionAttribute15 erfolgen, sofern dies im bestehenden Projekt bereits als Sync-Steuerungsattribut definiert ist.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Es muss fachlich getrennt werden:
+
+Bereich 1: Generische Attributänderung
+
+Invoke-UrgentRecipientAttributeChange
+  → verarbeitet Identity / AttributeName / AttributeValue
+  → setzt oder löscht gezielt AD-/Recipient-Attribute
+  → nutzt Service und Gateway
+  → keine komplette Hospis-Inaktivierung
+
+Bereich 2: Dringende Hospis-Inaktivierung
+
+Invoke-InactivateHospisPerson
+  → orchestriert die dringende Inaktivierung
+  → nutzt HospisPersonService.UrgentInactivation
+  → deaktiviert User
+  → setzt AutoReply
+  → entfernt definierte Gruppenmitgliedschaften
+  → leert extensionAttribute6
+  → leert msDS-cloudExtensionAttribute15
+  → setzt Description
+  → aktualisiert SQL / Hospis-Transaktionen
+  → nutzt AD-, Exchange- und SQL-Gateways
+
+Nicht erlaubt:
+
+Legacy-Code blind in Invoke-UrgentRecipientAttributeChange kopieren
+Set-ADUser direkt im Handler
+Set-MailboxAutoReplyConfiguration direkt im Handler
+Invoke-Sqlcmd direkt im Handler
+Update-GroupMemberships direkt im Handler, wenn dafür Gateway/Service existiert
+TenantState.psm1 produktiv verdrahten
+ExchangeOnline-Logik für diesen OnPrem-Hospis-Inaktivierungsprozess erfinden
+produktive Werte hardcoden
+neue UseCases ohne Auftrag einführen
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Workspace.
+
+Suche insbesondere nach:
+
+Invoke-UrgentRecipientAttributeChange
+Invoke-UrgentMailboxPermissionChange
+Invoke-InactivateHospisPerson
+HospisPersonService
+UrgentInactivation
+ActiveDirectoryGateway.psm1
+ExchangeOnPremGateway.psm1
+SqlGateway.psm1
+GroupMembership Service / Gateway
+TenantState.psm1
+Set-TenantState
+extensionAttribute6
+msDS-cloudExtensionAttribute15
+MailboxAutoReplyConfiguration
+EMailRevocations
+usp_create_urgent_inaktivieren_transaction
+tests/Pester
+
+Danach trenne die Umsetzung sauber nach Verantwortlichkeit.
+
+────────────────────────────────────────
+
+Invoke-UrgentRecipientAttributeChange sachgemäss implementieren
+
+Die Funktion soll nur generische AD-/Recipient-Attributänderungen ausführen.
+
+Pflichtfelder bleiben:
+
+Identity
+AttributeName
+AttributeValue
+
+Unterstütze zusätzlich eine Operation, falls bereits im CSV/Payload vorhanden oder sinnvoll ergänzbar:
+
+Operation
+
+Erlaubte Operation-Werte:
+
+Set
+Clear
+
+Wenn Operation fehlt:
+
+Wenn AttributeValue leer ist:
+  Operation = Clear
+
+Wenn AttributeValue nicht leer ist:
+  Operation = Set
+
+Das ist nur dann umzusetzen, wenn es zu bestehenden Payload-Konventionen passt.
+
+Die Funktion soll pro Zeile:
+
+Identity lesen
+AttributeName lesen
+AttributeValue lesen
+Operation ableiten oder lesen
+über Service/Gateway die Attributänderung ausführen
+Erfolg/Fehler sammeln
+Logging schreiben
+strukturiertes JobResult zurückgeben
+
+Wichtig:
+
+Kein direkter Set-ADUser im Handler.
+Kein direkter Exchange-Befehl im Handler.
+Kein direkter SQL-Befehl im Handler.
+
+Bevorzugte Zielkette:
+
+Invoke-UrgentRecipientAttributeChange
+  → UrgentRecipientService oder UserProvisioningService
+  → ActiveDirectoryGateway
+  → Set/Clear AD attribute
+
+Falls ein passender Service bereits existiert, erweitere diesen.
+
+Falls kein passender Service existiert, erstelle einen schlanken Service:
+
+shared/UrgentRecipientService.psm1
+
+oder verwende die bestehende Projektkonvention.
+
+Mögliche Service-Funktionen:
+
+Set-UrgentRecipientAttribute
+Clear-UrgentRecipientAttribute
+
+Mögliche Gateway-Funktionen:
+
+Set-AdUserAttributeSafe
+Clear-AdUserAttributeSafe
+
+────────────────────────────────────────
+
+Erlaubte Attribute begrenzen
+
+Die Funktion darf nicht beliebige gefährliche Attribute ohne Kontrolle ändern.
+
+Definiere eine Allowlist für unterstützte Attribute, mindestens:
+
+extensionAttribute6
+msDS-cloudExtensionAttribute15
+description
+targetAddress
+mail
+proxyAddresses
+msExchHideFromAddressLists
+
+Falls im bestehenden Projekt bereits eine Allowlist existiert, verwende diese.
+
+Wenn ein nicht erlaubtes AttributeName geliefert wird:
+
+kontrollierter Fehler
+ErrorCode = UNSUPPORTED_ATTRIBUTE
+
+Wichtig:
+
+Nicht unkontrolliert jedes Attribut aus dem CSV direkt an Set-ADUser weiterreichen.
+
+────────────────────────────────────────
+
+Spezialfall Clear
+
+Für Operation = Clear:
+
+ActiveDirectoryGateway soll das Attribut löschen.
+
+Beispiel fachlich:
+
+Clear extensionAttribute6
+Clear msDS-cloudExtensionAttribute15
+
+Das ist besonders wichtig, weil msDS-cloudExtensionAttribute15 für Entra-Sync-Steuerung relevant ist.
+
+TenantState.psm1 bleibt unberührt.
+
+────────────────────────────────────────
+
+Spezialfall Description
+
+Für Description darf ein Wert gesetzt werden.
+
+Falls AttributeName = description und AttributeValue Platzhalter enthält, nur vorhandene Projektkonventionen verwenden.
+
+Nicht selbst neue Template-Logik erfinden, ausser bereits im Projekt vorhanden.
+
+Für UrgentInactivation soll Description im Service gesetzt werden:
+
+Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+
+Diese Logik gehört eher zu HospisPersonService.UrgentInactivation als zu einer generischen RecipientAttributeChange-Funktion.
+
+────────────────────────────────────────
+
+HospisPersonService.UrgentInactivation prüfen und ergänzen
+
+Prüfe, ob die Legacy-Logik bereits ganz oder teilweise in HospisPersonService.UrgentInactivation umgesetzt ist.
+
+Die vollständige dringende Inaktivierung sollte dort liegen, nicht in Invoke-UrgentRecipientAttributeChange.
+
+Erforderliche fachliche Schritte aus dem Legacy-Code:
+
+AD User deaktivieren
+Wenn homeMdb gesetzt:
+  Mailbox Features / State auf HIDE setzen, sofern entsprechende Funktion bereits existiert
+  MailboxAutoReplyConfiguration setzen
+  EMailRevocations.ValidTo in SQL aktualisieren
+Gruppenmitgliedschaften entfernen:
+  CN=TPL-...
+  CN=GG-KSBL-VDI-Remote...
+  CN=GG-OneSign...
+extensionAttribute6 löschen
+msDS-cloudExtensionAttribute15 löschen
+Description setzen
+SQL Stored Procedure usp_create_urgent_inaktivieren_transaction ausführen, wenn ActionType = Inaktivieren
+
+Wichtig:
+
+Nur fehlende Schritte ergänzen.
+
+Bestehende funktionierende Logik nicht doppeln.
+
+Keine direkte Zielsystemlogik im Handler.
+
+────────────────────────────────────────
+
+Exchange OnPrem für AutoReply verwenden
+
+MailboxAutoReplyConfiguration ist Exchange OnPrem und muss über ExchangeOnPremGateway gekapselt werden.
+
+Mögliche Gateway-Funktion:
+
+Set-OnPremMailboxAutoReplyConfigurationSafe
+
+Parameter:
+
+Identity
+InternalMessage
+ExternalMessage
+AutoReplyState
+
+Die Nachrichten sollen aus Config gelesen werden:
+
+Hospis.AustrittOOOInternalMessage
+Hospis.AustrittOOOExternalMessage
+
+Nicht hardcoden.
+
+Wenn die Funktion bereits existiert, verwenden und nicht doppeln.
+
+────────────────────────────────────────
+
+SQL-Zugriffe kapseln
+
+Die Legacy-SQL-Operationen dürfen nicht direkt im Handler stehen.
+
+Benötigte Operationen:
+
+EMailRevocations.ValidTo = GetDate()
+Stored Procedure usp_create_urgent_inaktivieren_transaction ausführen
+
+Ziel:
+
+HospisPersonService
+  → SqlGateway oder HospisSqlService
+
+Mögliche Funktionen:
+
+Close-HospisEmailRevocations
+New-HospisUrgentInactivationTransaction
+
+Parameter:
+
+PersId
+CurrentUserDomainName
+CurrentUserName
+
+SQL Server und Datenbankwerte müssen aus Config kommen.
+
+Keine String-Konkatenation mit unescaped Userdaten, wenn SqlGateway Parameter unterstützt.
+
+Falls SqlGateway aktuell keine parametrisierten Queries unterstützt, dokumentiere das Risiko und halte die Änderung minimal.
+
+────────────────────────────────────────
+
+Gruppenmitgliedschaften entfernen
+
+Die alte Logik entfernt Mitgliedschaften aus Gruppen, deren DN mit folgenden Präfixen beginnt:
+
+CN=TPL-
+CN=GG-KSBL-VDI-Remote
+CN=GG-OneSign
+
+Diese Logik gehört zu UrgentInactivation.
+
+Ziel:
+
+HospisPersonService.UrgentInactivation
+  → ActiveDirectoryGateway oder GroupMembershipService
+  → Remove member from group
+
+Nicht in Invoke-UrgentRecipientAttributeChange einbauen.
+
+Die Liste der Präfixe soll konfigurierbar sein, sofern bereits Config-Struktur vorhanden ist.
+
+Falls nicht, zunächst zentral im Service als klar benannte Konstante und später TODO für Config-Auslagerung.
+
+Keine neuen Gruppenpräfixe erfinden.
+
+────────────────────────────────────────
+
+TenantState.psm1 nicht produktiv nutzen
+
+TenantState.psm1 bleibt in diesem Schritt unberührt.
+
+Nicht ändern:
+
+Get-TenantState
+Set-TenantState
+
+Nicht als produktive Quelle verwenden.
+
+Nicht versuchen, die TODOs in TenantState.psm1 in diesem Schritt zu lösen.
+
+Die relevante Entra-Sync-Deaktivierung erfolgt über:
+
+Clear msDS-cloudExtensionAttribute15
+
+über ActiveDirectoryGateway.
+
+────────────────────────────────────────
+
+Fehlerbehandlung und Resultate
+
+Verwende bestehende JobResult-Konventionen:
+
+New-JobSucceededResult
+New-JobFailedResult
+
+Wenn mehrere Zeilen verarbeitet werden:
+
+pro Zeile Erfolg/Fehler sammeln
+bei Fehlern kontrolliertes Failed-Result oder gemäss bestehender Projektkonvention CompletedWithWarnings verwenden
+keine rohen Exceptions verlieren
+Write-LogInfo / Write-LogWarn / Write-LogError verwenden
+
+Für Invoke-UrgentRecipientAttributeChange:
+
+Bei gültigen Zeilen und erfolgreichen Änderungen:
+  Success
+
+Bei nicht erlaubtem Attribut:
+  Failed mit ErrorCode UNSUPPORTED_ATTRIBUTE
+
+Bei fehlendem Identity / AttributeName:
+  bestehende RequiredField-Validierung
+
+Bei Zielsystemfehler:
+  Failed mit ErrorCode URGENT_RECIPIENT_ATTRIBUTE_CHANGE_FAILED oder bestehender Konvention
+
+Für Invoke-InactivateHospisPerson / UrgentInactivation:
+
+Fehler pro Person sammeln
+bei mindestens einem Fehler kontrolliert failed oder partial failed gemäss bestehendem Muster
+
+────────────────────────────────────────
+
+Pester-Modus und Tests
+
+Alle Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Tests dürfen keine echten Zielsysteme aufrufen.
+
+Mocke:
+
+ActiveDirectoryGateway-Funktionen
+ExchangeOnPremGateway-Funktionen
+SqlGateway-Funktionen
+GroupMembership-Funktionen
+Write-Log...
+Set-ADUser
+Set-MailboxAutoReplyConfiguration
+Invoke-Sqlcmd
+
+Wenn direkte Cmdlets irgendwo noch verwendet werden, sollen Tests zeigen, dass sie im Handler nicht direkt aufgerufen werden.
+
+────────────────────────────────────────
+
+Tests für Invoke-UrgentRecipientAttributeChange
+
+Ergänze oder passe Tests an.
+
+Mindestens:
+
+Test 1:
+
+Fehlende Pflichtfelder Identity, AttributeName, AttributeValue werden erkannt.
+
+Test 2:
+
+AttributeName extensionAttribute6 mit leerem AttributeValue führt zu Clear-Operation.
+
+Test 3:
+
+AttributeName msDS-cloudExtensionAttribute15 mit leerem AttributeValue führt zu Clear-Operation.
+
+Test 4:
+
+AttributeName description mit Wert führt zu Set-Operation.
+
+Test 5:
+
+Unsupported AttributeName führt zu kontrolliertem Fehler.
+
+Test 6:
+
+ActiveDirectoryGateway wird verwendet.
+
+Test 7:
+
+Set-ADUser wird nicht direkt im Handler aufgerufen.
+
+Test 8:
+
+ExchangeOnlineGateway wird nicht verwendet.
+
+Test 9:
+
+TenantState.psm1 wird nicht verwendet.
+
+Test 10:
+
+Mehrere Payload-Zeilen werden verarbeitet und geloggt.
+
+Test 11:
+
+Fehler in einer Zeile wird kontrolliert im JobResult abgebildet.
+
+────────────────────────────────────────
+
+Tests für UrgentInactivation / HospisPersonService
+
+Prüfe bestehende Tests und ergänze fehlende Tests.
+
+Mindestens:
+
+Test 1:
+
+AD User wird über Gateway deaktiviert.
+
+Test 2:
+
+Wenn homeMdb gesetzt ist, wird AutoReply über ExchangeOnPremGateway gesetzt.
+
+Test 3:
+
+AutoReply InternalMessage und ExternalMessage kommen aus Config.
+
+Test 4:
+
+EMailRevocations werden über SQL-/Hospis-Service geschlossen.
+
+Test 5:
+
+Gruppen mit CN=TPL- werden entfernt.
+
+Test 6:
+
+Gruppen mit CN=GG-KSBL-VDI-Remote werden entfernt.
+
+Test 7:
+
+Gruppen mit CN=GG-OneSign werden entfernt.
+
+Test 8:
+
+extensionAttribute6 wird gelöscht.
+
+Test 9:
+
+msDS-cloudExtensionAttribute15 wird gelöscht.
+
+Test 10:
+
+Description wird im erwarteten Format gesetzt.
+
+Test 11:
+
+Bei ActionType Inaktivieren wird usp_create_urgent_inaktivieren_transaction ausgeführt.
+
+Test 12:
+
+TenantState.psm1 wird nicht produktiv aufgerufen.
+
+Test 13:
+
+Keine echte Exchange- oder SQL-Verbindung wird im Test aufgebaut.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+TenantState.psm1
+ExchangeOnlineGateway
+HybridMailboxResolver
+Resolve-MailboxExecutionContext
+JobEngine.psm1
+JobFileQueue.psm1
+Queue-Mechanik
+OutputJson
+CorrelationId
+ExternalCorrelationId
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+usecases.json, ausser ein Test zeigt eine offensichtlich falsche Referenz
+Legacy-Skripte
+
+Keine neuen produktiven Config-Werte in appsettings.json einfügen.
+
+Produktive Werte gehören in environments.onprem.json oder environments.hybrid.json, falls überhaupt nötig.
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Welche TODOs bearbeitet wurden
+Welche Legacy-Logik zu Invoke-UrgentRecipientAttributeChange gehört
+Welche Legacy-Logik zu HospisPersonService.UrgentInactivation gehört
+Wie AD-Attribute gesetzt oder gelöscht werden
+Wie msDS-cloudExtensionAttribute15 behandelt wird
+Wie MailboxAutoReplyConfiguration umgesetzt wird
+Wie SQL EMailRevocations und urgent inaktivieren Transaktion umgesetzt werden
+Welche Gruppenmitgliedschaften entfernt werden
+Bestätigung, dass TenantState.psm1 unverändert blieb
+Bestätigung, dass keine ExchangeOnline-Logik eingeführt wurde
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Der Legacy-Code muss fachlich getrennt migriert werden.
+
+Invoke-UrgentRecipientAttributeChange ist nur für gezielte AD-/Recipient-Attributänderungen zuständig.
+
+Invoke-InactivateHospisPerson beziehungsweise HospisPersonService.UrgentInactivation ist für die vollständige dringende Hospis-Inaktivierung zuständig.
+
+TenantState.psm1 bleibt vorerst unberührt.
+
+msDS-cloudExtensionAttribute15 wird direkt über ActiveDirectoryGateway gelöscht, wenn die Entra-Sync-Deaktivierung im Urgent-Prozess erforderlich ist.

@@ -1,0 +1,667 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Active-Directory-, Exchange-Hybrid-, Exchange-OnPrem-, Exchange-Online-, LDAP- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Resolver und Gateways auf.
+Resolver treffen Routing-/Execution-Entscheidungen.
+Gateways führen technische Zielsystemzugriffe aus.
+Keine produktiven Exchange-Cmdlets direkt in Handlern oder Services.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue Resolve-MailboxExecutionContext so um, dass die Entscheidung, ob ein Mailbox-Objekt OnPrem oder M365/Exchange Online ist, standardmässig über lokale Active-Directory-/LDAP-Attribute erfolgt.
+
+Wichtig:
+
+Resolve-MailboxExecutionContext darf im Standardpfad keine Exchange-OnPrem- oder ExchangeOnline-Cmdlets ausführen.
+
+Insbesondere sollen im Standardpfad nicht verwendet werden:
+
+Get-ExoRecipientSafe
+Get-OnPremRecipientSafe
+Get-EXORecipient
+Get-Recipient
+Get-Mailbox
+Get-EXOMailbox
+
+Diese Remote-/Exchange-Cmdlets dürfen nur noch in einem expliziten RemoteValidation-/Diagnostic-Modus oder als Fallback bei unklaren Zuständen verwendet werden.
+
+────────────────────────────────────────
+
+K = Hintergrund
+
+Der bisherige Ansatz mit Get-ExoRecipientSafe und Get-OnPremRecipientSafe innerhalb von Resolve-MailboxExecutionContext ist für UI-nahe Prozesse zu langsam.
+
+Jedes Resolve würde sonst potenziell Exchange-OnPrem- oder ExchangeOnline-Remote-PowerShell auslösen. Das verschlechtert die Usability auf dem Client und erzeugt unnötige Latenz.
+
+Die lokale AD-Abfrage ist schneller, stabiler und für die erste Routingentscheidung ausreichend, weil Exchange-Hybrid-relevante Attribute im lokalen AD vorhanden sind.
+
+Zielregel:
+
+Resolve-MailboxExecutionContext = schnell, lokal, AD-first.
+Exchange Gateways = Verbindung und Cmdlet-Ausführung erst bei echter Operation.
+RemoteValidation = optionaler Fallback, nicht Default.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Der Resolver soll im Standardmodus nur lokale AD-/LDAP-Daten verwenden.
+
+Er soll aus AD-Attributen ableiten:
+
+ob das Objekt gefunden wurde,
+ob es eine OnPrem Mailbox ist,
+ob es eine RemoteMailbox / M365-Mailbox ist,
+ob Exchange Online als PermissionExecutionTarget zu verwenden ist,
+ob Exchange OnPrem als PermissionExecutionTarget zu verwenden ist,
+ob der Zustand unklar oder widersprüchlich ist.
+
+Die Entscheidung darf nicht mehr zwingend von einer bestehenden Exchange Remote PowerShell Session abhängen.
+
+Nicht erlaubt im Standardpfad:
+
+Exchange OnPrem Cmdlets
+Exchange Online Cmdlets
+Connect-ExchangeOnline
+New-PSSession
+Import-PSSession
+Invoke-Command gegen Exchange
+Get-OnPremRecipientSafe
+Get-ExoRecipientSafe
+
+Erlaubt im Standardpfad:
+
+ActiveDirectoryGateway
+DirectorySearcher / LDAP
+Get-ADUser, falls das Projekt AD-Modul bereits nutzt und es gatewaygekapselt ist
+lokale AD-Attribute
+Config-Werte wie CloudDomain / TenantRoutingDomain
+
+────────────────────────────────────────
+
+K = RemoteMailbox-Indikatoren
+
+Ein Objekt soll als RemoteMailbox- oder M365-Kandidat erkannt werden, wenn mindestens einer der folgenden Hinweise vorliegt:
+
+msExchRemoteRecipientType ist gesetzt
+
+msExchRemoteRecipientType >= 1
+
+msExchRemoteRecipientType bitweise OR auf 1 oder 4
+
+targetAddress endet auf tenant.mail.onmicrosoft.com beziehungsweise auf die konfigurierte CloudDomain
+
+Konkret soll die CloudDomain aus Config gelesen werden, zum Beispiel:
+
+ExchangeOnPrem.CloudDomain
+PersonMailbox.CloudDomain
+ExchangeOnline.CloudDomain
+
+Produktiver Wert ist aktuell:
+
+kantonsspitalbl.mail.onmicrosoft.com
+
+Dieser Wert darf nicht hardcodiert werden, sondern muss aus Config kommen.
+
+Beispielhafte LDAP-Filter, die als Orientierung dienen:
+
+(&(objectClass=user)(objectCategory=person)(msExchRemoteRecipientType>=1))
+
+(&(objectClass=user)(objectCategory=person)(msExchRemoteRecipientType:1.2.840.113556.1.4.804:=5))
+
+Die LDAP Matching Rule 1.2.840.113556.1.4.804 kann verwendet werden, um bitweise OR auf 1 oder 4 zu prüfen.
+
+Wichtig:
+
+Die Filter können zur Kandidatensuche verwendet werden. Die finale Entscheidung soll aber aus den konkret geladenen Attributwerten erfolgen.
+
+────────────────────────────────────────
+
+K = OnPrem-Mailbox-Indikatoren
+
+Ein Objekt soll als OnPrem-Mailbox erkannt werden, wenn mindestens einer der folgenden Hinweise vorliegt:
+
+homeMDB ist gesetzt
+
+msExchRecipientTypeDetails weist auf UserMailbox oder SharedMailbox hin
+
+msExchMailboxGuid ist gesetzt und kein RemoteRecipientType vorhanden
+
+Wichtig:
+
+Wenn sowohl OnPrem-Indikatoren als auch RemoteMailbox-Indikatoren vorhanden sind, muss der Zustand als Ambiguous oder HybridConflict markiert werden, ausser die Kombination ist fachlich eindeutig erklärbar.
+
+────────────────────────────────────────
+
+A = Gewünschtes Result-Objekt
+
+Resolve-MailboxExecutionContext soll ein strukturiertes Objekt zurückgeben, nicht nur einen String.
+
+Das Result-Objekt soll mindestens folgende Properties enthalten:
+
+Identity
+SearchMode
+AdObjectFound
+DistinguishedName
+SamAccountName
+UserPrincipalName
+PrimarySmtpAddress
+TargetAddress
+ProxyAddresses
+ObjectGuid
+RecipientTypeDetailsRaw
+RemoteRecipientTypeRaw
+MailboxGuid
+HomeMdb
+HasHomeMdb
+HasMailboxGuid
+HasRemoteRecipientType
+IsRemoteMailbox
+IsOnPremMailbox
+IsCloudRouted
+MailboxLocation
+PermissionExecutionTarget
+RecipientAttributeAuthority
+AccountAuthority
+Confidence
+RequiresRemoteValidation
+IsAmbiguous
+ErrorCode
+Message
+RetrievedAt
+
+Erlaubte Werte:
+
+MailboxLocation:
+
+OnPrem
+ExchangeOnline
+None
+Ambiguous
+Unknown
+
+PermissionExecutionTarget:
+
+ExchangeOnPrem
+ExchangeOnline
+None
+Unknown
+
+RecipientAttributeAuthority:
+
+ActiveDirectory
+ExchangeOnPrem
+ExchangeOnline
+Unknown
+
+AccountAuthority:
+
+ActiveDirectory
+Unknown
+
+Confidence:
+
+High
+Medium
+Low
+
+ErrorCode:
+
+None
+NotFound
+AmbiguousHybridState
+MissingRequiredAttributes
+InvalidIdentity
+RemoteValidationRequired
+
+────────────────────────────────────────
+
+A = Entscheidungsmatrix
+
+Implementiere die Entscheidung mindestens nach dieser Logik:
+
+Fall 1: RemoteMailbox / M365
+
+Wenn einer der RemoteMailbox-Indikatoren erfüllt ist:
+
+msExchRemoteRecipientType gesetzt
+oder msExchRemoteRecipientType >= 1
+oder msExchRemoteRecipientType bitweise OR auf 1 oder 4
+oder targetAddress endet auf konfigurierte CloudDomain
+
+Dann:
+
+MailboxLocation = ExchangeOnline
+PermissionExecutionTarget = ExchangeOnline
+RecipientAttributeAuthority = ExchangeOnPrem
+AccountAuthority = ActiveDirectory
+IsRemoteMailbox = true
+IsOnPremMailbox = false
+Confidence = High oder Medium
+RequiresRemoteValidation = false im Standardfall
+
+Begründung:
+
+RemoteMailbox bedeutet, dass mailboxbezogene Operationen wie FullAccess oder SendAs grundsätzlich gegen Exchange Online ausgeführt werden sollen. Synchronisierte Recipient-/AD-Attribute bleiben aber OnPrem-/AD-authoritativ.
+
+────────────────────────────────────────
+
+Fall 2: OnPrem Mailbox
+
+Wenn einer der OnPrem-Mailbox-Indikatoren erfüllt ist und kein RemoteRecipientType vorhanden ist:
+
+homeMDB gesetzt
+oder msExchRecipientTypeDetails weist auf UserMailbox oder SharedMailbox hin
+oder msExchMailboxGuid gesetzt und kein RemoteRecipientType vorhanden
+
+Dann:
+
+MailboxLocation = OnPrem
+PermissionExecutionTarget = ExchangeOnPrem
+RecipientAttributeAuthority = ExchangeOnPrem
+AccountAuthority = ActiveDirectory
+IsOnPremMailbox = true
+IsRemoteMailbox = false
+Confidence = High
+RequiresRemoteValidation = false
+
+────────────────────────────────────────
+
+Fall 3: Kein Mailboxobjekt
+
+Wenn AD-Objekt gefunden wurde, aber keine RemoteMailbox-Indikatoren und keine OnPrem-Mailbox-Indikatoren vorhanden sind:
+
+MailboxLocation = None
+PermissionExecutionTarget = None
+RecipientAttributeAuthority = ActiveDirectory
+AccountAuthority = ActiveDirectory
+Confidence = Medium
+RequiresRemoteValidation = false
+Message = AD object found, but no mailbox indicators were detected.
+
+────────────────────────────────────────
+
+Fall 4: Objekt nicht gefunden
+
+Wenn kein AD-Objekt gefunden wurde:
+
+AdObjectFound = false
+MailboxLocation = Unknown
+PermissionExecutionTarget = Unknown
+RecipientAttributeAuthority = Unknown
+AccountAuthority = Unknown
+Confidence = Low
+RequiresRemoteValidation = true oder false abhängig von Modus
+ErrorCode = NotFound
+
+Im Standardmodus soll trotzdem keine RemoteValidation automatisch ausgeführt werden.
+
+────────────────────────────────────────
+
+Fall 5: Ambiguous / HybridConflict
+
+Wenn OnPrem-Indikatoren und RemoteMailbox-Indikatoren gleichzeitig in widersprüchlicher Form vorhanden sind:
+
+MailboxLocation = Ambiguous
+PermissionExecutionTarget = Unknown
+RecipientAttributeAuthority = Unknown
+AccountAuthority = ActiveDirectory
+Confidence = Low
+RequiresRemoteValidation = true
+IsAmbiguous = true
+ErrorCode = AmbiguousHybridState
+
+RemoteValidation darf nur ausgeführt werden, wenn ein Parameter wie AllowRemoteValidation oder Mode = ValidateRemote gesetzt ist.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Workspace.
+
+Suche insbesondere nach:
+
+Resolve-MailboxExecutionContext
+HybridMailboxResolver.psm1
+MailboxLocationResolver.psm1
+TenantState.psm1
+Get-ExoRecipientSafe
+Get-OnPremRecipientSafe
+ActiveDirectoryGateway.psm1
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+Tests unter tests/Pester
+
+Danach baue Resolve-MailboxExecutionContext gezielt um.
+
+────────────────────────────────────────
+
+Standardmodus AD-first einführen
+
+Erweitere Resolve-MailboxExecutionContext um einen klaren Modus.
+
+Empfohlene Parameter:
+
+Mode
+
+Erlaubte Werte:
+
+FastAdOnly
+ValidateRemote
+
+Default:
+
+FastAdOnly
+
+Optional:
+
+AllowRemoteValidation
+
+Default:
+
+false
+
+Im Default FastAdOnly darf kein Exchange-Cmdlet ausgeführt werden.
+
+────────────────────────────────────────
+
+AD Lookup kapseln
+
+Implementiere oder nutze eine Gateway-Funktion für den lokalen AD-Lookup.
+
+Empfohlener Funktionsname:
+
+Get-MailboxExecutionAdObject
+
+oder:
+
+Get-AdMailboxRoutingObject
+
+Diese Funktion soll über ActiveDirectoryGateway laufen.
+
+Sie soll anhand einer Identity suchen können über:
+
+sAMAccountName
+userPrincipalName
+mail
+proxyAddresses
+distinguishedName
+
+Sie soll mindestens diese Attribute laden:
+
+distinguishedName
+objectGUID
+sAMAccountName
+userPrincipalName
+mail
+proxyAddresses
+targetAddress
+homeMDB
+msExchRecipientTypeDetails
+msExchRemoteRecipientType
+msExchMailboxGuid
+msExchArchiveGuid
+msExchHideFromAddressLists
+
+Wichtig:
+
+Suchfilter müssen LDAP-sicher gebaut werden. Sonderzeichen in Identity müssen escaped werden.
+
+Wenn mehrere Objekte gefunden werden:
+
+Ambiguous
+RequiresRemoteValidation = true
+ErrorCode = AmbiguousHybridState oder MultipleMatches
+
+────────────────────────────────────────
+
+RemoteMailbox-Auswertung implementieren
+
+Implementiere eine klare Hilfsfunktion:
+
+Test-IsRemoteMailboxFromAdAttributes
+
+Diese Funktion wertet nur AD-Attribute aus.
+
+Sie soll true liefern, wenn:
+
+msExchRemoteRecipientType gesetzt ist
+oder msExchRemoteRecipientType >= 1
+oder msExchRemoteRecipientType bitweise OR auf 1 oder 4 erfüllt ist
+oder targetAddress auf die konfigurierte CloudDomain endet
+
+Hinweis:
+
+Wenn msExchRemoteRecipientType als Integer vorliegt:
+
+hasRemoteRecipientType = value -ge 1
+hasRemoteBit1Or4 = (value -band 1) -ne 0 -or (value -band 4) -ne 0
+
+Kein Exchange-Cmdlet in dieser Funktion verwenden.
+
+────────────────────────────────────────
+
+OnPrem-Mailbox-Auswertung implementieren
+
+Implementiere eine klare Hilfsfunktion:
+
+Test-IsOnPremMailboxFromAdAttributes
+
+Diese Funktion wertet nur AD-Attribute aus.
+
+Sie soll true liefern, wenn:
+
+homeMDB gesetzt ist
+oder msExchRecipientTypeDetails UserMailbox oder SharedMailbox entspricht
+oder msExchMailboxGuid gesetzt ist und kein RemoteRecipientType vorhanden ist
+
+Wichtig:
+
+Die bekannten numerischen Werte für msExchRecipientTypeDetails sollen sauber als Konstanten oder Mapping definiert werden, nicht magisch verstreut im Code.
+
+Wenn vorhandener Code bereits Konstanten/Mappings hat, diese verwenden.
+
+────────────────────────────────────────
+
+ExecutionContext ableiten
+
+Implementiere eine Funktion:
+
+New-MailboxExecutionContextFromAdObject
+
+Diese Funktion nimmt das AD-Objekt und Config entgegen und erzeugt das strukturierte Result-Objekt.
+
+Dort wird die Entscheidungsmatrix zentral umgesetzt.
+
+Keine Remote-Cmdlets verwenden.
+
+────────────────────────────────────────
+
+RemoteValidation nur optional
+
+Wenn Mode = ValidateRemote oder AllowRemoteValidation = true gesetzt ist, darf der Resolver optional Get-OnPremRecipientSafe oder Get-ExoRecipientSafe verwenden.
+
+Aber:
+
+nur nach der AD-first-Auswertung,
+nur bei unklaren Zuständen,
+nicht im Standardfall,
+klar im Result markieren,
+RemoteValidationUsed = true setzen.
+
+Im Standardfall FastAdOnly muss per Test garantiert sein:
+
+Get-OnPremRecipientSafe wird nicht aufgerufen.
+Get-ExoRecipientSafe wird nicht aufgerufen.
+
+────────────────────────────────────────
+
+TenantState.psm1 nicht für objektbezogene Entscheidung verwenden
+
+TenantState.psm1 darf nicht die objektbezogene Mailbox-Ortserkennung übernehmen.
+
+Wenn TenantState.psm1 TODOs enthält, dürfen sie in diesem Schritt nicht als produktive Quelle verwendet werden.
+
+TenantState kann später für globale Tenant-/EXO-Verfügbarkeit verwendet werden.
+
+Die objektbezogene Entscheidung liegt im Resolver.
+
+────────────────────────────────────────
+
+Pester-Modus und Tests
+
+Ergänze oder passe Tests unter tests/Pester an.
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Mocke alle Gateway-Zugriffe.
+
+Im FastAdOnly-Modus dürfen keine Exchange-Cmdlets oder Exchange-Gateway-Funktionen aufgerufen werden.
+
+Mindestens folgende Tests erstellen:
+
+Test 1:
+
+RemoteMailbox wird erkannt, wenn msExchRemoteRecipientType gesetzt ist.
+
+Test 2:
+
+RemoteMailbox wird erkannt, wenn msExchRemoteRecipientType >= 1 ist.
+
+Test 3:
+
+RemoteMailbox wird erkannt, wenn msExchRemoteRecipientType Bit 1 gesetzt hat.
+
+Test 4:
+
+RemoteMailbox wird erkannt, wenn msExchRemoteRecipientType Bit 4 gesetzt hat.
+
+Test 5:
+
+RemoteMailbox wird erkannt, wenn targetAddress auf konfigurierte CloudDomain endet.
+
+Test 6:
+
+OnPrem-Mailbox wird erkannt, wenn homeMDB gesetzt ist.
+
+Test 7:
+
+OnPrem-Mailbox wird erkannt, wenn msExchRecipientTypeDetails UserMailbox entspricht.
+
+Test 8:
+
+OnPrem-Mailbox wird erkannt, wenn msExchRecipientTypeDetails SharedMailbox entspricht.
+
+Test 9:
+
+OnPrem-Mailbox wird erkannt, wenn msExchMailboxGuid gesetzt ist und kein RemoteRecipientType vorhanden ist.
+
+Test 10:
+
+AD-Objekt ohne Mailbox-Indikatoren ergibt MailboxLocation = None.
+
+Test 11:
+
+Nicht gefundenes AD-Objekt ergibt ErrorCode = NotFound.
+
+Test 12:
+
+Widersprüchliche Remote- und OnPrem-Indikatoren ergeben IsAmbiguous = true und RequiresRemoteValidation = true.
+
+Test 13:
+
+Im FastAdOnly-Modus wird Get-OnPremRecipientSafe nicht aufgerufen.
+
+Test 14:
+
+Im FastAdOnly-Modus wird Get-ExoRecipientSafe nicht aufgerufen.
+
+Test 15:
+
+Im ValidateRemote-Modus darf RemoteValidation gezielt aufgerufen werden.
+
+Test 16:
+
+CloudDomain wird aus Config gelesen und nicht hardcodiert.
+
+Test 17:
+
+Das Result-Objekt enthält PermissionExecutionTarget, RecipientAttributeAuthority und AccountAuthority.
+
+Test 18:
+
+targetAddress-Vergleich ist case-insensitive.
+
+Test 19:
+
+LDAP Identity wird escaped oder über sichere Gateway-Funktion behandelt.
+
+Test 20:
+
+TenantState.psm1 wird nicht für objektbezogene Mailbox-Location verwendet.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+ExchangeOnPremGateway-Verbindungslogik
+ExchangeOnlineGateway-Verbindungslogik
+Handler
+UseCases
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+Queue-Mechanik
+Invoke-JobProcessor.ps1
+OutputJson
+CorrelationId
+ExternalCorrelationId
+Legacy-Skripte
+
+Keine produktiven Werte hardcoden.
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Welche Funktion Resolve-MailboxExecutionContext enthält
+Wie AD-first umgesetzt wurde
+Welche AD-Attribute ausgewertet werden
+Wie RemoteMailbox erkannt wird
+Wie OnPrem-Mailbox erkannt wird
+Wann RemoteValidation erlaubt ist
+Bestätigung, dass FastAdOnly keine Exchange-Cmdlets ausführt
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+Wichtigste Zielregel:
+
+Resolve-MailboxExecutionContext muss im Default schnell und clientfreundlich sein.
+
+Die Entscheidung OnPrem oder M365 erfolgt standardmässig über lokale AD-/LDAP-Attribute.
+
+Exchange OnPrem und Exchange Online Cmdlets werden erst bei der tatsächlichen Ausführung oder bei expliziter RemoteValidation verwendet.

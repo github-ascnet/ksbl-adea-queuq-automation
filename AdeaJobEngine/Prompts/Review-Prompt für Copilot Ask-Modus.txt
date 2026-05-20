@@ -1,0 +1,85 @@
+Prüfe die zuletzt durchgeführten Änderungen im Workspace.
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine neuen Dateien.
+Lösche keine Dateien.
+Führe keine automatischen Korrekturen aus.
+Gib nur eine Review und konkrete Befunde zurück.
+
+Kontext:
+Die Änderungen gehören zum Projekt AdeaJobEngine.
+Die bestehende Architektur muss erhalten bleiben.
+
+Verbindliche Architekturregeln:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-, Exchange-OnPrem-, Exchange-Online-, SQL-, DFS- oder Filesystem-Zugriffe in Handlern.
+Keine produktiven Werte im Code hardcoden.
+Keine produktiven KSBL-Werte in appsettings.json.
+Produktive Werte gehören nur in environments.onprem.json oder environments.hybrid.json.
+Exchange OnPrem und Exchange Online dürfen technisch nicht vermischt werden.
+Exchange OnPrem verwendet New-PSSession / Invoke-Command oder die definierte Gateway-Logik.
+Exchange Online verwendet Connect-ExchangeOnline und ExchangeOnlineManagement.
+Distribution Groups bleiben OnPrem-authoritativ.
+TenantState.psm1 bleibt unberührt, solange nicht ausdrücklich anders beauftragt.
+Pester muss Version 5.7.1-kompatibel bleiben.
+Keine alte Pester-Syntax wie Should Be verwenden.
+Keine Merge-Konfliktmarker hinterlassen.
+
+Prüfe bitte:
+
+1. Welche Dateien wurden geändert?
+2. Welche neuen Dateien wurden erstellt?
+3. Welche Dateien wurden gelöscht?
+4. Entsprechen die Änderungen exakt dem ursprünglichen Prompt?
+5. Wurden Architekturgrenzen verletzt?
+6. Wurden Handler, Services und Gateways sauber getrennt?
+7. Wurden Exchange-OnPrem- und ExchangeOnline-Logik sauber getrennt?
+8. Wurden produktive Werte in Code oder appsettings.json hardcodiert?
+9. Wurden bestehende UseCases, usecases.json oder Queue-Mechanik unnötig verändert?
+10. Wurden Legacy-Skripte verändert?
+11. Sind neue Funktionen testbar und mockbar?
+12. Gibt es direkte Zielsystemaufrufe, die eigentlich in ein Gateway gehören?
+13. Gibt es alte Pester-Syntax?
+14. Gibt es Merge-Konfliktmarker?
+15. Gibt es offensichtliche StrictMode-Probleme?
+16. Gibt es Risiken durch nicht initialisierte Variablen?
+17. Gibt es Funktionen, die zwar erstellt, aber nicht exportiert oder importiert wurden?
+18. Gibt es Tests, die echte AD-, Exchange-, EXO- oder SQL-Verbindungen aufbauen würden?
+19. Welche Pester-Tests sollten jetzt lokal ausgeführt werden?
+20. Welche offenen Risiken bleiben bestehen?
+
+Gib das Ergebnis als Review-Matrix aus mit diesen Spalten:
+
+Datei
+Änderung
+Bewertung
+Risiko
+Empfehlung
+
+Verwende danach zusätzlich diese Zusammenfassung:
+
+Gesamtbewertung:
+Architekturkonform:
+Testabdeckung:
+Kritische Risiken:
+Empfohlene nächste Schritte:
+Pester-Befehl für lokale Validierung:
+
+Wichtig:
+Nimm keine Änderungen vor.
+Antworte nur mit der Review.
+
+
+
+Nach Prompt 1, Exchange OnPrem Gateway:
+Prüfe besonders, ob ExchangeOnPremGateway seine Verbindung selbst sicherstellt, ob Import-PSSession nicht Default ist, ob Invoke-Command korrekt verwendet wird und ob keine ExchangeOnline-Logik in den OnPrem-Gateway gerutscht ist.
+
+Nach Prompt 2, Exchange Online Gateway:
+Prüfe besonders, ob ExchangeOnlineGateway Connect-ExchangeOnline verwendet, ob AppId, Organization und CertificateThumbprint aus Config gelesen werden, ob keine New-PSSession-Logik für Exchange Online eingeführt wurde und ob Zertifikats-/Private-Key-Fehler verständlich behandelt werden.
+
+Nach Prompt 3, Health und Diagnose:
+Prüfe besonders, ob Health/Diagnose nur prüft und keine produktiven Änderungen ausführt, ob OnPrem und Exchange Online technisch getrennt bleiben und ob die Pester-Mocks keine echten Verbindungen aufbauen.

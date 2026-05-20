@@ -1,0 +1,399 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-OnPrem-, Exchange-Online-, Microsoft-365-Hybrid-, Observability-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+ExchangeOnPremGateway und ExchangeOnlineGateway sollen ihre Verbindungen selbst sicherstellen.
+
+Jetzt soll zusätzlich eine gemeinsame Diagnose-, Health- und Teststruktur aufgebaut werden, ohne OnPrem- und EXO-Verbindungsmodelle zu vermischen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Erstelle eine einheitliche, aber technisch sauber getrennte Exchange Connection Health- und Diagnose-Schicht.
+
+Ziel ist nicht, eine gemeinsame technische Sessionlogik für OnPrem und EXO zu bauen.
+
+Ziel ist:
+
+gemeinsame Statusobjekte,
+gemeinsame Diagnoseausgaben,
+gemeinsame Testmuster,
+klare Health-Prüfungen,
+bessere Betriebsauswertbarkeit,
+stabile Pester-Mockbarkeit.
+
+OnPrem und EXO bleiben technisch getrennt:
+
+OnPrem = New-PSSession plus Invoke-Command
+EXO = Connect-ExchangeOnline plus Get-ConnectionInformation
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Gemeinsam sein dürfen:
+
+Statusmodell
+Health Result Objekt
+Diagnoseformat
+Logging
+Fehlerklassifikation
+Pester-Testmuster
+
+Nicht gemeinsam gemacht werden darf:
+
+OnPrem-Sessionaufbau
+EXO-Sessionaufbau
+OnPrem Invoke-Command und EXO Cmdlet-Execution vermischen
+New-PSSession für EXO verwenden
+Connect-ExchangeOnline für OnPrem verwenden
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst:
+
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ExchangeOnlineGateway.psm1
+core/Logging.psm1
+tests/Pester
+
+Danach ergänze eine gemeinsame Health-/Diagnose-Schicht.
+
+────────────────────────────────────────
+
+Gemeinsames Health-Modul erstellen
+
+Erstelle optional:
+
+infrastructure/ExchangeConnectionHealth.psm1
+
+oder:
+
+shared/Exchange/ExchangeConnectionHealth.psm1
+
+Das Modul soll keine Verbindung aufbauen, sondern nur gemeinsame Objekte und Hilfsfunktionen bereitstellen.
+
+Mögliche Funktionen:
+
+New-ExchangeConnectionHealthResult
+New-ExchangeConnectionDiagnosticError
+ConvertTo-ExchangeConnectionHealthJson
+Write-ExchangeConnectionHealthLog
+
+HealthResult-Felder:
+
+Target
+ConnectionType
+Enabled
+IsConnected
+IsUsable
+Status
+Message
+ErrorCode
+ErrorCategory
+ConnectionUri
+Organization
+AppId
+CertificateThumbprint
+User
+SessionState
+CreatedAt
+LastUsedAt
+CheckedAt
+DurationMilliseconds
+Details
+
+Target-Werte:
+
+ExchangeOnPrem
+ExchangeOnline
+
+ConnectionType-Werte:
+
+RemotePowerShellInvokeCommand
+ExchangeOnlineManagementAppOnly
+
+Status-Werte:
+
+Disabled
+NotConfigured
+MissingModule
+CertificateMissing
+CertificatePrivateKeyMissing
+CertificateExpired
+NotConnected
+Connected
+Unusable
+Reconnected
+Failed
+
+────────────────────────────────────────
+
+OnPrem Health-Funktion ergänzen
+
+In ExchangeOnPremGateway oder ExchangeOnPremSession ergänzen:
+
+Test-ExchangeOnPremConnectionHealth
+
+Diese Funktion soll:
+
+Config lesen
+RemotePowerShell.Enabled prüfen
+Sessionstatus prüfen
+optional leichte Remote-Prüfung via Invoke-Command ausführen
+HealthResult zurückgeben
+
+Leichter Remote-Test, falls erlaubt:
+
+Invoke-Command -Session $session -ScriptBlock { Get-Command Get-Mailbox }
+
+Oder ein noch leichterer Befehl, der keine produktiven Daten liest.
+
+Wichtig:
+
+keine neue Session erzwingen, ausser ein Parameter EnsureConnected gesetzt ist.
+keine produktiven Daten verändern.
+
+Parameteridee:
+
+-EnsureConnected
+-ValidateCommand
+
+────────────────────────────────────────
+
+Exchange Online Health-Funktion ergänzen
+
+In ExchangeOnlineGateway ergänzen:
+
+Test-ExchangeOnlineConnectionHealth
+
+Diese Funktion soll:
+
+Config lesen
+ExchangeOnline.Enabled prüfen
+Modul prüfen
+Zertifikat prüfen
+Get-ConnectionInformation prüfen
+optional Get-EXORecipient -ResultSize 1 ausführen, wenn ValidateCommand gesetzt ist
+HealthResult zurückgeben
+
+Parameteridee:
+
+-EnsureConnected
+-ValidateCommand
+
+Wenn EnsureConnected gesetzt ist, darf Ensure-ExchangeOnlineSession aufgerufen werden.
+
+────────────────────────────────────────
+
+Diagnosebefehle für Betrieb
+
+Ergänze optional einen kleinen Diagnose-Einstiegspunkt:
+
+tools/Test-ExchangeConnections.ps1
+
+Parameter:
+
+Environment
+Target
+EnsureConnected
+ValidateCommand
+OutputJson
+
+Target-Werte:
+
+OnPrem
+ExchangeOnline
+All
+
+Beispiele:
+
+.\tools\Test-ExchangeConnections.ps1 -Environment hybrid -Target All -OutputJson
+
+.\tools\Test-ExchangeConnections.ps1 -Environment onprem -Target OnPrem -EnsureConnected -ValidateCommand -OutputJson
+
+Der OutputJson-Modus soll maschinenlesbares JSON liefern und nicht mit dekorativen Logs vermischt werden.
+
+────────────────────────────────────────
+
+Pester-Mock-Modus standardisieren
+
+Erstelle eine klare Testkonvention.
+
+Alle Exchange-Verbindungsfunktionen müssen mockbar sein.
+
+Dafür sollen technische Aufrufe über dünne Internal Wrapper laufen, zum Beispiel:
+
+OnPrem:
+
+New-ExchangeOnPremPSSessionInternal
+Remove-ExchangeOnPremPSSessionInternal
+Invoke-ExchangeOnPremCommandInternal
+Import-ExchangeOnPremPSSessionInternal
+
+Exchange Online:
+
+Import-ExchangeOnlineManagementModuleInternal
+Connect-ExchangeOnlineInternal
+Disconnect-ExchangeOnlineInternal
+Get-ExchangeOnlineConnectionInformationInternal
+Get-ExchangeOnlineCertificateInternal
+Invoke-ExchangeOnlineValidationCommandInternal
+
+Health:
+
+Get-ExchangeConnectionCurrentTimeInternal
+
+Diese Wrapper sollen keine Fachlogik enthalten.
+
+Zweck:
+
+Pester kann alle externen Systemzugriffe mocken.
+Tests benötigen kein echtes AD, Exchange OnPrem, EXO, Zertifikat oder Netzwerk.
+
+────────────────────────────────────────
+
+Pester-Tests
+
+Ergänze Tests unter:
+
+tests/Pester
+
+Empfohlen:
+
+ExchangeConnectionHealth.Tests.ps1
+ExchangeConnectionDiagnostics.Tests.ps1
+ExchangeConnectionMockability.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Mindestens testen:
+
+Test 1:
+
+New-ExchangeConnectionHealthResult erzeugt vollständiges Objekt.
+
+Test 2:
+
+OnPrem HealthResult enthält Target = ExchangeOnPrem und ConnectionType = RemotePowerShellInvokeCommand.
+
+Test 3:
+
+EXO HealthResult enthält Target = ExchangeOnline und ConnectionType = ExchangeOnlineManagementAppOnly.
+
+Test 4:
+
+Disabled-Konfiguration erzeugt Status Disabled.
+
+Test 5:
+
+Fehlende Config erzeugt Status NotConfigured.
+
+Test 6:
+
+Fehlendes EXO-Modul erzeugt Status MissingModule.
+
+Test 7:
+
+Fehlendes Zertifikat erzeugt Status CertificateMissing.
+
+Test 8:
+
+Zertifikat ohne Private Key erzeugt Status CertificatePrivateKeyMissing.
+
+Test 9:
+
+Abgelaufenes Zertifikat erzeugt Status CertificateExpired.
+
+Test 10:
+
+OnPrem Broken Session erzeugt Status Unusable oder NotConnected.
+
+Test 11:
+
+Erfolgreiche OnPrem Session erzeugt Status Connected.
+
+Test 12:
+
+Erfolgreiche EXO ConnectionInformation erzeugt Status Connected.
+
+Test 13:
+
+OutputJson im Diagnose-Skript ist valides JSON.
+
+Test 14:
+
+Kein Test baut echte Exchange-Verbindung auf.
+
+Test 15:
+
+Wrapper-Funktionen sind mockbar und werden in Tests verwendet.
+
+────────────────────────────────────────
+
+Keine Seiteneffekte
+
+Health- und Diagnosefunktionen dürfen nicht:
+
+Mailboxen ändern
+Berechtigungen ändern
+User ändern
+Gruppen ändern
+DFS ändern
+SQL Modeldaten ändern
+Queue-Dateien verschieben
+Backfeed-Merge auslösen
+
+Sie dürfen nur prüfen und diagnostizieren.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+fachliche Gateway-Operationen
+Handler
+UseCases
+Hybrid-Routing
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Pipeline
+usecases.json
+Queue-Mechanik
+Legacy-Skripte
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue Health-/Diagnosefunktionen
+Wie OnPrem Health geprüft wird
+Wie EXO Health geprüft wird
+Wie Pester-Mocking sichergestellt wurde
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+Wichtigste Zielregel:
+
+Gemeinsame Diagnose ja.
+Gemeinsame technische Sessionlogik nein.

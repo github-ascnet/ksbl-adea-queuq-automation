@@ -1,0 +1,8 @@
+Prüfe die letzten Änderungen im Workspace im Ask-Modus. Nimm keine Codeänderungen vor.
+
+Validiere:
+geänderte Dateien, Architekturkonformität, Gateway-/Service-/Handler-Trennung, keine produktiven Werte im Code oder appsettings.json, keine Vermischung von Exchange OnPrem und Exchange Online, keine Legacy-Script-Änderungen, keine alte Pester-Syntax, keine Merge-Konfliktmarker, Mockbarkeit der Tests und passende Pester-Befehle.
+
+Gib eine Review-Matrix mit Datei, Änderung, Bewertung, Risiko und Empfehlung aus.
+
+Nimm keine Änderungen vor.

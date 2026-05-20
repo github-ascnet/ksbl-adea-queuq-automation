@@ -1,0 +1,430 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange Server SE / Exchange OnPrem-, Kerberos-, Remote-PowerShell-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven Exchange-Cmdlets in Handlern oder Services.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue die Exchange-OnPrem-Verbindungslogik so um, dass ExchangeOnPremGateway.psm1 autonom sicherstellt, dass eine gültige Exchange-OnPrem-Remote-PowerShell-Session existiert.
+
+Aktuell prüft ExchangeOnPremGateway.psm1 nur über Assert-OnPremCmdlet, ob lokale Exchange-Cmdlets wie Get-Mailbox, Set-Mailbox oder Add-MailboxPermission bereits vorhanden sind. Wenn nicht, wird ein Fehler geworfen.
+
+Das darf so nicht bleiben.
+
+Wenn ein Exchange-OnPrem-Befehl ausgeführt wird, muss das Gateway selbst:
+
+eine Remote-PowerShell-Session prüfen,
+bei Bedarf eine neue Session aufbauen,
+die Session wiederverwenden,
+defekte oder abgelaufene Sessions neu aufbauen,
+Exchange-Befehle über Invoke-Command ausführen.
+
+────────────────────────────────────────
+
+K = Hintergrund
+
+Die alten Legacy-Skripte verwendeten Import-PSSession. Das funktioniert, ist aber langsam.
+
+Gemessene Werte:
+
+New-PSSession plus Import-PSSession:
+ca. 10.5 Sekunden
+
+New-PSSession ohne Import-PSSession:
+ca. 2.2 Sekunden
+
+Deshalb soll Import-PSSession nicht mehr der Standardweg sein.
+
+Die neue Standardvariante ist:
+
+New-PSSession erstellen
+keine lokalen Proxy-Cmdlets importieren
+Exchange-Befehle über Invoke-Command -Session ausführen
+
+Wichtig:
+
+New-PSSession allein stellt lokale Cmdlets wie Get-Mailbox nicht lokal bereit. Deshalb dürfen Gateway-Funktionen im InvokeCommand-Modus nicht mehr darauf bauen, dass Get-Mailbox lokal verfügbar ist.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Die technische Zielkette ist:
+
+Service
+  → ExchangeOnPremGateway
+    → Ensure Exchange OnPrem Session
+    → Invoke-Command gegen Remote-PSSession
+    → Exchange Cmdlet im Remote-Session-Kontext ausführen
+
+Nicht erlaubt:
+
+Import-PSSession als Default
+direkte Exchange-Cmdlets in Handlern
+direkte Exchange-Cmdlets in Services
+produktive Werte im Code hardcoden
+OnPrem-Logik mit Exchange-Online-Logik vermischen
+ExchangeOnlineGateway in diesem Schritt fachlich umbauen
+fachliche Hybrid-Routing-Logik ändern
+UseCases ändern, ausser es ist zwingend nötig
+Legacy-Skripte verändern
+
+────────────────────────────────────────
+
+K = Konfigurationswerte
+
+Die Werte müssen aus der Environment-Konfiguration gelesen werden.
+
+Config-Pfad:
+
+ExchangeOnPrem.RemotePowerShell
+
+Erwartete produktive Werte in environments.onprem.json und environments.hybrid.json:
+
+Enabled = true
+User = ksbl\ServiceIAMJobs10
+SecretPath = D:\iam\Secrets\serviceiamjobs10.sec
+ConnectionUri = http://sv01250.ksbl.local/PowerShell
+Authentication = Kerberos
+ReuseSession = true
+UseImportPSSession = false
+ExecutionMode = InvokeCommand
+SessionIdleTimeoutMinutes = 120
+MaxSessionAgeMinutes = 240
+ReconnectOnFailure = true
+MaxReconnectAttempts = 1
+
+Wichtig:
+
+http://sv01250.ksbl.local/PowerShell ist korrekt.
+Nicht auf sv00516 ändern.
+
+Falls diese Konfigurationswerte fehlen, ergänze sie in environments.onprem.json und environments.hybrid.json.
+
+appsettings.json darf nur neutrale Defaults enthalten, keine produktiven KSBL-Werte.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Code:
+
+infrastructure/ExchangeOnPremGateway.psm1
+config/appsettings.json
+config/environments.onprem.json
+config/environments.hybrid.json
+shared Services, die ExchangeOnPremGateway verwenden
+tests/Pester
+
+Danach implementiere gezielt die Exchange-OnPrem-Sessionverwaltung.
+
+────────────────────────────────────────
+
+Session-Modul oder klarer Gateway-Bereich
+
+Erstelle entweder ein separates Modul:
+
+infrastructure/ExchangeOnPremSession.psm1
+
+oder integriere die Funktionen klar abgegrenzt in:
+
+infrastructure/ExchangeOnPremGateway.psm1
+
+Wenn ein separates Modul erstellt wird, muss ExchangeOnPremGateway.psm1 dieses sauber importieren oder verwenden.
+
+────────────────────────────────────────
+
+Erforderliche Funktionen
+
+Implementiere mindestens folgende Funktionen:
+
+Get-ExchangeOnPremRemotePowerShellConfig
+
+Aufgabe:
+
+RemotePowerShell-Konfiguration aus Context.Config oder übergebenem Config-Objekt lesen.
+Pflichtfelder validieren.
+Kontrollierte Fehler erzeugen, wenn Enabled = false oder Pflichtwerte fehlen.
+
+────────────────────────────────────────
+
+New-ExchangeOnPremCredential
+
+Aufgabe:
+
+User und SecretPath aus Config verwenden.
+SecretPath lesen.
+ConvertTo-SecureString verwenden.
+PSCredential erzeugen.
+Kein Passwort hardcoden.
+Klare Fehlermeldung, wenn SecretPath nicht existiert oder nicht lesbar ist.
+
+────────────────────────────────────────
+
+Connect-ExchangeOnPremSession
+
+Aufgabe:
+
+New-PSSession mit ConfigurationName Microsoft.Exchange aufbauen.
+ConnectionUri, Authentication und Credential aus Config verwenden.
+PSSessionOption anhand SessionIdleTimeoutMinutes erstellen, falls sinnvoll.
+Session-Metadaten speichern:
+    CreatedAt
+    LastUsedAt
+    ConnectionUri
+    User
+    ExecutionMode
+
+Wichtig:
+
+Default ist UseImportPSSession = false.
+Default ist ExecutionMode = InvokeCommand.
+Import-PSSession nur ausführen, wenn UseImportPSSession = true konfiguriert ist.
+
+────────────────────────────────────────
+
+Test-ExchangeOnPremSession
+
+Aufgabe:
+
+Prüfen, ob Sessionobjekt vorhanden ist.
+Prüfen, ob Session.State Opened ist.
+Prüfen, ob MaxSessionAgeMinutes noch nicht überschritten ist.
+Optional leichten Remote-Test ausführen, wenn nötig.
+
+────────────────────────────────────────
+
+Get-ExchangeOnPremSession
+
+Aufgabe:
+
+Bestehende gültige Session zurückgeben.
+Wenn keine gültige Session vorhanden ist, Connect-ExchangeOnPremSession aufrufen.
+Wenn ReuseSession = false, immer neue Session aufbauen.
+
+────────────────────────────────────────
+
+Invoke-ExchangeOnPremCommand
+
+Aufgabe:
+
+Sicherstellen, dass eine gültige Session vorhanden ist.
+ScriptBlock remote über Invoke-Command ausführen.
+Argumente sauber per ArgumentList übergeben.
+LastUsedAt aktualisieren.
+Bei Sessionfehler:
+    wenn ReconnectOnFailure = true:
+        Session resetten,
+        einmal neu verbinden,
+        Befehl einmal erneut versuchen.
+    sonst:
+        kontrollierten Fehler werfen.
+
+────────────────────────────────────────
+
+Reset-ExchangeOnPremSession
+
+Aufgabe:
+
+Vorhandene PSSession entfernen.
+Lokale Cache-Variablen leeren.
+Importiertes Modul nur entfernen, falls UseImportPSSession verwendet wurde.
+
+────────────────────────────────────────
+
+Disconnect-ExchangeOnPremSession
+
+Aufgabe:
+
+PSSession sauber entfernen.
+Cache leeren.
+Keine Fehler werfen, wenn Session bereits weg ist.
+
+────────────────────────────────────────
+
+Bestehende Gateway-Funktionen anpassen
+
+Prüfe vorhandene Funktionen in ExchangeOnPremGateway.psm1, zum Beispiel:
+
+Get-OnPremMailboxSafe
+Set-OnPremMailboxSafe
+Add-OnPremMailboxPermissionSafe
+Remove-OnPremMailboxPermissionSafe
+Add-OnPremRecipientPermissionSafe
+Remove-OnPremRecipientPermissionSafe
+Get-OnPremRecipientSafe
+Set-OnPremRecipientSafe
+
+Diese Funktionen dürfen im Standardmodus nicht mehr voraussetzen, dass lokale Exchange-Cmdlets importiert wurden.
+
+Bei ExecutionMode = InvokeCommand müssen sie intern Invoke-ExchangeOnPremCommand verwenden.
+
+Beispielmuster:
+
+Funktion im Gateway
+  → Invoke-ExchangeOnPremCommand
+    → Remote ScriptBlock
+      → Get-Mailbox / Set-Mailbox / Add-MailboxPermission im Remote-Kontext
+
+Assert-OnPremCmdlet darf bestehen bleiben, aber nur noch:
+
+für optionalen ImportPSSession-Modus,
+für Diagnostik,
+nicht als einzige Voraussetzung für OnPrem-Exchange-Befehle.
+
+────────────────────────────────────────
+
+Pester-Modus und Mockbarkeit
+
+Alle neuen Funktionen müssen testbar sein.
+
+Tests dürfen keine echte Exchange-Verbindung aufbauen.
+
+Folgende Cmdlets müssen mockbar sein:
+
+New-PSSession
+Remove-PSSession
+Invoke-Command
+Import-PSSession
+Get-Content
+ConvertTo-SecureString
+
+Falls nötig, baue dünne Wrapper-Funktionen, damit Pester sie sauber mocken kann.
+
+Beispiel für Wrapper-Namen:
+
+New-ExchangeOnPremPSSessionInternal
+Invoke-ExchangeOnPremCommandInternal
+Import-ExchangeOnPremPSSessionInternal
+
+Diese Wrapper dürfen keine Fachlogik enthalten. Sie dienen nur der Testbarkeit.
+
+────────────────────────────────────────
+
+Pester-Tests
+
+Ergänze Tests unter:
+
+tests/Pester
+
+Empfohlen:
+
+tests/Pester/ExchangeOnPremSession.Tests.ps1
+tests/Pester/ExchangeOnPremGatewayConnection.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Mindestens testen:
+
+Test 1:
+
+RemotePowerShell Config wird korrekt gelesen.
+
+Test 2:
+
+Wenn Enabled = false, wird kontrolliert abgebrochen.
+
+Test 3:
+
+New-ExchangeOnPremCredential liest SecretPath und erstellt PSCredential.
+
+Test 4:
+
+Wenn keine Session existiert, wird New-PSSession aufgerufen.
+
+Test 5:
+
+Wenn eine offene Session existiert und nicht abgelaufen ist, wird sie wiederverwendet.
+
+Test 6:
+
+Wenn eine Session Broken oder Closed ist, wird sie verworfen und neu aufgebaut.
+
+Test 7:
+
+Wenn MaxSessionAgeMinutes überschritten ist, wird neu verbunden.
+
+Test 8:
+
+Invoke-ExchangeOnPremCommand verwendet Invoke-Command mit Session.
+
+Test 9:
+
+Bei Fehler und ReconnectOnFailure = true wird genau ein Reconnect versucht.
+
+Test 10:
+
+UseImportPSSession = false ist Default.
+
+Test 11:
+
+Assert-OnPremCmdlet ist im InvokeCommand-Modus keine zwingende Voraussetzung mehr.
+
+Test 12:
+
+ConnectionUri bleibt http://sv01250.ksbl.local/PowerShell.
+
+Test 13:
+
+Keine produktiven Werte wurden im Code hardcodiert.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+ExchangeOnlineGateway.psm1 fachlich umbauen
+Hybrid-Routing-Entscheidungen
+Handler
+UseCases
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+usecases.json
+Queue-Mechanik
+Invoke-JobProcessor.ps1, ausser zwingend nötig
+Legacy-Skripte
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue Funktionen
+Wie Exchange OnPrem Session aufgebaut wird
+Warum Import-PSSession nicht mehr Default ist
+Wie Invoke-Command verwendet wird
+Wie Session-Reuse funktioniert
+Wie Reconnect funktioniert
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken
+
+Wichtigste Zielregel:
+
+ExchangeOnPremGateway muss seine Exchange-OnPrem-Verbindung selbst sicherstellen.
+
+Kein Handler und kein Service darf voraussetzen, dass vorher manuell eine Exchange-OnPrem-Session aufgebaut wurde.
