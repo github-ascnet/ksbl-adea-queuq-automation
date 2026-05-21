@@ -1,0 +1,264 @@
+Prüfe die zuletzt durchgeführten Änderungen im Workspace.
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine neuen Dateien.
+Lösche keine Dateien.
+Führe keine automatischen Korrekturen aus.
+Gib nur eine Review mit konkreten Befunden zurück.
+
+Kontext:
+Die Änderungen betreffen den Urgent-Bereich der AdeaJobEngine, insbesondere:
+
+Invoke-UrgentRecipientAttributeChange
+Invoke-InactivateHospisPerson
+HospisPersonService.UrgentInactivation
+ActiveDirectoryGateway
+ExchangeOnPremGateway
+SqlGateway / Hospis SQL Service
+Gruppenmitgliedschaftslogik
+Pester-Tests zum Urgent-Bereich
+
+Fachliche Grundregel:
+Der Legacy-Code darf nicht blind in Invoke-UrgentRecipientAttributeChange kopiert werden.
+
+Es muss sauber getrennt bleiben:
+
+1. Invoke-UrgentRecipientAttributeChange
+   ist nur für gezielte AD-/Recipient-Attributänderungen zuständig.
+
+2. Invoke-InactivateHospisPerson beziehungsweise HospisPersonService.UrgentInactivation
+   ist für die vollständige dringende Hospis-Inaktivierung zuständig.
+
+Verbindliche Architekturregeln:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-, Exchange-OnPrem-, ExchangeOnline-, SQL-, DFS- oder Filesystem-Zugriffe in Handlern.
+Keine fachliche Logik in JobEngine.psm1.
+Keine produktiven Werte im Code hardcoden.
+Keine produktiven KSBL-Werte in appsettings.json.
+Produktive Werte gehören nur in environments.onprem.json oder environments.hybrid.json.
+Exchange Online darf für diesen Urgent-/Hospis-Inaktivierungsprozess nicht eingeführt werden.
+TenantState.psm1 bleibt unberührt und darf nicht produktiv verdrahtet werden.
+msDS-cloudExtensionAttribute15 wird direkt über ActiveDirectoryGateway gelöscht, wenn die Entra-Sync-Deaktivierung im Urgent-Prozess erforderlich ist.
+Pester muss Version 5.7.1-kompatibel bleiben.
+Keine alte Pester-Syntax wie Should Be verwenden.
+Keine Merge-Konfliktmarker hinterlassen.
+
+Prüfe bitte gezielt:
+
+1. Geänderte Dateien
+   Liste alle geänderten Dateien auf.
+   Markiere, ob die Änderung fachlich zum Urgent-Thema gehört.
+
+2. Verantwortlichkeit von Invoke-UrgentRecipientAttributeChange
+   Prüfe, ob die Funktion nur gezielte Attributänderungen verarbeitet.
+   Prüfe, ob sie Identity, AttributeName, AttributeValue und optional Operation sauber verarbeitet.
+   Prüfe, ob Set und Clear sauber unterschieden werden.
+   Prüfe, ob keine komplette Hospis-Inaktivierungslogik in diese Funktion geraten ist.
+
+3. Attribut-Allowlist
+   Prüfe, ob gefährliche freie Attributänderungen verhindert werden.
+   Prüfe, ob eine Allowlist vorhanden ist.
+   Erwartete unterstützte Attribute sind mindestens:
+   extensionAttribute6
+   msDS-cloudExtensionAttribute15
+   description
+   targetAddress
+   mail
+   proxyAddresses
+   msExchHideFromAddressLists
+
+   Prüfe, ob nicht erlaubte Attribute kontrolliert abgewiesen werden.
+
+4. AD-Gateway-Nutzung
+   Prüfe, ob AD-Attribute über ActiveDirectoryGateway gesetzt oder gelöscht werden.
+   Prüfe, ob Set-ADUser nicht direkt im Handler aufgerufen wird.
+   Prüfe, ob Clear-Operationen wirklich Clear verwenden und nicht leere Strings setzen, falls das fachlich falsch wäre.
+
+5. msDS-cloudExtensionAttribute15
+   Prüfe besonders, ob msDS-cloudExtensionAttribute15 korrekt gelöscht wird.
+   Prüfe, ob dies nicht über TenantState.psm1 erfolgt.
+   Prüfe, ob TenantState.psm1 unverändert bleibt und nicht produktiv verwendet wird.
+
+6. extensionAttribute6
+   Prüfe, ob extensionAttribute6 im Urgent-Kontext korrekt gelöscht wird.
+   Prüfe, ob Fehler beim Löschen kontrolliert geloggt und im Result abgebildet werden.
+
+7. Description
+   Prüfe, ob die Description bei UrgentInactivation im erwarteten Format gesetzt wird:
+   Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+
+   Prüfe, ob die Logik in HospisPersonService.UrgentInactivation liegt und nicht generisch in Invoke-UrgentRecipientAttributeChange erzwungen wird.
+
+8. Invoke-InactivateHospisPerson / HospisPersonService.UrgentInactivation
+   Prüfe, ob die vollständige dringende Inaktivierung dort orchestriert wird.
+   Erwartete fachliche Schritte:
+
+   AD User deaktivieren
+   falls homeMdb gesetzt ist: MailboxAutoReplyConfiguration setzen
+   falls homeMdb gesetzt ist: Mailbox Features / Hidden State setzen, sofern vorhandene Funktion existiert
+   EMailRevocations.ValidTo per SQL aktualisieren
+   definierte Gruppenmitgliedschaften entfernen
+   extensionAttribute6 löschen
+   msDS-cloudExtensionAttribute15 löschen
+   Description setzen
+   bei ActionType Inaktivieren die Stored Procedure usp_create_urgent_inaktivieren_transaction ausführen
+
+9. MailboxAutoReplyConfiguration
+   Prüfe, ob Set-MailboxAutoReplyConfiguration nicht direkt im Handler steht.
+   Prüfe, ob ExchangeOnPremGateway verwendet wird.
+   Prüfe, ob die internen und externen OOO-Nachrichten aus Config kommen:
+   Hospis.AustrittOOOInternalMessage
+   Hospis.AustrittOOOExternalMessage
+
+   Prüfe, ob keine Nachricht hardcodiert wurde.
+
+10. SQL-Zugriffe
+   Prüfe, ob Invoke-Sqlcmd nicht direkt im Handler steht.
+   Prüfe, ob SQL-Zugriffe über SqlGateway oder HospisSqlService gekapselt sind.
+   Prüfe, ob EMailRevocations.ValidTo korrekt aktualisiert wird.
+   Prüfe, ob usp_create_urgent_inaktivieren_transaction korrekt aufgerufen wird.
+   Prüfe, ob PersId, CurrentUserDomainName und CurrentUserName sauber übergeben werden.
+   Prüfe, ob keine unsichere String-Konkatenation mit Userdaten eingebaut wurde, falls das Projekt bereits parametrisierte SQL-Funktionen unterstützt.
+
+11. Gruppenmitgliedschaften
+   Prüfe, ob die Entfernung aus folgenden Gruppenpräfixen umgesetzt ist:
+   CN=TPL-
+   CN=GG-KSBL-VDI-Remote
+   CN=GG-OneSign
+
+   Prüfe, ob diese Logik in UrgentInactivation liegt und nicht in Invoke-UrgentRecipientAttributeChange.
+   Prüfe, ob Gruppenentfernung über ActiveDirectoryGateway oder GroupMembershipService läuft.
+   Prüfe, ob keine neuen Gruppenpräfixe erfunden wurden.
+
+12. Exchange Online Nichtverwendung
+   Prüfe statisch und fachlich, ob für diesen Prozess keine ExchangeOnline-Logik eingeführt wurde.
+   Nicht erlaubt:
+   ExchangeOnlineGateway
+   Connect-ExchangeOnline
+   Get-EXORecipient
+   Set-EXOMailbox
+   EXO-Mailboxpermission-Logik
+
+13. TenantState
+   Prüfe, ob TenantState.psm1 nicht verändert wurde.
+   Prüfe, ob Get-TenantState oder Set-TenantState nicht produktiv im Urgent-Prozess verwendet wird.
+   Falls TenantState irgendwo referenziert wird, bewerte das als kritischen Befund.
+
+14. Handler-Resultate
+   Prüfe, ob Invoke-UrgentRecipientAttributeChange und Invoke-InactivateHospisPerson saubere JobResult-Objekte zurückgeben.
+   Prüfe, ob Fehler pro Zeile gesammelt werden.
+   Prüfe, ob Success, Failed oder Partial/Warning gemäss bestehender Projektkonvention konsistent verwendet werden.
+   Prüfe, ob Exceptions nicht verschluckt werden.
+
+15. Logging
+   Prüfe, ob Write-LogInfo, Write-LogWarn und Write-LogError konsistent verwendet werden.
+   Prüfe, ob relevante Identity, PersId und DisplayName im Log enthalten sind.
+   Prüfe, ob keine sensiblen Secrets geloggt werden.
+
+16. Tests
+   Prüfe, welche Pester-Tests neu erstellt oder angepasst wurden.
+   Erwartete Testbereiche:
+
+   Invoke-UrgentRecipientAttributeChange:
+   Pflichtfelder
+   Set-Operation
+   Clear-Operation
+   Unsupported Attribute
+   ActiveDirectoryGateway-Nutzung
+   kein direkter Set-ADUser im Handler
+   keine ExchangeOnline-Nutzung
+   keine TenantState-Nutzung
+   mehrere Payload-Zeilen
+   Fehlerfall pro Zeile
+
+   UrgentInactivation / HospisPersonService:
+   AD User wird deaktiviert
+   AutoReply wird über ExchangeOnPremGateway gesetzt
+   OOO-Texte kommen aus Config
+   EMailRevocations werden über SQL-Service geschlossen
+   TPL-Gruppen werden entfernt
+   GG-KSBL-VDI-Remote-Gruppen werden entfernt
+   GG-OneSign-Gruppen werden entfernt
+   extensionAttribute6 wird gelöscht
+   msDS-cloudExtensionAttribute15 wird gelöscht
+   Description wird korrekt gesetzt
+   Stored Procedure usp_create_urgent_inaktivieren_transaction wird bei ActionType Inaktivieren ausgeführt
+   keine echte AD-/Exchange-/SQL-Verbindung im Test
+
+17. Mocking
+   Prüfe, ob Pester-Mocks im richtigen Modul-Scope gesetzt sind.
+   Prüfe, ob keine echten Zielsysteme aufgerufen werden.
+   Prüfe, ob Set-ADUser, Set-MailboxAutoReplyConfiguration und Invoke-Sqlcmd nicht real ausgeführt werden.
+
+18. Seiteneffekte
+   Prüfe, ob keine nicht beauftragten Dateien geändert wurden.
+   Besonders nicht ändern:
+   JobEngine.psm1
+   JobFileQueue.psm1
+   usecases.json
+   ExchangeOnlineGateway.psm1
+   HybridMailboxResolver.psm1
+   Resolve-MailboxExecutionContext
+   Backfeed
+   TenantState.psm1
+   Runtime-Config
+   produktive Environment-Dateien
+
+19. Pester-Kompatibilität
+   Prüfe, ob alle Tests Pester 5.7.1-kompatibel sind.
+   Suche nach alter Syntax:
+   Should Be
+   Should Not Be
+
+   Erwartet:
+   Should -Be
+   Should -Not -Be
+
+20. Merge- und Syntaxqualität
+   Suche nach Merge-Konfliktmarkern:
+   <<<<<<<
+   =======
+   >>>>>>>
+
+   Prüfe auf offensichtliche StrictMode-Probleme:
+   nicht initialisierte Variablen
+   Properties, die nicht garantiert existieren
+   unklare Null-Zugriffe
+   falsche Typannahmen
+
+Gib das Ergebnis als Review-Matrix aus mit diesen Spalten:
+
+Datei
+Änderung
+Bewertung
+Risiko
+Empfehlung
+
+Danach zusätzlich:
+
+Gesamtbewertung:
+Architekturkonform:
+Fachliche Trennung korrekt:
+AD-Gateway-Nutzung:
+ExchangeOnPrem-Nutzung:
+ExchangeOnline-frei:
+TenantState unverändert:
+SQL sauber gekapselt:
+Testabdeckung:
+Kritische Risiken:
+Mittlere Risiken:
+Niedrige Risiken:
+Empfohlene nächste Schritte:
+Pester-Befehl für lokale Validierung:
+
+Verwende als Pester-Befehl:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path .\tests\Pester"
+
+Wichtig:
+Nimm keine Änderungen vor.
+Antworte nur mit der Review.
