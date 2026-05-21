@@ -33,10 +33,10 @@ Describe 'ExchangeOnPrem session management' {
             $config = @{
                 ExchangeOnPrem = @{
                     RemotePowerShell = @{
-                        Enabled       = $true
-                        User          = 'TESTDOMAIN\ServiceAccount'
-                        SecretPath    = 'C:\\TestSecrets\\service.sec'
-                        ConnectionUri = 'http://exchange.test.local/PowerShell'
+                        Enabled        = $true
+                        User           = 'TESTDOMAIN\ServiceAccount'
+                        SecretPath     = 'C:\\TestSecrets\\service.sec'
+                        ConnectionUri  = 'http://exchange.test.local/PowerShell'
                         Authentication = 'Kerberos'
                     }
                 }
@@ -44,7 +44,7 @@ Describe 'ExchangeOnPrem session management' {
 
             $result = Get-ExchangeOnPremRemotePowerShellConfig -Config $config
 
-            $result.ConnectionUri | Should -Be 'http://sv01250.ksbl.local/PowerShell'
+            $result.ConnectionUri | Should -Be 'http://exchange.test.local/PowerShell'
             $result.ExecutionMode | Should -Be 'InvokeCommand'
             $result.UseImportPSSession | Should -Be $false
             $result.ReconnectOnFailure | Should -Be $true
@@ -81,7 +81,7 @@ Describe 'ExchangeOnPrem session management' {
 
             $credential = New-ExchangeOnPremCredential -Config $script:TestOnPremConfig
 
-            $credential.UserName | Should -Be 'ksbl\ServiceIAMJobs10'
+            $credential.UserName | Should -Be 'TESTDOMAIN\ServiceAccount'
             Should -Invoke Get-Content -ModuleName ExchangeOnPremGateway -Times 1
             Should -Invoke ConvertTo-SecureString -ModuleName ExchangeOnPremGateway -Times 1
         }

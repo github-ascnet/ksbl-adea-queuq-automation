@@ -75,7 +75,7 @@ Describe 'Exchange Online WhatIf safety' {
     It 'Set-ExoMailboxSafe works in WhatIfMode without EXO connection' {
         $result = Set-ExoMailboxSafe -Parameters @{ Identity = 'u1'; HiddenFromAddressListsEnabled = $true } -Config @{} -WhatIfMode $true
         $result.Simulated | Should -Be $true
-        $result.Action | Should -Be 'Set-EXOMailbox'
+        $result.Action | Should -Be 'Set-Mailbox'
     }
 
     It 'Add-ExoMailboxPermissionSafe works in WhatIfMode without EXO connection' {

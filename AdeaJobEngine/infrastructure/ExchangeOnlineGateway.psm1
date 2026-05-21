@@ -1,95 +1,620 @@
 Set-StrictMode -Version Latest
 
-function Assert-ExchangeOnlineEnabled {
-    param([Parameter(Mandatory = $true)][hashtable]$Config)
-
-    if (-not $Config.ExchangeOnline.Enabled) {
-        throw 'Exchange Online is disabled by configuration. Set ExchangeOnline.Enabled=true to use EXO operations.'
-    }
+# ─────────────────────────────────────────────────────────────────────────────
+# Zentraler In-Memory-Zustand für die EXO-Sessionverwaltung.
+# Der State lebt pro PowerShell-Prozess und wird zwischen Gateway-Aufrufen
+# wiederverwendet (ReuseSession=true) oder erzwingt Neuverbindung (false).
+#
+# Felder:
+# - Connected     : $true wenn zuletzt erfolgreicher Connect bestätigt wurde
+# - RuntimeConfig : zuletzt gesetzte Laufzeitkonfiguration (aus JobEngine)
+# ─────────────────────────────────────────────────────────────────────────────
+$script:ExchangeOnlineSessionState = @{
+    Connected     = $false
+    RuntimeConfig = $null
 }
 
-function Connect-ExchangeOnlineAutomation {
+# Setzt die Runtime-Konfiguration für dieses Gateway explizit.
+# Die JobEngine ruft diese Funktion nach dem Merge von appsettings + environment auf.
+function Set-ExchangeOnlineRuntimeConfig {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Config)
+    param([hashtable]$Config)
 
-    Assert-ExchangeOnlineEnabled -Config $Config
-
-    if (-not (Get-Command -Name Connect-ExchangeOnline -ErrorAction SilentlyContinue)) {
-        throw 'Connect-ExchangeOnline cmdlet is not available. Install ExchangeOnlineManagement module.'
-    }
-
-    $params = @{
-        AppId                = $Config.ExchangeOnline.AppId
-        CertificateThumbprint = $Config.ExchangeOnline.CertificateThumbprint
-        Organization         = $Config.ExchangeOnline.Organization
-        ShowBanner           = $false
-    }
-
-    Connect-ExchangeOnline @params -ErrorAction Stop
+    $script:ExchangeOnlineSessionState.RuntimeConfig = $Config
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Config-Hilfsfunktionen (für EXO-Modul isoliert, analog ExchangeOnPremGateway)
+# Unterstützen sowohl native Hashtables als auch ConvertFrom-Json-PSCustomObjects.
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Get-EXOConfigNode {
+    param(
+        [Parameter(Mandatory = $true)][object]$Source,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+
+    if ($null -eq $Source) { return $null }
+    if ($Source -is [hashtable]) {
+        if ($Source.ContainsKey($Key)) { return $Source[$Key] }
+        return $null
+    }
+    $prop = $Source.PSObject.Properties[$Key]
+    if ($prop) { return $prop.Value }
+    return $null
+}
+
+function Test-EXOConfigKey {
+    param(
+        [Parameter(Mandatory = $true)][object]$Source,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+
+    if ($null -eq $Source) { return $false }
+    if ($Source -is [hashtable]) { return $Source.ContainsKey($Key) }
+    return $null -ne $Source.PSObject.Properties[$Key]
+}
+
+function Get-EXOConfigValue {
+    param(
+        [Parameter(Mandatory = $true)][object]$Source,
+        [Parameter(Mandatory = $true)][string]$Key,
+        [object]$Default = $null
+    )
+
+    $node = Get-EXOConfigNode -Source $Source -Key $Key
+    if ($null -eq $node) { return $Default }
+    return $node
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wrapper-Funktionen (keine Fachlogik, nur technische Aufrufe)
+# Erlauben sauberes Mocken in Pester ohne echte EXO-Verbindung.
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Import-ExchangeOnlineManagementModuleInternal {
+    [CmdletBinding()]
+    param()
+    Import-Module -Name ExchangeOnlineManagement -ErrorAction Stop
+}
+
+function Get-ExchangeOnlineModuleInternal {
+    [CmdletBinding()]
+    param()
+    Get-Module -Name ExchangeOnlineManagement -ErrorAction SilentlyContinue
+}
+
+function Get-ExchangeOnlineModuleAvailableInternal {
+    [CmdletBinding()]
+    param()
+    Get-Module -Name ExchangeOnlineManagement -ListAvailable -ErrorAction SilentlyContinue
+}
+
+function Connect-ExchangeOnlineInternal {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][hashtable]$Parameters)
+    Connect-ExchangeOnline @Parameters
+}
+
+function Disconnect-ExchangeOnlineInternal {
+    [CmdletBinding()]
+    param()
+    Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+}
+
+function Get-ExchangeOnlineConnectionInformationInternal {
+    [CmdletBinding()]
+    param()
+    Get-ConnectionInformation
+}
+
+function Get-ExchangeOnlineCertificateInternal {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Thumbprint,
+        [Parameter(Mandatory = $true)][string]$StoreLocation
+    )
+    Get-ChildItem -Path "Cert:\$StoreLocation\My" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Thumbprint -eq $Thumbprint }
+}
+
+function Invoke-ExchangeOnlineValidationCommandInternal {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)][int]$ResultSize
+    )
+    & $Command -ResultSize $ResultSize -ErrorAction Stop
+}
+
+function Get-EXODateInternal {
+    [CmdletBinding()]
+    param()
+    Get-Date
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Konfiguration lesen und validieren
+#
+# Auflösung in dieser Reihenfolge:
+# 1) Context.Config
+# 2) explizit übergebene Config
+# 3) zuvor gesetzte RuntimeConfig
+#
+# Organization hat Vorrang vor TenantDomain; mindestens einer der beiden muss gesetzt sein.
+# ─────────────────────────────────────────────────────────────────────────────
+function Get-ExchangeOnlineRemotePowerShellConfig {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $effectiveConfig = $null
+    if ($null -ne $Context -and (Test-EXOConfigKey -Source $Context -Key 'Config')) {
+        $effectiveConfig = Get-EXOConfigNode -Source $Context -Key 'Config'
+    }
+    elseif ($null -ne $Config) {
+        $effectiveConfig = $Config
+    }
+    elseif ($null -ne $script:ExchangeOnlineSessionState.RuntimeConfig) {
+        $effectiveConfig = $script:ExchangeOnlineSessionState.RuntimeConfig
+    }
+
+    if (-not $effectiveConfig) {
+        throw 'Exchange Online Konfiguration fehlt. Keine Runtime-Konfiguration verfügbar.'
+    }
+
+    $exoNode = Get-EXOConfigNode -Source $effectiveConfig -Key 'ExchangeOnline'
+    if (-not $exoNode) {
+        throw "Exchange Online Konfigurationsabschnitt 'ExchangeOnline' fehlt."
+    }
+
+    $enabled = [bool](Get-EXOConfigValue -Source $exoNode -Key 'Enabled' -Default $false)
+    if (-not $enabled) {
+        throw 'Exchange Online ist deaktiviert (ExchangeOnline.Enabled=false). Setze Enabled=true, um EXO-Operationen auszuführen.'
+    }
+
+    $appId = [string](Get-EXOConfigValue -Source $exoNode -Key 'AppId' -Default '')
+    if ([string]::IsNullOrWhiteSpace($appId)) {
+        throw "Exchange Online Konfigurationswert 'AppId' fehlt."
+    }
+
+    $organization = [string](Get-EXOConfigValue -Source $exoNode -Key 'Organization'  -Default '')
+    $tenantDomain = [string](Get-EXOConfigValue -Source $exoNode -Key 'TenantDomain'  -Default '')
+    $effectiveOrg = if (-not [string]::IsNullOrWhiteSpace($organization)) { $organization } else { $tenantDomain }
+
+    if ([string]::IsNullOrWhiteSpace($effectiveOrg)) {
+        throw "Exchange Online Konfiguration erfordert entweder 'Organization' oder 'TenantDomain'."
+    }
+
+    $thumbprint = [string](Get-EXOConfigValue -Source $exoNode -Key 'CertificateThumbprint' -Default '')
+    if ([string]::IsNullOrWhiteSpace($thumbprint)) {
+        throw "Exchange Online Konfigurationswert 'CertificateThumbprint' fehlt."
+    }
+
+    $showBanner = [bool]  (Get-EXOConfigValue -Source $exoNode -Key 'ShowBanner'                    -Default $false)
+    $reuseSession = [bool]  (Get-EXOConfigValue -Source $exoNode -Key 'ReuseSession'                  -Default $true)
+    $reconnectOnFailure = [bool]  (Get-EXOConfigValue -Source $exoNode -Key 'ReconnectOnFailure'            -Default $true)
+    $maxReconnect = [int]   (Get-EXOConfigValue -Source $exoNode -Key 'MaxReconnectAttempts'          -Default 1)
+    $validateWithCmd = [bool]  (Get-EXOConfigValue -Source $exoNode -Key 'ValidateConnectionWithCommand' -Default $false)
+    $validationCmd = [string](Get-EXOConfigValue -Source $exoNode -Key 'ConnectionValidationCommand'   -Default 'Get-EXORecipient')
+    $validationResultSize = [int]   (Get-EXOConfigValue -Source $exoNode -Key 'ConnectionValidationResultSize' -Default 1)
+
+    return [ordered]@{
+        Enabled                        = $enabled
+        AppId                          = $appId
+        Organization                   = $effectiveOrg
+        CertificateThumbprint          = $thumbprint
+        ShowBanner                     = $showBanner
+        ReuseSession                   = $reuseSession
+        ReconnectOnFailure             = $reconnectOnFailure
+        MaxReconnectAttempts           = $maxReconnect
+        ValidateConnectionWithCommand  = $validateWithCmd
+        ConnectionValidationCommand    = $validationCmd
+        ConnectionValidationResultSize = $validationResultSize
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Modulverwaltung
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Import-ExchangeOnlineManagementModule {
+    [CmdletBinding()]
+    param()
+
+    $loaded = Get-ExchangeOnlineModuleInternal
+    if ($loaded) { return }
+
+    $available = Get-ExchangeOnlineModuleAvailableInternal
+    if (-not $available) {
+        throw 'Das ExchangeOnlineManagement-Modul ist nicht installiert. Führe aus: Install-Module ExchangeOnlineManagement'
+    }
+
+    try {
+        Import-ExchangeOnlineManagementModuleInternal
+    }
+    catch {
+        throw "ExchangeOnlineManagement-Modul konnte nicht importiert werden. $($_.Exception.Message)"
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Zertifikatsprüfung
+#
+# Prüft lokal im Zertifikatsspeicher:
+# - Zertifikat vorhanden (LocalMachine\My, dann CurrentUser\My)
+# - HasPrivateKey = true
+# - Nicht abgelaufen
+#
+# Das Gateway importiert keine PFX-Dateien. Es prüft nur die Runtime-Bereitschaft.
+# Klare Diagnose bei Private-Key-Problemen ("Der Schlüsselsatz ist nicht vorhanden").
+# ─────────────────────────────────────────────────────────────────────────────
+function Test-ExchangeOnlineCertificate {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Thumbprint)
+
+    $cert = $null
+    foreach ($store in @('LocalMachine', 'CurrentUser')) {
+        $found = Get-ExchangeOnlineCertificateInternal -Thumbprint $Thumbprint -StoreLocation $store
+        if ($found) { $cert = $found; break }
+    }
+
+    if (-not $cert) {
+        throw "Exchange Online App-only Authentication: Zertifikat mit Thumbprint '$Thumbprint' wurde nicht gefunden in Cert:\LocalMachine\My oder Cert:\CurrentUser\My."
+    }
+
+    if (-not $cert.HasPrivateKey) {
+        throw "Exchange Online App-only Authentication konnte das Zertifikat finden, aber der private Schlüssel ist nicht vorhanden. Thumbprint: '$Thumbprint'. Prüfe, ob das Zertifikat als PFX mit Private Key im Zertifikatsspeicher liegt. Prüfe HasPrivateKey. Prüfe Private-Key-Leserecht für das ausführende Servicekonto."
+    }
+
+    $now = Get-EXODateInternal
+    if ($cert.NotAfter -lt $now) {
+        throw "Exchange Online App-only Authentication: Zertifikat mit Thumbprint '$Thumbprint' ist abgelaufen (NotAfter: $($cert.NotAfter))."
+    }
+
+    return $cert
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sessionprüfung via Get-ConnectionInformation
+#
+# Gibt $true zurück wenn eine aktive EXO-Verbindung besteht.
+# Gibt $false zurück wenn keine Verbindung besteht – wirft keine Exception.
+# Optional: leichter Validierungsbefehl wenn ValidateConnectionWithCommand=true.
+# ─────────────────────────────────────────────────────────────────────────────
+function Test-ExchangeOnlineSession {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    try {
+        $connectionInfo = Get-ExchangeOnlineConnectionInformationInternal
+        if (-not $connectionInfo) { return $false }
+
+        $active = @($connectionInfo | Where-Object {
+                ($_.State -eq 'Connected') -or
+                ($null -ne $_.ConnectionUri -and $_.ConnectionUri -like '*office365.com*')
+            })
+        if ($active.Count -eq 0) { return $false }
+
+        if ($null -ne $Config -or $null -ne $Context) {
+            try {
+                $exoConfig = Get-ExchangeOnlineRemotePowerShellConfig -Config $Config -Context $Context
+                if ($exoConfig.ValidateConnectionWithCommand) {
+                    Invoke-ExchangeOnlineValidationCommandInternal `
+                        -Command $exoConfig.ConnectionValidationCommand `
+                        -ResultSize $exoConfig.ConnectionValidationResultSize | Out-Null
+                }
+            }
+            catch {
+                return $false
+            }
+        }
+
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verbindungsaufbau (App-only, Zertifikat-basiert)
+#
+# Reihenfolge:
+# 1) Konfiguration laden und validieren
+# 2) ExchangeOnlineManagement-Modul sicherstellen
+# 3) Zertifikat lokal prüfen (HasPrivateKey, Ablaufdatum)
+# 4) Connect-ExchangeOnline mit AppId, Organization, CertificateThumbprint
+#
+# Keine interaktive Anmeldung. Keine Secrets im Code.
+# Klare Diagnose bei Private-Key-Fehler "Der Schlüsselsatz ist nicht vorhanden".
+# ─────────────────────────────────────────────────────────────────────────────
+function Connect-ExchangeOnlineSession {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $exoConfig = Get-ExchangeOnlineRemotePowerShellConfig -Config $Config -Context $Context
+
+    Import-ExchangeOnlineManagementModule
+
+    try {
+        Test-ExchangeOnlineCertificate -Thumbprint $exoConfig.CertificateThumbprint | Out-Null
+    }
+    catch {
+        $certMsg = $_.Exception.Message
+        if ($certMsg -match 'private.*Schlüssel|HasPrivateKey|private.*key|keyset|Schlüsselsatz') {
+            throw "Exchange Online App-only Authentication konnte das Zertifikat finden, aber der private Schlüssel ist nicht nutzbar. Thumbprint: '$($exoConfig.CertificateThumbprint)'. Prüfe, ob das Zertifikat als PFX mit Private Key im Zertifikatsspeicher liegt. Prüfe HasPrivateKey. Prüfe Private-Key-Leserecht für das ausführende Servicekonto. Details: $certMsg"
+        }
+        throw
+    }
+
+    $connectParams = @{
+        AppId                 = $exoConfig.AppId
+        CertificateThumbprint = $exoConfig.CertificateThumbprint
+        Organization          = $exoConfig.Organization
+        ShowBanner            = $exoConfig.ShowBanner
+        ErrorAction           = 'Stop'
+    }
+
+    try {
+        Connect-ExchangeOnlineInternal -Parameters $connectParams
+        $script:ExchangeOnlineSessionState.Connected = $true
+    }
+    catch {
+        $script:ExchangeOnlineSessionState.Connected = $false
+        $connectMsg = $_.Exception.Message
+        if ($connectMsg -match 'Schlüsselsatz|keyset does not exist|Der Schlüsselsatz|private.*key|certificate.*private') {
+            throw "Exchange Online App-only Authentication konnte das Zertifikat finden, aber der private Schlüssel ist nicht nutzbar. Thumbprint: '$($exoConfig.CertificateThumbprint)'. Prüfe, ob das Zertifikat als PFX mit Private Key im Zertifikatsspeicher liegt. Prüfe HasPrivateKey. Prüfe Private-Key-Leserecht für das ausführende Servicekonto. Details: $connectMsg"
+        }
+        throw "Exchange Online Connect-ExchangeOnline fehlgeschlagen (Organisation: $($exoConfig.Organization), AppId: $($exoConfig.AppId)). $connectMsg"
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Session sicherstellen (zentraler Einstiegspunkt vor jedem EXO-Befehl)
+#
+# - Wenn Enabled=false: kontrollierten Fehler werfen (via Get-ExchangeOnlineRemotePowerShellConfig)
+# - Wenn ReuseSession=true und aktive Verbindung: wiederverwenden
+# - Sonst: Connect-ExchangeOnlineSession aufrufen
+# - Nach Connect: Verbindung erneut prüfen
+# ─────────────────────────────────────────────────────────────────────────────
+function Ensure-ExchangeOnlineSession {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $exoConfig = Get-ExchangeOnlineRemotePowerShellConfig -Config $Config -Context $Context
+
+    if ($exoConfig.ReuseSession -and (Test-ExchangeOnlineSession -Config $Config -Context $Context)) {
+        return
+    }
+
+    Connect-ExchangeOnlineSession -Config $Config -Context $Context
+
+    if (-not (Test-ExchangeOnlineSession -Config $Config -Context $Context)) {
+        throw 'Exchange Online Verbindung konnte nicht aufgebaut werden. Get-ConnectionInformation liefert nach Connect-ExchangeOnline keine aktive Verbindung.'
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Session beenden (Reset: hart, intern)
+# ─────────────────────────────────────────────────────────────────────────────
+function Reset-ExchangeOnlineSession {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Disconnect-ExchangeOnlineInternal
+    }
+    catch {
+        # Reset muss robust und idempotent sein.
+    }
+    $script:ExchangeOnlineSessionState.Connected = $false
+}
+
+# Öffentliche, robuste Disconnect-Funktion (idempotent).
+function Disconnect-ExchangeOnlineSession {
+    [CmdletBinding()]
+    param()
+
+    try {
+        Reset-ExchangeOnlineSession
+    }
+    catch {
+        # Disconnect muss robust und idempotent sein.
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Zentraler Ausführungs-Wrapper mit Reconnect-Logik
+#
+# Ablauf:
+# 1) Ensure-ExchangeOnlineSession
+# 2) ScriptBlock lokal ausführen (EXO-Cmdlets über Modul verfügbar)
+# 3) Bei EXO-Verbindungsfehler und ReconnectOnFailure=true:
+#    Reset-ExchangeOnlineSession, einmal erneut versuchen
+#
+# Exchange Online Cmdlets werden lokal über ExchangeOnlineManagement bereitgestellt.
+# Kein New-PSSession / Invoke-Command Modell (OnPrem-Muster).
+# ─────────────────────────────────────────────────────────────────────────────
+function Invoke-ExchangeOnlineCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $exoConfig = Get-ExchangeOnlineRemotePowerShellConfig -Config $Config -Context $Context
+    $maxReconnect = [Math]::Max(0, [int]$exoConfig.MaxReconnectAttempts)
+    $totalAttempts = if ($exoConfig.ReconnectOnFailure) { 1 + $maxReconnect } else { 1 }
+
+    for ($attempt = 1; $attempt -le $totalAttempts; $attempt++) {
+        try {
+            Ensure-ExchangeOnlineSession -Config $Config -Context $Context
+            return (& $ScriptBlock)
+        }
+        catch {
+            $errMsg = $_.Exception.Message
+            $isConnErr = $errMsg -match (
+                'not connected|connection.*lost|session.*expired|unauthorized|The pipeline|WinRM|token.*expired|' +
+                'authentication.*failed|Schließen der Pipeline|pipeline.*stopped|Verbindung.*unterbrochen|' +
+                'ExchangeOnline.*Verbindung|cannot.*connect|ConnectExchangeOnline'
+            )
+            $canRetry = $isConnErr -and $exoConfig.ReconnectOnFailure -and ($attempt -lt $totalAttempts)
+            if ($canRetry) {
+                Reset-ExchangeOnlineSession
+                continue
+            }
+            throw "Exchange Online Befehl fehlgeschlagen. $errMsg"
+        }
+    }
+
+    throw 'Exchange Online Befehl fehlgeschlagen nach Reconnect-Versuchen.'
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Öffentliche Gateway-Funktionen
+#
+# Alle Funktionen laufen über Invoke-ExchangeOnlineCommand.
+# Invoke-ExchangeOnlineCommand ruft Ensure-ExchangeOnlineSession auf.
+# Kein Handler und kein Service muss vorher manuell Connect-ExchangeOnline aufrufen.
+#
+# GetNewClosure() bindet die lokalen Variablen im ScriptBlock korrekt,
+# wenn der Block innerhalb von Invoke-ExchangeOnlineCommand ausgeführt wird.
+# ─────────────────────────────────────────────────────────────────────────────
 
 function Get-ExoMailboxSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Identity, [Parameter(Mandatory = $true)][hashtable]$Config)
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null
+    )
 
-    Assert-ExchangeOnlineEnabled -Config $Config
-    if (-not (Get-Command -Name Get-EXOMailbox -ErrorAction SilentlyContinue)) { throw 'Get-EXOMailbox cmdlet unavailable.' }
-    Get-EXOMailbox -Identity $Identity -ErrorAction Stop
+    $capturedIdentity = $Identity
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Get-EXOMailbox -Identity $capturedIdentity -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Set-ExoMailboxSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [Parameter(Mandatory = $true)][hashtable]$Config, [bool]$WhatIfMode = $true)
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
+        [bool]$WhatIfMode = $true
+    )
 
-    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Set-EXOMailbox'; Parameters = $Parameters } }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    if (-not (Get-Command -Name Set-Mailbox -ErrorAction SilentlyContinue)) { throw 'Set-Mailbox cmdlet unavailable for EXO session.' }
-    Set-Mailbox @Parameters -ErrorAction Stop
+    if ($WhatIfMode) {
+        return [pscustomobject]@{ Simulated = $true; Action = 'Set-Mailbox'; Parameters = $Parameters }
+    }
+
+    $capturedParams = $Parameters
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Set-Mailbox @capturedParams -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Get-ExoRecipientSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][string]$Identity, [Parameter(Mandatory = $true)][hashtable]$Config)
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null
+    )
 
-    Assert-ExchangeOnlineEnabled -Config $Config
-    if (-not (Get-Command -Name Get-EXORecipient -ErrorAction SilentlyContinue)) { throw 'Get-EXORecipient cmdlet unavailable.' }
-    Get-EXORecipient -Identity $Identity -ErrorAction Stop
+    $capturedIdentity = $Identity
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Get-EXORecipient -Identity $capturedIdentity -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Add-ExoMailboxPermissionSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [Parameter(Mandatory = $true)][hashtable]$Config, [bool]$WhatIfMode = $true)
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
+        [bool]$WhatIfMode = $true
+    )
 
-    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Add-MailboxPermission'; Parameters = $Parameters } }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    Add-MailboxPermission @Parameters -ErrorAction Stop
+    if ($WhatIfMode) {
+        return [pscustomobject]@{ Simulated = $true; Action = 'Add-MailboxPermission'; Parameters = $Parameters }
+    }
+
+    $capturedParams = $Parameters
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Add-MailboxPermission @capturedParams -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Remove-ExoMailboxPermissionSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [Parameter(Mandatory = $true)][hashtable]$Config, [bool]$WhatIfMode = $true)
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
+        [bool]$WhatIfMode = $true
+    )
 
-    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Remove-MailboxPermission'; Parameters = $Parameters } }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    Remove-MailboxPermission @Parameters -ErrorAction Stop
+    if ($WhatIfMode) {
+        return [pscustomobject]@{ Simulated = $true; Action = 'Remove-MailboxPermission'; Parameters = $Parameters }
+    }
+
+    $capturedParams = $Parameters
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Remove-MailboxPermission @capturedParams -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Add-ExoSendAsPermissionSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [Parameter(Mandatory = $true)][hashtable]$Config, [bool]$WhatIfMode = $true)
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
+        [bool]$WhatIfMode = $true
+    )
 
-    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Add-RecipientPermission'; Parameters = $Parameters } }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    Add-RecipientPermission @Parameters -ErrorAction Stop
+    if ($WhatIfMode) {
+        return [pscustomobject]@{ Simulated = $true; Action = 'Add-RecipientPermission'; Parameters = $Parameters }
+    }
+
+    $capturedParams = $Parameters
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Add-RecipientPermission @capturedParams -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Remove-ExoSendAsPermissionSafe {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][hashtable]$Parameters, [Parameter(Mandatory = $true)][hashtable]$Config, [bool]$WhatIfMode = $true)
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Parameters,
+        [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
+        [bool]$WhatIfMode = $true
+    )
 
-    if ($WhatIfMode) { return [pscustomobject]@{ Simulated = $true; Action = 'Remove-RecipientPermission'; Parameters = $Parameters } }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    Remove-RecipientPermission @Parameters -ErrorAction Stop
+    if ($WhatIfMode) {
+        return [pscustomobject]@{ Simulated = $true; Action = 'Remove-RecipientPermission'; Parameters = $Parameters }
+    }
+
+    $capturedParams = $Parameters
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Remove-RecipientPermission @capturedParams -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 function Set-ExoMailboxManagerSafe {
@@ -98,6 +623,7 @@ function Set-ExoMailboxManagerSafe {
         [Parameter(Mandatory = $true)][string]$Identity,
         [Parameter(Mandatory = $true)][string]$Manager,
         [Parameter(Mandatory = $true)][hashtable]$Config,
+        [object]$Context = $null,
         [bool]$WhatIfMode = $true
     )
 
@@ -110,13 +636,25 @@ function Set-ExoMailboxManagerSafe {
             Target    = 'ExchangeOnline'
         }
     }
-    Assert-ExchangeOnlineEnabled -Config $Config
-    if (-not (Get-Command -Name Set-Mailbox -ErrorAction SilentlyContinue)) { throw 'Set-Mailbox cmdlet unavailable for EXO session.' }
-    Set-Mailbox -Identity $Identity -GrantSendOnBehalfTo @{ Add = $Manager } -ErrorAction Stop
+
+    $capturedIdentity = $Identity
+    $capturedManager = $Manager
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        Set-Mailbox -Identity $capturedIdentity -GrantSendOnBehalfTo @{ Add = $capturedManager } -ErrorAction Stop
+    }.GetNewClosure()
 }
 
 Export-ModuleMember -Function @(
-    'Connect-ExchangeOnlineAutomation',
+    'Set-ExchangeOnlineRuntimeConfig',
+    'Get-ExchangeOnlineRemotePowerShellConfig',
+    'Import-ExchangeOnlineManagementModule',
+    'Test-ExchangeOnlineCertificate',
+    'Test-ExchangeOnlineSession',
+    'Connect-ExchangeOnlineSession',
+    'Ensure-ExchangeOnlineSession',
+    'Reset-ExchangeOnlineSession',
+    'Disconnect-ExchangeOnlineSession',
+    'Invoke-ExchangeOnlineCommand',
     'Get-ExoMailboxSafe',
     'Set-ExoMailboxSafe',
     'Get-ExoRecipientSafe',
