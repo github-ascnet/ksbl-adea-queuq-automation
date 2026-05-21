@@ -1,0 +1,582 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Active-Directory-, Exchange-OnPrem-, SQL-Server-, Hospis-/IAM-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architekturregel bleibt verbindlich:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-, Exchange- oder SQL-Befehle in Handlern.
+Keine fachliche Logik in JobEngine.psm1.
+Keine produktiven Werte hardcoden.
+Keine Legacy-Skripte unkontrolliert umbauen.
+Keine funktionierenden abgeschlossenen Bereiche erneut umbauen.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Implementiere oder vervollständige ausschliesslich den Prozess:
+
+Invoke-InactivateHospisPerson
+HospisPersonService.UrgentInactivation
+
+Ziel ist die vollständige dringende Hospis-Inaktivierung gemäss Legacy-Fachlogik.
+
+Wichtig:
+
+Invoke-UrgentRecipientAttributeChange ist bereits umgesetzt und grün getestet.
+UrgentRecipientService ist bereits umgesetzt und grün getestet.
+Diese beiden Bereiche dürfen nicht erneut umgebaut werden.
+
+Der neue Fokus liegt nur auf der fachlichen Urgent-Inaktivierung einer Hospis-Person.
+
+────────────────────────────────────────
+
+K = Ausgangslage
+
+Der generische UrgentRecipientAttributeChange-Flow ist bereits abgeschlossen:
+
+Invoke-UrgentRecipientAttributeChange
+  → generische AD-/Recipient-Attributänderung
+
+UrgentRecipientService
+  → Allowlist
+  → Set/Clear
+  → AD-Gateway-Nutzung
+
+proxyAddresses
+  → bewusst nicht generisch unterstützt
+  → keine implizite Replace-Semantik
+
+Diese Logik bleibt unverändert.
+
+Jetzt soll die vollständige dringende Hospis-Inaktivierung ergänzt werden.
+
+Die Legacy-Logik macht sinngemäss:
+
+1. AD-Benutzer deaktivieren.
+2. Falls homeMdb gesetzt ist:
+   Mailbox Features / Hidden State auf HIDE setzen, sofern vorhandene Funktion existiert.
+   MailboxAutoReplyConfiguration setzen.
+   EMailRevocations.ValidTo in SQL auf GetDate setzen.
+3. Bestimmte Gruppenmitgliedschaften entfernen:
+   CN=TPL-
+   CN=GG-KSBL-VDI-Remote
+   CN=GG-OneSign
+4. extensionAttribute6 löschen.
+5. msDS-cloudExtensionAttribute15 löschen.
+6. Description setzen:
+   Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+7. Bei ActionType Inaktivieren:
+   SQL Stored Procedure ausführen:
+   usp_create_urgent_inaktivieren_transaction
+
+Wichtig:
+
+TenantState.psm1 bleibt unberührt.
+Set-TenantState darf nicht produktiv verwendet werden.
+Die Entra-Sync-Deaktivierung erfolgt über das Leeren von msDS-cloudExtensionAttribute15 im OnPrem AD.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Die Zielkette soll so aussehen:
+
+Invoke-InactivateHospisPerson
+  → validiert Payload
+  → ruft HospisPersonService.UrgentInactivation auf
+  → gibt strukturiertes JobResult zurück
+
+HospisPersonService.UrgentInactivation
+  → orchestriert die fachlichen Schritte
+  → ruft ActiveDirectoryGateway
+  → ruft ExchangeOnPremGateway
+  → ruft SqlGateway oder HospisSqlService
+  → sammelt Ergebnisse und Fehler
+
+ActiveDirectoryGateway
+  → deaktiviert User
+  → löscht Attribute
+  → setzt Description
+  → entfernt Gruppenmitgliedschaften
+
+ExchangeOnPremGateway
+  → setzt MailboxAutoReplyConfiguration
+  → optional Mailbox Hidden / Feature-State, falls bereits bestehende Funktion existiert
+
+SqlGateway / HospisSqlService
+  → schliesst EMailRevocations
+  → ruft usp_create_urgent_inaktivieren_transaction auf
+
+Nicht erlaubt:
+
+Direkte Set-ADUser-Aufrufe im Handler.
+Direkte Set-MailboxAutoReplyConfiguration-Aufrufe im Handler.
+Direkte Invoke-Sqlcmd-Aufrufe im Handler.
+TenantState.psm1 verändern oder verwenden.
+ExchangeOnlineGateway verwenden.
+Connect-ExchangeOnline verwenden.
+Neue ExchangeOnline-Logik einbauen.
+JobEngine.psm1 ändern.
+usecases.json ändern, ausser ein bestehender offensichtlicher Fehler wird durch Tests nachgewiesen.
+Invoke-UrgentRecipientAttributeChange erneut umbauen.
+UrgentRecipientService erneut umbauen, ausser eine bereits vorhandene Funktion wird nur genutzt.
+
+────────────────────────────────────────
+
+E = Execution
+
+Analysiere zuerst den aktuellen Workspace.
+
+Suche insbesondere nach:
+
+Invoke-InactivateHospisPerson
+HospisPersonService.psm1
+UrgentInactivation
+ActiveDirectoryGateway.psm1
+ExchangeOnPremGateway.psm1
+SqlGateway.psm1
+HospisSqlService
+EMailRevocations
+usp_create_urgent_inaktivieren_transaction
+extensionAttribute6
+msDS-cloudExtensionAttribute15
+homeMdb
+MailboxAutoReplyConfiguration
+CN=TPL-
+CN=GG-KSBL-VDI-Remote
+CN=GG-OneSign
+tests/Pester
+
+Danach implementiere nur fehlende Bestandteile.
+
+────────────────────────────────────────
+
+Handler Invoke-InactivateHospisPerson prüfen
+
+Prüfe, ob Invoke-InactivateHospisPerson bereits existiert.
+
+Der Handler soll:
+
+Context.Payload als Zeilen normalisieren.
+Pflichtfelder validieren.
+Pro Zeile HospisPersonService.UrgentInactivation aufrufen.
+Pro Zeile Ergebnis sammeln.
+Bei allen erfolgreichen Zeilen New-JobSucceededResult zurückgeben.
+Bei mindestens einem Fehler New-JobFailedResult zurückgeben.
+Output mit allen Zeilenresultaten erhalten.
+
+Pflichtfelder anhand bestehender Payload-Konvention prüfen.
+
+Erwartete fachliche Felder können sein:
+
+Identity
+AdObjectName
+PersId
+ActionType
+CurrentUserName
+CurrentUserDomainName
+
+Verwende bestehende Feldnamen und Projektkonventionen. Keine neue CSV-Struktur erfinden.
+
+────────────────────────────────────────
+
+HospisPersonService.UrgentInactivation implementieren
+
+Falls die Funktion noch nicht existiert, ergänze sie im bestehenden HospisPersonService.psm1 oder gemäss Projektstruktur.
+
+Die Funktion soll ein strukturiertes Result pro Person zurückgeben.
+
+Mindest-Properties:
+
+Success
+Identity
+PersId
+ActionType
+Disabled
+MailboxHandled
+AutoReplyConfigured
+EmailRevocationsClosed
+GroupsRemoved
+ExtensionAttribute6Cleared
+CloudExtensionAttribute15Cleared
+DescriptionSet
+UrgentTransactionCreated
+Message
+ErrorCode
+
+Keine rohen Exceptions verlieren.
+
+────────────────────────────────────────
+
+AD User deaktivieren
+
+Der Benutzer muss über ActiveDirectoryGateway deaktiviert werden.
+
+Nicht direkt:
+
+Set-ADUser
+
+Erwartete Gateway-Funktion, falls vorhanden verwenden:
+
+Disable-AdUserSafe
+Set-AdUserSafe
+Update-AdUserSafe
+
+Falls keine passende Funktion existiert, ergänze eine kleine mockbare Gateway-Funktion.
+
+Tests dürfen keine echte AD-Verbindung verwenden.
+
+────────────────────────────────────────
+
+Mailbox-Fall mit homeMdb
+
+Wenn das AD-Objekt oder Payload/Lookup zeigt, dass homeMdb gesetzt ist:
+
+MailboxAutoReplyConfiguration setzen.
+Optional Mailbox Features / State auf HIDE setzen, falls bereits vorhandene Funktion existiert.
+EMailRevocations.ValidTo per SQL schliessen.
+
+Wenn homeMdb nicht gesetzt ist:
+
+keine AutoReply-Konfiguration erzwingen.
+keine mailboxbezogene Exchange-Operation ausführen.
+trotzdem AD-Deaktivierung und Attribut-Clears durchführen.
+
+────────────────────────────────────────
+
+MailboxAutoReplyConfiguration
+
+MailboxAutoReplyConfiguration ist Exchange OnPrem.
+
+Verwende ExchangeOnPremGateway.
+
+Mögliche Gateway-Funktion:
+
+Set-OnPremMailboxAutoReplyConfigurationSafe
+
+Parameter:
+
+Identity
+AutoReplyState
+InternalMessage
+ExternalMessage
+
+AutoReplyState:
+
+Enabled
+
+Die Texte müssen aus Config kommen:
+
+Hospis.AustrittOOOInternalMessage
+Hospis.AustrittOOOExternalMessage
+
+Nicht hardcoden.
+
+Keine ExchangeOnline-Logik verwenden.
+
+────────────────────────────────────────
+
+EMailRevocations SQL Update
+
+Wenn homeMdb gesetzt ist, sollen EMailRevocations geschlossen werden.
+
+Ziel:
+
+EMailRevocations.ValidTo = GetDate
+
+Verwende SqlGateway oder HospisSqlService.
+
+Mögliche Funktion:
+
+Close-HospisEmailRevocations
+
+Parameter:
+
+PersId
+
+SQL Server und Datenbank aus Config lesen.
+
+Keine direkte SQL-Logik im Handler.
+
+Wenn SqlGateway bereits parametrisierte Befehle unterstützt, diese verwenden.
+
+Keine unsichere String-Konkatenation mit Userdaten einbauen.
+
+────────────────────────────────────────
+
+Stored Procedure für urgent inaktivieren
+
+Wenn ActionType = Inaktivieren, soll die Stored Procedure ausgeführt werden:
+
+usp_create_urgent_inaktivieren_transaction
+
+Parameter:
+
+PersId
+CurrentUserDomainName
+CurrentUserName
+
+Verwende SqlGateway oder HospisSqlService.
+
+Mögliche Funktion:
+
+New-HospisUrgentInactivationTransaction
+
+Nicht direkt Invoke-Sqlcmd im Handler.
+
+────────────────────────────────────────
+
+Gruppenmitgliedschaften entfernen
+
+Entferne Gruppenmitgliedschaften, deren DN mit diesen Präfixen beginnt:
+
+CN=TPL-
+CN=GG-KSBL-VDI-Remote
+CN=GG-OneSign
+
+Diese Logik gehört in HospisPersonService.UrgentInactivation, nicht in Invoke-UrgentRecipientAttributeChange.
+
+Verwende ActiveDirectoryGateway oder einen bestehenden GroupMembershipService.
+
+Nicht direkt Remove-ADGroupMember im Handler.
+
+Keine neuen Gruppenpräfixe erfinden.
+
+Falls die Präfixe konfigurierbar im bestehenden Config-Modell möglich sind, nutze Config.
+
+Falls nicht, definiere sie zentral im Service als klar benannte Konstante.
+
+────────────────────────────────────────
+
+Attribute löschen
+
+Lösche über ActiveDirectoryGateway:
+
+extensionAttribute6
+msDS-cloudExtensionAttribute15
+
+Wichtig:
+
+msDS-cloudExtensionAttribute15 ist für Entra-Sync-Steuerung relevant.
+Es wird direkt im AD gelöscht.
+TenantState.psm1 wird nicht verwendet.
+
+Nicht als leeren String setzen, wenn die Gateway-Funktion echte Clear-Operation unterstützt.
+
+────────────────────────────────────────
+
+Description setzen
+
+Setze Description über ActiveDirectoryGateway:
+
+Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+
+Datum im lokalen Laufzeitkontext erzeugen.
+
+Keine neue Template-Engine bauen.
+
+Keine Culture-Abhängigkeit in Tests. Für Tests Datum mockbar oder robust prüfen.
+
+────────────────────────────────────────
+
+TenantState nicht verwenden
+
+TenantState.psm1 bleibt unberührt.
+
+Nicht verwenden:
+
+Get-TenantState
+Set-TenantState
+
+Wenn Legacy-Code Set-TenantState verwendet hat:
+
+nicht übernehmen.
+
+Die aktuelle fachliche Entsprechung ist:
+
+Clear msDS-cloudExtensionAttribute15
+
+über ActiveDirectoryGateway.
+
+────────────────────────────────────────
+
+Fehlerbehandlung
+
+Die Funktion soll pro Person ein strukturiertes Ergebnis liefern.
+
+Wenn ein Schritt fehlschlägt:
+
+Fehler loggen.
+Result.Success = false.
+ErrorCode setzen.
+Message setzen.
+Bereits ausgeführte Schritte im Result erkennbar lassen.
+
+Wenn mehrere Personen verarbeitet werden:
+
+alle Personen verarbeiten, wenn möglich.
+pro Person Ergebnis sammeln.
+Gesamtstatus:
+   alle Success = true → Succeeded
+   mindestens ein Success = false → Failed
+
+Keine bereits gesammelten Output-Zeilen im Failed-Fall verlieren.
+
+────────────────────────────────────────
+
+Pester Tests
+
+Alle Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+Should Not Be
+
+Verwenden:
+
+Should -Be
+Should -Not -Be
+
+Tests dürfen keine echten Zielsysteme aufrufen.
+
+Mocke:
+
+ActiveDirectoryGateway-Funktionen
+ExchangeOnPremGateway-Funktionen
+SqlGateway / HospisSqlService-Funktionen
+Gruppenmitgliedschafts-Funktionen
+Write-Log...
+Set-ADUser
+Remove-ADGroupMember
+Set-MailboxAutoReplyConfiguration
+Invoke-Sqlcmd
+
+Wichtig:
+
+Mocks im richtigen Modul-Scope setzen.
+
+Kein using:-Scope innerhalb InModuleScope verwenden.
+
+Wenn Werte in InModuleScope übergeben werden müssen:
+
+InModuleScope -Parameters verwenden.
+
+────────────────────────────────────────
+
+Tests für Invoke-InactivateHospisPerson
+
+Ergänze oder aktualisiere Tests.
+
+Mindesttests:
+
+Pflichtfelder fehlen → Failed
+eine gültige Zeile → Succeeded
+mehrere gültige Zeilen → Succeeded und Output.Count korrekt
+eine von mehreren Zeilen schlägt fehl → Failed und Output enthält alle Zeilen
+Handler ruft Service, nicht Gateways direkt
+Handler enthält kein Set-ADUser
+Handler enthält kein Set-MailboxAutoReplyConfiguration
+Handler enthält kein Invoke-Sqlcmd
+Handler enthält keine ExchangeOnline-Referenz
+Handler enthält keine TenantState-Referenz
+
+────────────────────────────────────────
+
+Tests für HospisPersonService.UrgentInactivation
+
+Mindesttests:
+
+AD User wird über Gateway deaktiviert.
+Wenn homeMdb gesetzt ist, wird AutoReply über ExchangeOnPremGateway gesetzt.
+AutoReply InternalMessage und ExternalMessage kommen aus Config.
+Wenn homeMdb nicht gesetzt ist, wird AutoReply nicht gesetzt.
+EMailRevocations werden über SQL-/Hospis-Service geschlossen, wenn homeMdb gesetzt ist.
+Gruppen mit CN=TPL- werden entfernt.
+Gruppen mit CN=GG-KSBL-VDI-Remote werden entfernt.
+Gruppen mit CN=GG-OneSign werden entfernt.
+extensionAttribute6 wird gelöscht.
+msDS-cloudExtensionAttribute15 wird gelöscht.
+Description wird im erwarteten Format gesetzt.
+Bei ActionType Inaktivieren wird usp_create_urgent_inaktivieren_transaction ausgelöst.
+TenantState.psm1 wird nicht produktiv aufgerufen.
+ExchangeOnlineGateway wird nicht verwendet.
+Keine echte Exchange- oder SQL-Verbindung wird im Test aufgebaut.
+
+────────────────────────────────────────
+
+Nicht ändern
+
+Nicht ändern:
+
+Invoke-UrgentRecipientAttributeChange
+UrgentRecipientService
+TenantState.psm1
+ExchangeOnlineGateway
+HybridMailboxResolver
+Resolve-MailboxExecutionContext
+JobEngine.psm1
+JobFileQueue.psm1
+Queue-Mechanik
+OutputJson
+CorrelationId
+ExternalCorrelationId
+MailNotification
+DFSN/HomeDirectory
+Backfeed-Struktur
+usecases.json, ausser ein Test zeigt eine offensichtlich falsche Referenz
+Legacy-Skripte
+produktive Environment-Dateien
+
+Keine neuen produktiven Config-Werte in appsettings.json einfügen.
+
+Produktive Werte gehören in environments.onprem.json oder environments.hybrid.json, falls überhaupt nötig.
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Welche TODOs bearbeitet wurden
+Was in Invoke-InactivateHospisPerson umgesetzt wurde
+Was in HospisPersonService.UrgentInactivation umgesetzt wurde
+Wie AD User deaktiviert werden
+Wie extensionAttribute6 gelöscht wird
+Wie msDS-cloudExtensionAttribute15 gelöscht wird
+Wie Description gesetzt wird
+Wie MailboxAutoReplyConfiguration umgesetzt wird
+Wie SQL EMailRevocations geschlossen werden
+Wie usp_create_urgent_inaktivieren_transaction ausgelöst wird
+Welche Gruppenmitgliedschaften entfernt werden
+Bestätigung, dass TenantState.psm1 unverändert blieb
+Bestätigung, dass keine ExchangeOnline-Logik eingeführt wurde
+Bestätigung, dass Invoke-UrgentRecipientAttributeChange nicht erneut umgebaut wurde
+Welche Tests ergänzt wurden
+Pester-Ergebnis
+Verbleibende Risiken oder offene Punkte
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Der Legacy-Code wird jetzt nur für die vollständige dringende Hospis-Inaktivierung migriert.
+
+Invoke-UrgentRecipientAttributeChange bleibt unverändert und ist nicht Teil dieses Umbaus.
+
+Invoke-InactivateHospisPerson beziehungsweise HospisPersonService.UrgentInactivation ist für die vollständige dringende Inaktivierung zuständig.
+
+TenantState.psm1 bleibt unberührt.
+
+msDS-cloudExtensionAttribute15 wird direkt über ActiveDirectoryGateway gelöscht, wenn die Entra-Sync-Deaktivierung im Urgent-Prozess erforderlich ist.
+
+Exchange Online wird in diesem Prozess nicht verwendet.
