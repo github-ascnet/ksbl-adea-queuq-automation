@@ -106,6 +106,28 @@ BeforeAll {
         }
     }
 
+    function New-TestAdMailbox {
+        param(
+            [string]$Sam = 'user',
+            [string]$Upn = 'user@example.org',
+            [string]$Mail = 'user@example.org',
+            [string]$HomeMdb = '',
+            [string]$TargetAddress = '',
+            [string]$RemoteRecipientType = '',
+            [string]$RecipientTypeDetails = ''
+        )
+        [pscustomobject]@{
+            SamAccountName = $Sam
+            userPrincipalName = $Upn
+            mail = $Mail
+            homeMDB = $HomeMdb
+            targetAddress = $TargetAddress
+            msExchRemoteRecipientType = $RemoteRecipientType
+            msExchRecipientTypeDetails = $RecipientTypeDetails
+            distinguishedName = "CN=$Sam,OU=Users,DC=example,DC=org"
+        }
+    }
+
     # Preset resolver snapshots (used in MockWith scriptblocks via $script: scope)
 
     # UserMailbox — on-prem mailbox; all operations stay on-prem
@@ -221,16 +243,16 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
 
     Context 'UserMailbox (on-prem)' {
         It 'returns FeatureAuthority=OnPremExchange for UserMailbox' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'UserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -HomeMdb 'MDB1' -RecipientTypeDetails '1'
             }
             $result = Resolve-MailboxExecutionContext -Identity 'user@example.org' -Config @{}
             $result.FeatureAuthority | Should -Be 'OnPremExchange'
         }
 
         It 'returns RecommendedAction=Execute and IsSynchronized=false for UserMailbox' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'UserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -HomeMdb 'MDB1' -RecipientTypeDetails '1'
             }
             $result = Resolve-MailboxExecutionContext -Identity 'user@example.org' -Config @{}
             $result.RecommendedAction | Should -Be 'Execute'
@@ -241,16 +263,16 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
 
     Context 'RemoteUserMailbox (on-prem proxy, mailbox in EXO)' {
         It 'returns FeatureAuthority=OnPremExchange for RemoteUserMailbox' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'RemoteUserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:remote@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '2147483648'
             }
             $result = Resolve-MailboxExecutionContext -Identity 'remote@example.org' -Config @{}
             $result.FeatureAuthority | Should -Be 'OnPremExchange'
         }
 
         It 'returns IsSynchronized=true, PermissionAuthority=ExchangeOnline, RecommendedAction=Execute for RemoteUserMailbox' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'RemoteUserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:remote@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '2147483648'
             }
             $result = Resolve-MailboxExecutionContext -Identity 'remote@example.org' -Config @{}
             $result.IsSynchronized      | Should -Be $true
@@ -259,8 +281,8 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
         }
 
         It 'does NOT trigger EXO lookup for RemoteUserMailbox (EXO enabled but no EXO call expected)' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'RemoteUserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:remote@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '2147483648'
             }
             Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe {}
             $cfg = @{ ExchangeOnline = @{ Enabled = $true } }
@@ -272,12 +294,12 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
 
     Context 'EXO-only object (no on-prem proxy)' {
         It 'returns FeatureAuthority=ExchangeOnline and IsCloudOnly=true for EXO-only object' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe { $null }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject { @() }
             Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'UserMailbox' }
             }
             $cfg = @{ ExchangeOnline = @{ Enabled = $true } }
-            $result = Resolve-MailboxExecutionContext -Identity 'exo@example.org' -Config $cfg
+            $result = Resolve-MailboxExecutionContext -Identity 'exo@example.org' -Config $cfg -Mode ValidateRemote
             $result.FeatureAuthority | Should -Be 'ExchangeOnline'
             $result.IsCloudOnly      | Should -Be $true
             $result.IdentityAuthority| Should -Be 'ExchangeOnline'
@@ -286,8 +308,7 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext — FeatureAutho
 
     Context 'Object not found anywhere' {
         It 'returns FeatureAuthority=Unknown and RecommendedAction=Fail when not found' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe { $null }
-            Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe { $null }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject { @() }
             $cfg = @{ ExchangeOnline = @{ Enabled = $true } }
             $result = Resolve-MailboxExecutionContext -Identity 'nobody@example.org' -Config $cfg
             $result.FeatureAuthority  | Should -Be 'Unknown'

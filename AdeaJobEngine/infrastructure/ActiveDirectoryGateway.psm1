@@ -6,6 +6,19 @@ function Assert-AdModuleAvailable {
     }
 }
 
+function ConvertTo-LdapFilterValue {
+    param([AllowNull()][string]$Value)
+
+    if ($null -eq $Value) { return '' }
+
+    $escaped = $Value -replace '\\', '\5c'
+    $escaped = $escaped -replace '\*', '\2a'
+    $escaped = $escaped -replace '\(', '\28'
+    $escaped = $escaped -replace '\)', '\29'
+    $escaped = $escaped -replace [char]0, '\00'
+    $escaped
+}
+
 function Get-AdUserSafe {
     [CmdletBinding()]
     param(
@@ -219,6 +232,34 @@ function Get-AdSamAccountNamesByPrefix {
     @($users | ForEach-Object { $_.sAMAccountName } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Get-MailboxExecutionAdObject {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [string[]]$Properties = @(
+            'distinguishedName',
+            'objectGUID',
+            'sAMAccountName',
+            'userPrincipalName',
+            'mail',
+            'proxyAddresses',
+            'targetAddress',
+            'homeMDB',
+            'msExchRecipientTypeDetails',
+            'msExchRemoteRecipientType',
+            'msExchMailboxGuid',
+            'msExchArchiveGuid',
+            'msExchHideFromAddressLists'
+        )
+    )
+
+    $escaped = ConvertTo-LdapFilterValue -Value $Identity
+    $filter = "(&(objectCategory=person)(objectClass=user)(|(samaccountname=$escaped)(userprincipalname=$escaped)(mail=$escaped)(proxyAddresses=smtp:$escaped)(proxyAddresses=SMTP:$escaped)(distinguishedName=$escaped)))"
+
+    $results = Search-AdUserByLdapFilterSafe -LdapFilter $filter -Properties $Properties
+    @($results)
+}
+
 function Remove-AdGroupMemberSafe {
     [CmdletBinding()]
     param(
@@ -252,6 +293,7 @@ Export-ModuleMember -Function @(
     'Get-AdUserBySamAccountNameSafe',
     'Get-AdUsersByEmployeeIdSafe',
     'Get-AdSamAccountNamesByPrefix',
+    'Get-MailboxExecutionAdObject',
     'Search-AdUserByLdapFilterSafe',
     'Set-AdUserSafe',
     'New-AdUserSafe',

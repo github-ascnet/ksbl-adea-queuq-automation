@@ -62,6 +62,28 @@ BeforeAll {
         }
     }
 
+    function New-TestAdMailbox {
+        param(
+            [string]$Sam = 'gmb-test',
+            [string]$Upn = 'gmb-test@example.org',
+            [string]$Mail = 'gmb-test@example.org',
+            [string]$HomeMdb = '',
+            [string]$TargetAddress = '',
+            [string]$RemoteRecipientType = '',
+            [string]$RecipientTypeDetails = ''
+        )
+        [pscustomobject]@{
+            SamAccountName = $Sam
+            userPrincipalName = $Upn
+            mail = $Mail
+            homeMDB = $HomeMdb
+            targetAddress = $TargetAddress
+            msExchRemoteRecipientType = $RemoteRecipientType
+            msExchRecipientTypeDetails = $RecipientTypeDetails
+            distinguishedName = "CN=$Sam,OU=Groups,DC=example,DC=org"
+        }
+    }
+
     function New-FmaRow {
         param(
             [string]$AdObjectName      = 'gmb-shared',
@@ -125,8 +147,8 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
 
     Context 'On-Prem SharedMailbox (EXO disabled)' {
         It 'returns OnPremExchange authority with Execute action' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'SharedMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -HomeMdb 'MDB1' -RecipientTypeDetails '4'
             }
             $config = @{ ExchangeOnline = @{ Enabled = $false } }
             $result = Resolve-MailboxExecutionContext -Identity 'gmb-test' -Config $config
@@ -138,29 +160,29 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
 
     Context 'RemoteSharedMailbox — EXO enabled and EXO mailbox found' {
         It 'returns ExchangeOnline authority with Execute action' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
-            }
-            Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'UserMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:gmb-test@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '34359738368'
             }
             $config = @{ ExchangeOnline = @{ Enabled = $true; AppId = 'x'; CertThumbprint = 'x'; Organization = 'x'; TenantDomain = 'x' } }
             $result = Resolve-MailboxExecutionContext -Identity 'gmb-test' -Config $config
             $result.PermissionAuthority    | Should -Be 'ExchangeOnline'
             $result.RecommendedAction      | Should -Be 'Execute'
             $result.IsMigrationTransient   | Should -Be $false
-            $result.ExistsInExchangeOnline | Should -Be $true
+            $result.ExistsOnPrem            | Should -Be $true
         }
     }
 
     Context 'RemoteSharedMailbox — EXO enabled but EXO mailbox not yet visible (transient)' {
         It 'returns ExchangeOnline authority with Retry action and IsMigrationTransient true' {
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:gmb-test@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '34359738368'
+            }
             Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
             }
             Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe { $null }
             $config = @{ ExchangeOnline = @{ Enabled = $true; AppId = 'x'; CertThumbprint = 'x'; Organization = 'x'; TenantDomain = 'x' } }
-            $result = Resolve-MailboxExecutionContext -Identity 'gmb-test' -Config $config
+            $result = Resolve-MailboxExecutionContext -Identity 'gmb-test' -Config $config -Mode ValidateRemote
             $result.PermissionAuthority  | Should -Be 'ExchangeOnline'
             $result.RecommendedAction    | Should -Be 'Retry'
             $result.IsMigrationTransient | Should -Be $true
@@ -170,8 +192,8 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
 
     Context 'RemoteSharedMailbox — EXO disabled' {
         It 'returns ExchangeOnline authority with Fail action' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe {
-                [pscustomobject]@{ RecipientTypeDetails = 'RemoteSharedMailbox' }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject {
+                New-TestAdMailbox -TargetAddress 'SMTP:gmb-test@test.onmicrosoft.com' -RemoteRecipientType '1' -RecipientTypeDetails '34359738368'
             }
             $config = @{ ExchangeOnline = @{ Enabled = $false } }
             $result = Resolve-MailboxExecutionContext -Identity 'gmb-test' -Config $config
@@ -182,27 +204,28 @@ Describe 'HybridMailboxResolver.Resolve-MailboxExecutionContext' {
 
     Context 'Not found anywhere' {
         It 'returns Unknown authority with Fail action' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe { $null }
-            Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe    { $null }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject { @() }
             $config = @{ ExchangeOnline = @{ Enabled = $true; AppId = 'x'; CertThumbprint = 'x'; Organization = 'x'; TenantDomain = 'x' } }
             $result = Resolve-MailboxExecutionContext -Identity 'missing' -Config $config
             $result.PermissionAuthority | Should -Be 'Unknown'
             $result.RecommendedAction   | Should -Be 'Fail'
+            $result.ErrorCode           | Should -Be 'NotFound'
         }
     }
 
     Context 'EXO-only mailbox (no on-prem object)' {
         It 'returns ExchangeOnline authority with Execute action' {
-            Mock -ModuleName 'HybridMailboxResolver' Get-OnPremRecipientSafe { $null }
+            Mock -ModuleName 'HybridMailboxResolver' Get-MailboxExecutionAdObject { @() }
             Mock -ModuleName 'HybridMailboxResolver' Get-ExoRecipientSafe {
                 [pscustomobject]@{ RecipientTypeDetails = 'UserMailbox' }
             }
             $config = @{ ExchangeOnline = @{ Enabled = $true; AppId = 'x'; CertThumbprint = 'x'; Organization = 'x'; TenantDomain = 'x' } }
-            $result = Resolve-MailboxExecutionContext -Identity 'cloud-only' -Config $config
+            $result = Resolve-MailboxExecutionContext -Identity 'cloud-only' -Config $config -Mode ValidateRemote
             $result.PermissionAuthority    | Should -Be 'ExchangeOnline'
             $result.RecommendedAction      | Should -Be 'Execute'
             $result.ExistsOnPrem           | Should -Be $false
             $result.ExistsInExchangeOnline | Should -Be $true
+            $result.IsCloudOnly             | Should -Be $true
         }
     }
 }
