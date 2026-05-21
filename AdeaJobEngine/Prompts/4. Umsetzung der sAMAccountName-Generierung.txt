@@ -608,7 +608,6 @@ Wie die On-Prem-AD-Suche gekapselt wurde
 Bestätigung, dass nur On-Prem AD als Master verwendet wird
 Bestätigung, dass Exchange Online, Entra ID, M365 und SQL nicht verwendet werden
 Welche Tests ergänzt wurden
-Pester-Ergebnis
 Verbleibende Risiken oder offene Punkte
 
 ────────────────────────────────────────

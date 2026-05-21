@@ -203,6 +203,22 @@ function Get-AdUsersByEmployeeIdSafe {
     Get-ADUser @params
 }
 
+function Get-AdSamAccountNamesByPrefix {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Prefix
+    )
+
+    Assert-AdModuleAvailable
+    Import-Module ActiveDirectory -ErrorAction Stop
+
+    $filter = "(&(samAccountType=805306368)(samAccountName=$Prefix*))"
+    $users = Get-ADUser -LDAPFilter $filter -Properties 'sAMAccountName' -ErrorAction Stop
+    if (-not $users) { return @() }
+
+    @($users | ForEach-Object { $_.sAMAccountName } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
 function Remove-AdGroupMemberSafe {
     [CmdletBinding()]
     param(
@@ -235,6 +251,7 @@ Export-ModuleMember -Function @(
     'Get-AdUserSafe',
     'Get-AdUserBySamAccountNameSafe',
     'Get-AdUsersByEmployeeIdSafe',
+    'Get-AdSamAccountNamesByPrefix',
     'Search-AdUserByLdapFilterSafe',
     'Set-AdUserSafe',
     'New-AdUserSafe',
