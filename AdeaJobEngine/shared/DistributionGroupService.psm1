@@ -270,6 +270,93 @@ function Set-DistributionGroupManager {
     }
 }
 
+function Update-DistributionGroupManagedByMembers {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][psobject]$Data
+    )
+
+    $groupIdentity = if ($Data.PSObject.Properties['GroupIdentity']) { [string]$Data.GroupIdentity } else { [string]$Data.AdObjectName }
+    $ownerValue = if ($Data.PSObject.Properties['OwnerIdentity']) { $Data.OwnerIdentity } else { $Data.ManagedByMembers }
+
+    if ([string]::IsNullOrWhiteSpace($groupIdentity)) {
+        return [pscustomobject]@{
+            Success       = $false
+            Changed       = $false
+            GroupIdentity = $groupIdentity
+            Message       = 'GroupIdentity is required.'
+            ErrorCode     = 'DISTRIBUTION_GROUP_OWNER_INVALID_INPUT'
+        }
+    }
+
+    $tokens = @()
+    if ($ownerValue -is [System.Collections.IEnumerable] -and -not ($ownerValue -is [string])) {
+        $tokens = @($ownerValue)
+    }
+    else {
+        $tokens = @([string]$ownerValue -split '!' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+
+    if (-not $tokens -or $tokens.Count -eq 0) {
+        return [pscustomobject]@{
+            Success       = $false
+            Changed       = $false
+            GroupIdentity = $groupIdentity
+            Message       = 'OwnerIdentity must contain at least one [ADD] or [DEL] token.'
+            ErrorCode     = 'DISTRIBUTION_GROUP_OWNER_INVALID_INPUT'
+        }
+    }
+
+    $operations = @()
+    $errors = @()
+
+    foreach ($token in $tokens) {
+        try {
+            $parsed = ConvertFrom-LegacyDistributionActionToken -Token $token
+            if ($null -eq $parsed) { continue }
+
+            if ($parsed.Action -eq 'ADD') {
+                Set-OnPremDistributionGroupSafe -Parameters @{ Identity = $groupIdentity; ManagedBy = @{ Add = $parsed.Value }; BypassSecurityGroupManagerCheck = $true } -WhatIfMode:$Context.WhatIfMode | Out-Null
+                $operations += "ManagedBy ADD $($parsed.Value)"
+                Write-LogInfo -Logger $Context.Logger -Message "DistributionGroup.ManagedBy ADD '$($parsed.Value)' on '$groupIdentity'."
+            }
+            else {
+                Set-OnPremDistributionGroupSafe -Parameters @{ Identity = $groupIdentity; ManagedBy = @{ Remove = $parsed.Value }; BypassSecurityGroupManagerCheck = $true } -WhatIfMode:$Context.WhatIfMode | Out-Null
+                $operations += "ManagedBy DEL $($parsed.Value)"
+                Write-LogInfo -Logger $Context.Logger -Message "DistributionGroup.ManagedBy DEL '$($parsed.Value)' on '$groupIdentity'."
+            }
+        }
+        catch {
+            $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+            $errors += $message
+            Write-LogError -Logger $Context.Logger -Message "Failed to update ManagedBy on '$groupIdentity' for token '$token'. $message" -Exception $_.Exception
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+        return [pscustomobject]@{
+            Success       = $false
+            Changed       = ($operations.Count -gt 0)
+            GroupIdentity = $groupIdentity
+            Operations    = $operations
+            Message       = "ManagedBy updates failed for $($errors.Count) token(s)."
+            ErrorCode     = 'DISTRIBUTION_GROUP_OWNER_CHANGE_FAILED'
+            Errors        = $errors
+        }
+    }
+
+    return [pscustomobject]@{
+        Success       = $true
+        Changed       = ($operations.Count -gt 0)
+        Simulated     = $Context.WhatIfMode
+        GroupIdentity = $groupIdentity
+        Operations    = $operations
+        Message       = "ManagedBy updates completed for '$groupIdentity'."
+        ErrorCode     = $null
+    }
+}
+
 function New-DistributionGroupFromRequest {
     [CmdletBinding()]
     param(
@@ -507,4 +594,4 @@ function Remove-DistributionGroupFromRequest {
     }
 }
 
-Export-ModuleMember -Function @('Add-DistributionListResponsibles', 'Set-DistributionGroupManager', 'New-DistributionGroupFromRequest', 'Remove-DistributionGroupFromRequest')
+Export-ModuleMember -Function @('Add-DistributionListResponsibles', 'Set-DistributionGroupManager', 'Update-DistributionGroupManagedByMembers', 'New-DistributionGroupFromRequest', 'Remove-DistributionGroupFromRequest')
