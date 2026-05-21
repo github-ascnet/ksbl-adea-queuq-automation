@@ -228,6 +228,22 @@ function Remove-ExchangeOnPremPSSessionInternal {
     Remove-PSSession -Session $Session -ErrorAction SilentlyContinue
 }
 
+function Import-ExchangeConnectionHealthModuleInternal {
+    [CmdletBinding()]
+    param()
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'ExchangeConnectionHealth.psm1') -ErrorAction Stop
+}
+
+function Ensure-ExchangeConnectionHealthModule {
+    [CmdletBinding()]
+    param()
+
+    $loaded = Get-Module -Name ExchangeConnectionHealth -ErrorAction SilentlyContinue
+    if (-not $loaded) {
+        Import-ExchangeConnectionHealthModuleInternal
+    }
+}
+
 # Stellt eine neue Exchange-OnPrem-Remote-PowerShell-Session her und cached sie.
 #
 # Standardmodus:
@@ -1048,6 +1064,143 @@ function Set-OnPremRemoteMailboxSafe {
     Set-RemoteMailbox @Parameters -ErrorAction Stop
 }
 
+# Health- und Diagnosefunktion fuer Exchange On-Prem
+#
+# - Baut keine Verbindung auf, ausser EnsureConnected ist gesetzt.
+# - Prueft Konfiguration, Sessionstatus und optional einen leichten Remote-Check.
+# - Keine produktiven Aenderungen.
+function Test-ExchangeOnPremConnectionHealth {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null,
+        [switch]$EnsureConnected,
+        [switch]$ValidateCommand
+    )
+
+    Ensure-ExchangeConnectionHealthModule
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $checkedAt = Get-ExchangeConnectionCurrentTimeInternal
+
+    $target = 'ExchangeOnPrem'
+    $connectionType = 'RemotePowerShellInvokeCommand'
+
+    $effectiveConfig = $null
+    if ($Context -and (Test-ConfigKey -Source $Context -Key 'Config')) {
+        $effectiveConfig = Get-ConfigNode -Source $Context -Key 'Config'
+    }
+    elseif ($Config) {
+        $effectiveConfig = $Config
+    }
+    elseif ($script:ExchangeOnPremSessionState.RuntimeConfig) {
+        $effectiveConfig = $script:ExchangeOnPremSessionState.RuntimeConfig
+    }
+
+    if (-not $effectiveConfig) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'NotConfigured' `
+            -Message 'Exchange On-Prem configuration missing.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $exchangeOnPrem = Get-ConfigNode -Source $effectiveConfig -Key 'ExchangeOnPrem'
+    if (-not $exchangeOnPrem) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'NotConfigured' `
+            -Message "Exchange On-Prem configuration section 'ExchangeOnPrem' missing." -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $remotePowerShell = Get-ConfigNode -Source $exchangeOnPrem -Key 'RemotePowerShell'
+    if (-not $remotePowerShell) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'NotConfigured' `
+            -Message "Exchange On-Prem configuration section 'ExchangeOnPrem.RemotePowerShell' missing." -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $enabled = [bool](Get-ConfigValue -Source $remotePowerShell -Key 'Enabled' -Default $false)
+    if (-not $enabled) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'Disabled' `
+            -Message 'Exchange On-Prem RemotePowerShell disabled by configuration.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $user = [string](Get-ConfigValue -Source $remotePowerShell -Key 'User' -Default '')
+    $connectionUri = [string](Get-ConfigValue -Source $remotePowerShell -Key 'ConnectionUri' -Default '')
+
+    $session = $script:ExchangeOnPremSessionState.Session
+    if ($EnsureConnected.IsPresent) {
+        try {
+            $session = Get-ExchangeOnPremSession -Config $Config -Context $Context
+        }
+        catch {
+            return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+                -Enabled $true -IsConnected $false -IsUsable $false -Status 'Failed' `
+                -Message $_.Exception.Message -CheckedAt $checkedAt `
+                -DurationMilliseconds $stopwatch.ElapsedMilliseconds -User $user -ConnectionUri $connectionUri
+        }
+    }
+
+    if (-not $session) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $true -IsConnected $false -IsUsable $false -Status 'NotConnected' `
+            -Message 'No active Exchange On-Prem session.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds -User $user -ConnectionUri $connectionUri
+    }
+
+    $state = $session.State
+    if ($state -ne 'Opened') {
+        $status = if ($state -eq 'Broken') { 'Unusable' } else { 'NotConnected' }
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $true -IsConnected $false -IsUsable $false -Status $status `
+            -Message "Exchange On-Prem session state: $state" -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds -User $user -ConnectionUri $connectionUri `
+            -SessionState $state
+    }
+
+    if ($ValidateCommand.IsPresent) {
+        try {
+            Invoke-ExchangeOnPremCommandInternal -Session $session -ScriptBlock { Get-Command Get-Mailbox } -ArgumentList @() | Out-Null
+        }
+        catch {
+            return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+                -Enabled $true -IsConnected $true -IsUsable $false -Status 'Unusable' `
+                -Message $_.Exception.Message -CheckedAt $checkedAt `
+                -DurationMilliseconds $stopwatch.ElapsedMilliseconds -User $user -ConnectionUri $connectionUri `
+                -SessionState $state
+        }
+    }
+
+    $createdAt = $null
+    $lastUsedAt = $null
+    if ($script:ExchangeOnPremSessionState.SessionInfo) {
+        $createdAt = $script:ExchangeOnPremSessionState.SessionInfo.CreatedAt
+        $lastUsedAt = $script:ExchangeOnPremSessionState.SessionInfo.LastUsedAt
+    }
+
+    $resultParams = @{
+        Target               = $target
+        ConnectionType       = $connectionType
+        Enabled              = $true
+        IsConnected          = $true
+        IsUsable             = $true
+        Status               = 'Connected'
+        Message              = 'Exchange On-Prem session is active.'
+        CheckedAt            = $checkedAt
+        DurationMilliseconds = $stopwatch.ElapsedMilliseconds
+        User                 = $user
+        ConnectionUri        = $connectionUri
+        SessionState         = $state
+    }
+    if ($null -ne $createdAt) { $resultParams['CreatedAt'] = $createdAt }
+    if ($null -ne $lastUsedAt) { $resultParams['LastUsedAt'] = $lastUsedAt }
+
+    return New-ExchangeConnectionHealthResult @resultParams
+}
+
 
 Export-ModuleMember -Function @(
     'Set-ExchangeOnPremRuntimeConfig',
@@ -1057,6 +1210,7 @@ Export-ModuleMember -Function @(
     'Test-ExchangeOnPremSession',
     'Get-ExchangeOnPremSession',
     'Invoke-ExchangeOnPremCommand',
+    'Test-ExchangeOnPremConnectionHealth',
     'Reset-ExchangeOnPremSession',
     'Disconnect-ExchangeOnPremSession',
     'Get-OnPremMailboxSafe',

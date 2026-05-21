@@ -133,6 +133,22 @@ function Get-EXODateInternal {
     Get-Date
 }
 
+function Import-ExchangeConnectionHealthModuleInternal {
+    [CmdletBinding()]
+    param()
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'ExchangeConnectionHealth.psm1') -ErrorAction Stop
+}
+
+function Ensure-ExchangeConnectionHealthModule {
+    [CmdletBinding()]
+    param()
+
+    $loaded = Get-Module -Name ExchangeConnectionHealth -ErrorAction SilentlyContinue
+    if (-not $loaded) {
+        Import-ExchangeConnectionHealthModuleInternal
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Konfiguration lesen und validieren
 #
@@ -484,6 +500,161 @@ function Invoke-ExchangeOnlineCommand {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Health- und Diagnosefunktion fuer Exchange Online
+#
+# - Baut keine Verbindung auf, ausser EnsureConnected ist gesetzt.
+# - Prueft Modulverfuegbarkeit, Zertifikat und ConnectionInformation.
+# - Optional: validiert eine leichte EXO-Abfrage mit ValidateCommand.
+#
+# Liefert ein ExchangeConnectionHealth-Resultobjekt.
+# ─────────────────────────────────────────────────────────────────────────────
+function Test-ExchangeOnlineConnectionHealth {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null,
+        [switch]$EnsureConnected,
+        [switch]$ValidateCommand
+    )
+
+    Ensure-ExchangeConnectionHealthModule
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $checkedAt = Get-ExchangeConnectionCurrentTimeInternal
+
+    $target = 'ExchangeOnline'
+    $connectionType = 'ExchangeOnlineManagementAppOnly'
+
+    $effectiveConfig = $null
+    if ($null -ne $Context -and (Test-EXOConfigKey -Source $Context -Key 'Config')) {
+        $effectiveConfig = Get-EXOConfigNode -Source $Context -Key 'Config'
+    }
+    elseif ($null -ne $Config) {
+        $effectiveConfig = $Config
+    }
+    elseif ($null -ne $script:ExchangeOnlineSessionState.RuntimeConfig) {
+        $effectiveConfig = $script:ExchangeOnlineSessionState.RuntimeConfig
+    }
+
+    if (-not $effectiveConfig) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'NotConfigured' `
+            -Message 'Exchange Online configuration missing.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $exoNode = Get-EXOConfigNode -Source $effectiveConfig -Key 'ExchangeOnline'
+    if (-not $exoNode) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'NotConfigured' `
+            -Message "Exchange Online configuration section 'ExchangeOnline' missing." -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $enabled = [bool](Get-EXOConfigValue -Source $exoNode -Key 'Enabled' -Default $false)
+    if (-not $enabled) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $false -IsConnected $false -IsUsable $false -Status 'Disabled' `
+            -Message 'Exchange Online disabled by configuration.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds
+    }
+
+    $appId = [string](Get-EXOConfigValue -Source $exoNode -Key 'AppId' -Default '')
+    $organization = [string](Get-EXOConfigValue -Source $exoNode -Key 'Organization' -Default '')
+    $tenantDomain = [string](Get-EXOConfigValue -Source $exoNode -Key 'TenantDomain' -Default '')
+    $effectiveOrg = if (-not [string]::IsNullOrWhiteSpace($organization)) { $organization } else { $tenantDomain }
+    $thumbprint = [string](Get-EXOConfigValue -Source $exoNode -Key 'CertificateThumbprint' -Default '')
+
+    $moduleLoaded = Get-ExchangeOnlineModuleInternal
+    $moduleAvailable = Get-ExchangeOnlineModuleAvailableInternal
+    if (-not $moduleLoaded -and -not $moduleAvailable) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $true -IsConnected $false -IsUsable $false -Status 'MissingModule' `
+            -Message 'ExchangeOnlineManagement module not installed.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds -Organization $effectiveOrg -AppId $appId
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($thumbprint)) {
+        try {
+            Test-ExchangeOnlineCertificate -Thumbprint $thumbprint | Out-Null
+        }
+        catch {
+            $msg = $_.Exception.Message
+            $status = 'Failed'
+            if ($msg -match 'nicht gefunden') { $status = 'CertificateMissing' }
+            elseif ($msg -match 'private.*Schluessel|private.*key|HasPrivateKey|Schlüssel') { $status = 'CertificatePrivateKeyMissing' }
+            elseif ($msg -match 'abgelaufen') { $status = 'CertificateExpired' }
+
+            return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+                -Enabled $true -IsConnected $false -IsUsable $false -Status $status `
+                -Message $msg -CheckedAt $checkedAt -DurationMilliseconds $stopwatch.ElapsedMilliseconds `
+                -Organization $effectiveOrg -AppId $appId -CertificateThumbprint $thumbprint
+        }
+    }
+
+    if ($EnsureConnected.IsPresent) {
+        try {
+            Ensure-ExchangeOnlineSession -Config $Config -Context $Context
+        }
+        catch {
+            return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+                -Enabled $true -IsConnected $false -IsUsable $false -Status 'Failed' `
+                -Message $_.Exception.Message -CheckedAt $checkedAt `
+                -DurationMilliseconds $stopwatch.ElapsedMilliseconds -Organization $effectiveOrg `
+                -AppId $appId -CertificateThumbprint $thumbprint
+        }
+    }
+
+    $connectionInfo = $null
+    try {
+        $connectionInfo = Get-ExchangeOnlineConnectionInformationInternal
+    }
+    catch {
+        $connectionInfo = $null
+    }
+
+    $active = @()
+    if ($connectionInfo) {
+        $active = @($connectionInfo | Where-Object {
+                ($_.State -eq 'Connected') -or
+                ($null -ne $_.ConnectionUri -and $_.ConnectionUri -like '*office365.com*')
+            })
+    }
+
+    if ($active.Count -eq 0) {
+        return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+            -Enabled $true -IsConnected $false -IsUsable $false -Status 'NotConnected' `
+            -Message 'No active Exchange Online connection.' -CheckedAt $checkedAt `
+            -DurationMilliseconds $stopwatch.ElapsedMilliseconds -Organization $effectiveOrg `
+            -AppId $appId -CertificateThumbprint $thumbprint
+    }
+
+    if ($ValidateCommand.IsPresent) {
+        $validationCmd = [string](Get-EXOConfigValue -Source $exoNode -Key 'ConnectionValidationCommand' -Default 'Get-EXORecipient')
+        $validationSize = [int](Get-EXOConfigValue -Source $exoNode -Key 'ConnectionValidationResultSize' -Default 1)
+        try {
+            Invoke-ExchangeOnlineValidationCommandInternal -Command $validationCmd -ResultSize $validationSize | Out-Null
+        }
+        catch {
+            return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+                -Enabled $true -IsConnected $true -IsUsable $false -Status 'Unusable' `
+                -Message $_.Exception.Message -CheckedAt $checkedAt -DurationMilliseconds $stopwatch.ElapsedMilliseconds `
+                -Organization $effectiveOrg -AppId $appId -CertificateThumbprint $thumbprint
+        }
+    }
+
+    $connectionUri = $active[0].ConnectionUri
+    $sessionState = $active[0].State
+
+    return New-ExchangeConnectionHealthResult -Target $target -ConnectionType $connectionType `
+        -Enabled $true -IsConnected $true -IsUsable $true -Status 'Connected' `
+        -Message 'Exchange Online connection is active.' -CheckedAt $checkedAt `
+        -DurationMilliseconds $stopwatch.ElapsedMilliseconds -Organization $effectiveOrg `
+        -AppId $appId -CertificateThumbprint $thumbprint -ConnectionUri $connectionUri `
+        -SessionState $sessionState
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Öffentliche Gateway-Funktionen
 #
 # Alle Funktionen laufen über Invoke-ExchangeOnlineCommand.
@@ -655,6 +826,7 @@ Export-ModuleMember -Function @(
     'Reset-ExchangeOnlineSession',
     'Disconnect-ExchangeOnlineSession',
     'Invoke-ExchangeOnlineCommand',
+    'Test-ExchangeOnlineConnectionHealth',
     'Get-ExoMailboxSafe',
     'Set-ExoMailboxSafe',
     'Get-ExoRecipientSafe',
