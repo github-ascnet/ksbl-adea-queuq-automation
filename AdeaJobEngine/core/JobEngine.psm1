@@ -366,6 +366,10 @@ function Invoke-JobEngine {
         $mergedConfig.Logging['ConsoleEnabled'] = $false
     }
 
+    if (Get-Command -Name 'Set-ExchangeOnPremRuntimeConfig' -ErrorAction SilentlyContinue) {
+        Set-ExchangeOnPremRuntimeConfig -Config $mergedConfig
+    }
+
     $summary = [ordered]@{
         queue     = $Queue
         status    = 'NoWork'

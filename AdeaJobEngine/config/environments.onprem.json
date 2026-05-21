@@ -16,10 +16,18 @@
   "ExchangeOnPrem": {
     "Enabled": true,
     "RemotePowerShell": {
+      "Enabled": true,
       "User": "ksbl\\ServiceIAMJobs10",
       "SecretPath": "D:\\iam\\Secrets\\serviceiamjobs10.sec",
       "ConnectionUri": "http://sv01250.ksbl.local/PowerShell",
-      "Authentication": "Kerberos"
+      "Authentication": "Kerberos",
+      "ReuseSession": true,
+      "UseImportPSSession": false,
+      "ExecutionMode": "InvokeCommand",
+      "SessionIdleTimeoutMinutes": 120,
+      "MaxSessionAgeMinutes": 240,
+      "ReconnectOnFailure": true,
+      "MaxReconnectAttempts": 1
     },
     "PrimaryMailDomain": "ksbl.ch",
     "CloudDomain": "kantonsspitalbl.mail.onmicrosoft.com",
