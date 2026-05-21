@@ -3,7 +3,7 @@
 
 BeforeAll {
     $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
-    Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnlineGateway.psm1') -Force
+    Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnlineGateway.psm1') -Force -DisableNameChecking
 
     $script:configDir = Join-Path -Path $root -ChildPath 'config'
     $script:appRaw = Get-Content -Path (Join-Path $script:configDir 'appsettings.json')       -Raw -Encoding UTF8

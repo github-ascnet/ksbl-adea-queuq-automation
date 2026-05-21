@@ -1,12 +1,12 @@
-﻿BeforeAll {
+BeforeAll {
     $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1')    -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1')   -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1')      -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\RenameUserAccount.psm1')    -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ChangeAccountSurname.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMailboxFolderAce.psm1') -Force -DisableNameChecking
 
     function New-TestLogger {
         [pscustomobject]@{

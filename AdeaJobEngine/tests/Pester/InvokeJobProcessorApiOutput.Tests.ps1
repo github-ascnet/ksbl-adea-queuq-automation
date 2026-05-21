@@ -1,9 +1,9 @@
-﻿Describe 'Invoke-JobProcessor API output compatibility' {
+Describe 'Invoke-JobProcessor API output compatibility' {
   BeforeAll {
     $script:root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
     $script:processorPath = Join-Path -Path $script:root -ChildPath 'Invoke-JobProcessor.ps1'
     $script:engineModulePath = Join-Path -Path $script:root -ChildPath 'core\JobEngine.psm1'
-    Import-Module -Name $script:engineModulePath -Force
+    Import-Module -Name $script:engineModulePath -Force -DisableNameChecking
 
     $script:testBase = Join-Path -Path $script:root -ChildPath 'tests\processor-api-test'
     if (Test-Path -Path $script:testBase) {

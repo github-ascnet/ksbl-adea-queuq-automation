@@ -1,18 +1,18 @@
-﻿BeforeAll {
+BeforeAll {
     $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableGenericUser.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\DisableGenericUser.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableAdAccountWithGracePeriod.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMobilePhoneNumber.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\MailboxFeatureService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableGenericUser.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\DisableGenericUser.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\EnableAdAccountWithGracePeriod.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\ModifyMobilePhoneNumber.psm1') -Force -DisableNameChecking
 
     function New-TestLogger {
         [pscustomobject]@{

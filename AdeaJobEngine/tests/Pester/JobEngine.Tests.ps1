@@ -1,4 +1,4 @@
-﻿Describe 'JobEngine configuration and mapping' {
+Describe 'JobEngine configuration and mapping' {
     BeforeAll {
         $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
         $registryPath = Join-Path -Path $root -ChildPath 'config\usecases.json'
@@ -58,12 +58,12 @@ Describe 'JobEngine End-to-End (WhatIf, temporary test root)' {
     BeforeAll {
         $coreDir = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..\core')).Path
         foreach ($m in (Get-ChildItem -Path $coreDir -Filter '*.psm1' | Sort-Object Name)) {
-            Import-Module -Name $m.FullName -Force -ErrorAction Stop
+            Import-Module -Name $m.FullName -Force -DisableNameChecking -ErrorAction Stop
         }
 
         $infraDir = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..\infrastructure')).Path
         foreach ($m in (Get-ChildItem -Path $infraDir -Filter '*.psm1' | Sort-Object Name)) {
-            Import-Module -Name $m.FullName -Force -ErrorAction Stop
+            Import-Module -Name $m.FullName -Force -DisableNameChecking -ErrorAction Stop
         }
 
         $script:e2eRoot = Join-Path -Path $PSScriptRoot -ChildPath '..\engine-e2e-test'

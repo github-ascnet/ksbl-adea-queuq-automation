@@ -1,19 +1,19 @@
-﻿BeforeAll {
+BeforeAll {
     $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\Naming.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\AccountNameGenerator.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\TenantState.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\CreateGroupMailbox.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\GenericUser\CreateMultiFunctionGenericUser.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\Naming.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\AccountNameGenerator.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\TenantState.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\GroupMailboxService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\UserProvisioningService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GroupMailbox\CreateGroupMailbox.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\GenericUser\CreateMultiFunctionGenericUser.psm1') -Force -DisableNameChecking
 
     function New-TestLogger {
         [pscustomobject]@{

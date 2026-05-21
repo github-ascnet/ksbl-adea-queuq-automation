@@ -1,6 +1,6 @@
-﻿$root = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
+$root = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
 $global:AdeaProjectRootForTests = $root
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
 
 Describe 'ExchangeOnPrem gateway connection behavior' {
     InModuleScope ExchangeOnPremGateway {

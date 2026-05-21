@@ -1,5 +1,5 @@
-﻿$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\JobResult.psm1'
-Import-Module -Name $modulePath -Force
+$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\JobResult.psm1'
+Import-Module -Name $modulePath -Force -DisableNameChecking
 
 Describe 'JobResult' {
     It 'accepts valid status values' {

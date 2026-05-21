@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 BeforeAll {
@@ -17,7 +17,7 @@ BeforeAll {
     $script:onPrem = $script:onPremRaw | ConvertFrom-Json
     $script:hybrid = $script:hybridRaw | ConvertFrom-Json
 
-    Import-Module -Name (Join-Path -Path $root -ChildPath 'core\JobEngine.psm1') -Force
+    Import-Module -Name (Join-Path -Path $root -ChildPath 'core\JobEngine.psm1') -Force -DisableNameChecking
 
     $mergeConfig = {
         param(

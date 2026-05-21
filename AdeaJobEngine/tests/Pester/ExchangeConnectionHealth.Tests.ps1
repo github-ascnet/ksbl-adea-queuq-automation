@@ -3,7 +3,7 @@
 
 BeforeAll {
     $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
-    Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeConnectionHealth.psm1') -Force
+    Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeConnectionHealth.psm1') -Force -DisableNameChecking
 }
 
 Describe 'ExchangeConnectionHealth - common result model' {

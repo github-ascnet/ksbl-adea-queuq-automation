@@ -3,7 +3,7 @@ param(
     [string]$ConfigPath = '.\config\appsettings.json',
     [string]$UseCaseRegistryPath = '.\config\usecases.json',
     [string]$EnvironmentPath = '.\config\environments.onprem.json',
-    [ValidateSet('standard','urgent','person-mailbox-longrunning')]
+    [ValidateSet('standard', 'urgent', 'person-mailbox-longrunning')]
     [string]$Queue = 'standard',
     [bool]$IncludePaused = $false,
     [bool]$ResumePaused = $false,
@@ -21,17 +21,17 @@ try {
 
     $coreModules = Get-ChildItem -Path (Join-Path $rootPath 'core') -Filter '*.psm1' -File | Sort-Object Name
     foreach ($module in $coreModules) {
-        Import-Module -Name $module.FullName -Force -ErrorAction Stop
+        Import-Module -Name $module.FullName -Force -ErrorAction Stop -DisableNameChecking
     }
 
     $infraModules = Get-ChildItem -Path (Join-Path $rootPath 'infrastructure') -Filter '*.psm1' -File | Sort-Object Name
     foreach ($module in $infraModules) {
-        Import-Module -Name $module.FullName -Force -ErrorAction Stop
+        Import-Module -Name $module.FullName -Force -ErrorAction Stop -DisableNameChecking
     }
 
     $sharedModules = Get-ChildItem -Path (Join-Path $rootPath 'shared') -Filter '*.psm1' -File | Sort-Object Name
     foreach ($module in $sharedModules) {
-        Import-Module -Name $module.FullName -Force -ErrorAction Stop
+        Import-Module -Name $module.FullName -Force -ErrorAction Stop -DisableNameChecking
     }
 
     $resolvedConfigPath = Join-Path -Path $rootPath -ChildPath $ConfigPath
@@ -39,18 +39,18 @@ try {
     $resolvedEnvironmentPath = Join-Path -Path $rootPath -ChildPath $EnvironmentPath
 
     $engineParams = @{
-        ConfigPath          = $resolvedConfigPath
-        UseCaseRegistryPath = $resolvedUseCaseRegistryPath
-        EnvironmentPath     = $resolvedEnvironmentPath
-        Queue               = $Queue
-        RootPath            = $rootPath
-        IncludePaused       = $IncludePaused
-        ResumePaused        = $ResumePaused
-        CorrelationId       = $CorrelationId
-        ReturnSummary       = $OutputJson
+        ConfigPath            = $resolvedConfigPath
+        UseCaseRegistryPath   = $resolvedUseCaseRegistryPath
+        EnvironmentPath       = $resolvedEnvironmentPath
+        Queue                 = $Queue
+        RootPath              = $rootPath
+        IncludePaused         = $IncludePaused
+        ResumePaused          = $ResumePaused
+        CorrelationId         = $CorrelationId
+        ReturnSummary         = $OutputJson
         SuppressConsoleOutput = $OutputJson
-        WhatIfMode          = $WhatIfMode
-        VerboseLogging      = $VerboseLogging
+        WhatIfMode            = $WhatIfMode
+        VerboseLogging        = $VerboseLogging
     }
 
     $engineResult = Invoke-JobEngine @engineParams

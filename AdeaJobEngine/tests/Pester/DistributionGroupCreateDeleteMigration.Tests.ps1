@@ -1,14 +1,14 @@
-﻿BeforeAll {
+BeforeAll {
     $root = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')).Path
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\DistributionGroupService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\CreateDistributionGroup.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\DeleteDistributionList.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\DistributionGroupService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\CreateDistributionGroup.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\DistributionGroup\DeleteDistributionList.psm1') -Force -DisableNameChecking
 
     function New-TestLogger {
         [pscustomobject]@{

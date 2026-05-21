@@ -86,9 +86,9 @@ function Merge-ToolHashtable {
     $result
 }
 
-Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeConnectionHealth.psm1') -Force
-Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnPremGateway.psm1') -Force
-Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnlineGateway.psm1') -Force
+Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeConnectionHealth.psm1') -Force -DisableNameChecking
+Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+Import-Module -Name (Join-Path -Path $root -ChildPath 'infrastructure\ExchangeOnlineGateway.psm1') -Force -DisableNameChecking
 
 $basePath = Join-Path -Path $root -ChildPath 'config\appsettings.json'
 $envPath = Join-Path -Path $root -ChildPath ("config\environments.{0}.json" -f $Environment)

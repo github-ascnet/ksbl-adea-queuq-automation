@@ -1,11 +1,11 @@
-﻿BeforeAll {
+BeforeAll {
     $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-    Import-Module -Name (Join-Path $root 'infrastructure\FileSystemGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\UserHomeDirectoryService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
+    Import-Module -Name (Join-Path $root 'infrastructure\FileSystemGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\DfsGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'infrastructure\ActiveDirectoryGateway.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\UserHomeDirectoryService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force -DisableNameChecking
 
     function New-HomeDirectoryTestContext {
         [CmdletBinding()]

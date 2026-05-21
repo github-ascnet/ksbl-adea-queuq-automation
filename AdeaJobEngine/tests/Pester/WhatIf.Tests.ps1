@@ -1,11 +1,11 @@
-﻿$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\infrastructure\ExchangeOnPremGateway.psm1'
-Import-Module -Name $modulePath -Force
+$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\infrastructure\ExchangeOnPremGateway.psm1'
+Import-Module -Name $modulePath -Force -DisableNameChecking
 
 $adModulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\infrastructure\ActiveDirectoryGateway.psm1'
-Import-Module -Name $adModulePath -Force
+Import-Module -Name $adModulePath -Force -DisableNameChecking
 
 $exoModulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\infrastructure\ExchangeOnlineGateway.psm1'
-Import-Module -Name $exoModulePath -Force
+Import-Module -Name $exoModulePath -Force -DisableNameChecking
 
 Describe 'Exchange On-Prem WhatIf safety' {
     It 'Set-OnPremMailboxSafe works in WhatIfMode without cmdlets' {

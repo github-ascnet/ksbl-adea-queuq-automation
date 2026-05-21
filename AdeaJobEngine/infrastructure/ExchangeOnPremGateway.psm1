@@ -231,7 +231,7 @@ function Remove-ExchangeOnPremPSSessionInternal {
 function Import-ExchangeConnectionHealthModuleInternal {
     [CmdletBinding()]
     param()
-    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'ExchangeConnectionHealth.psm1') -ErrorAction Stop
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'ExchangeConnectionHealth.psm1') -ErrorAction Stop -DisableNameChecking
 }
 
 function Ensure-ExchangeConnectionHealthModule {

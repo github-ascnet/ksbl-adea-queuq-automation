@@ -1,7 +1,7 @@
-﻿$lockingModule = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\Locking.psm1'
+$lockingModule = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\Locking.psm1'
 $queueModule = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\JobFileQueue.psm1'
-Import-Module -Name $lockingModule -Force
-Import-Module -Name $queueModule -Force
+Import-Module -Name $lockingModule -Force -DisableNameChecking
+Import-Module -Name $queueModule -Force -DisableNameChecking
 
 Describe 'JobFileQueue lifecycle and metadata' {
     BeforeAll {
@@ -269,7 +269,7 @@ Describe 'JobFileQueue lifecycle and metadata' {
         Remove-Item -Path "$existing.meta.json" -Force -ErrorAction SilentlyContinue
     }
 
-    # ── New tests: Get-NonConflictingPath checks .meta.json sidecar ──────────────
+    # -- New tests: Get-NonConflictingPath checks .meta.json sidecar --------------
 
     It 'Get-NonConflictingPath returns new path when target CSV already exists' {
         $done = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'done'
@@ -296,7 +296,7 @@ Describe 'JobFileQueue lifecycle and metadata' {
         Remove-Item -Path $metaPath -Force -ErrorAction SilentlyContinue
     }
 
-    # ── New tests: Move-JobFileToStatus does not overwrite existing .meta.json ───
+    # -- New tests: Move-JobFileToStatus does not overwrite existing .meta.json ---
 
     It 'Move-JobFileToStatus does not overwrite existing .meta.json in destination' {
         $incoming = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'incoming'
@@ -321,7 +321,7 @@ Describe 'JobFileQueue lifecycle and metadata' {
         (Read-JobMetadata -FilePath $dest2).LastMessage | Should -Be 'second'
     }
 
-    # ── New tests: Find-UseCaseJobFiles paused semantics ─────────────────────────
+    # -- New tests: Find-UseCaseJobFiles paused semantics -------------------------
 
     It 'Find-UseCaseJobFiles does not return paused files without explicit parameter' {
         $incoming = Get-QueuePath -RootPath $script:testRoot -QueueRoot $script:queueRoot -Status 'incoming'

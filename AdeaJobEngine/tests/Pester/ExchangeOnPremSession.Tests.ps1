@@ -1,5 +1,5 @@
-﻿$root = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
-Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force
+$root = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
+Import-Module -Name (Join-Path $root 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
 
 Describe 'ExchangeOnPrem session management' {
     InModuleScope ExchangeOnPremGateway {

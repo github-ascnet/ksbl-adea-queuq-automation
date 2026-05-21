@@ -1,9 +1,9 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 BeforeAll {
     $modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\MailNotification.psm1'
-    Import-Module -Name $modulePath -Force -ErrorAction Stop
+    Import-Module -Name $modulePath -Force -DisableNameChecking -ErrorAction Stop
 }
 
 Describe 'New-JobNotificationHtmlBody' {
@@ -20,22 +20,22 @@ Describe 'New-JobNotificationHtmlBody' {
             $result | Should -Match '<html'
         }
 
-        It 'EnthÃ¤lt eine BegrÃ¼ssung (Guten Tag)' {
+        It 'Enthält eine Begrüssung (Guten Tag)' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'Guten Tag'
         }
 
-        It 'EnthÃ¤lt eine Beschreibung (Automationsauftrag)' {
+        It 'Enthält eine Beschreibung (Automationsauftrag)' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'Automationsauftrag'
         }
 
-        It 'EnthÃ¤lt eine Tabelle' {
+        It 'Enthält eine Tabelle' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match '<table'
         }
 
-        It 'Tabellenheader enthÃ¤lt hellblaue Hintergrundfarbe (#d9ecff)' {
+        It 'Tabellenheader enthält hellblaue Hintergrundfarbe (#d9ecff)' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match '#d9ecff'
         }
@@ -45,12 +45,12 @@ Describe 'New-JobNotificationHtmlBody' {
             $result | Should -Match 'background-color: #ffffff'
         }
 
-        It 'EnthÃ¤lt Zeitpunkt in der Tabelle' {
+        It 'Enthält Zeitpunkt in der Tabelle' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'Zeitpunkt'
         }
 
-        It 'EnthÃ¤lt den UseCase-Namen in der Tabelle' {
+        It 'Enthält den UseCase-Namen in der Tabelle' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'DistributionGroup.Create'
             $result | Should -Match 'DistributionGroup.Create'
         }
@@ -58,22 +58,22 @@ Describe 'New-JobNotificationHtmlBody' {
 
     Context 'Status Success' {
 
-        It 'EnthÃ¤lt Status Success im HTML-Badge' {
+        It 'Enthält Status Success im HTML-Badge' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'status-success'
         }
 
-        It 'EnthÃ¤lt das Wort Success' {
+        It 'Enthält das Wort Success' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'Success'
         }
 
-        It 'EnthÃ¤lt Beschreibung fÃ¼r erfolgreichen Abschluss' {
+        It 'Enthält Beschreibung für erfolgreichen Abschluss' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Match 'erfolgreich abgeschlossen'
         }
 
-        It 'EnthÃ¤lt keinen Fehlerblock-DIV bei Success' {
+        It 'Enthält keinen Fehlerblock-DIV bei Success' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
             $result | Should -Not -Match '<div class="error-box"'
         }
@@ -81,33 +81,33 @@ Describe 'New-JobNotificationHtmlBody' {
 
     Context 'Status Failed' {
 
-        It 'EnthÃ¤lt Status Failed im HTML-Badge' {
+        It 'Enthält Status Failed im HTML-Badge' {
             $result = New-JobNotificationHtmlBody -Status 'Failed' -UseCaseName 'GenericUser.Create' -Message 'Etwas ist schiefgelaufen.'
             $result | Should -Match 'status-failed'
         }
 
-        It 'EnthÃ¤lt das Wort Failed' {
+        It 'Enthält das Wort Failed' {
             $result = New-JobNotificationHtmlBody -Status 'Failed' -UseCaseName 'GenericUser.Create' -Message 'Fehler'
             $result | Should -Match 'Failed'
         }
 
-        It 'EnthÃ¤lt Beschreibung fÃ¼r fehlgeschlagenen Auftrag' {
+        It 'Enthält Beschreibung für fehlgeschlagenen Auftrag' {
             $result = New-JobNotificationHtmlBody -Status 'Failed' -UseCaseName 'GenericUser.Create' -Message 'Fehler'
             $result | Should -Match 'nicht erfolgreich abgeschlossen'
         }
 
-        It 'EnthÃ¤lt einen Fehlerblock (error-box)' {
+        It 'Enthält einen Fehlerblock (error-box)' {
             $result = New-JobNotificationHtmlBody -Status 'Failed' -UseCaseName 'GenericUser.Create' -Message 'Etwas ist schiefgelaufen.'
             $result | Should -Match 'error-box'
         }
 
-        It 'EnthÃ¤lt die Fehlermeldung im Fehlerblock' {
+        It 'Enthält die Fehlermeldung im Fehlerblock' {
             $errorMsg = 'AD-Objekt nicht gefunden.'
             $result = New-JobNotificationHtmlBody -Status 'Failed' -UseCaseName 'GenericUser.Create' -ErrorMessage $errorMsg
             $result | Should -Match 'AD-Objekt nicht gefunden'
         }
 
-        It 'EnthÃ¤lt den ErrorCode aus JobResult' {
+        It 'Enthält den ErrorCode aus JobResult' {
             $jobResult = [pscustomobject]@{
                 Status    = 'Failed'
                 Message   = 'Fehler'
@@ -119,7 +119,7 @@ Describe 'New-JobNotificationHtmlBody' {
             $result | Should -Match 'AD_NOT_FOUND'
         }
 
-        It 'EnthÃ¤lt Exception-Meldung aus JobResult' {
+        It 'Enthält Exception-Meldung aus JobResult' {
             $ex = [System.Exception]::new('Verbindungsfehler zum DC.')
             $jobResult = [pscustomobject]@{
                 Status    = 'Failed'
@@ -182,22 +182,22 @@ Describe 'New-JobNotificationHtmlBody' {
 
     Context 'Optionale Felder' {
 
-        It 'EnthÃ¤lt Queue in der Tabelle wenn angegeben' {
+        It 'Enthält Queue in der Tabelle wenn angegeben' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'Test' -Queue 'standard'
             $result | Should -Match 'standard'
         }
 
-        It 'EnthÃ¤lt JobId in der Tabelle wenn angegeben' {
+        It 'Enthält JobId in der Tabelle wenn angegeben' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'Test' -JobId 'abc-123'
             $result | Should -Match 'abc-123'
         }
 
-        It 'EnthÃ¤lt Dateiname aus SourceFile in der Tabelle' {
+        It 'Enthält Dateiname aus SourceFile in der Tabelle' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'Test' -SourceFile 'C:\queue\incoming\job_sample.csv'
             $result | Should -Match 'job_sample.csv'
         }
 
-        It 'EnthÃ¤lt MovedPath in der Tabelle wenn angegeben' {
+        It 'Enthält MovedPath in der Tabelle wenn angegeben' {
             $result = New-JobNotificationHtmlBody -Status 'Succeeded' -UseCaseName 'Test' -MovedPath 'C:\queue\done\job_sample.csv'
             $result | Should -Match 'C:\\queue\\done'
         }
@@ -206,32 +206,32 @@ Describe 'New-JobNotificationHtmlBody' {
 
 Describe 'New-JobNotificationSubject' {
 
-    It 'Erzeugt Betreff mit [Success] fÃ¼r Succeeded' {
+    It 'Erzeugt Betreff mit [Success] für Succeeded' {
         $result = New-JobNotificationSubject -Status 'Succeeded' -UseCaseName 'DistributionGroup.Create'
         $result | Should -Match '^\[Success\]'
     }
 
-    It 'Erzeugt Betreff mit [Failed] fÃ¼r Failed' {
+    It 'Erzeugt Betreff mit [Failed] für Failed' {
         $result = New-JobNotificationSubject -Status 'Failed' -UseCaseName 'DistributionGroup.Create'
         $result | Should -Match '^\[Failed\]'
     }
 
-    It 'EnthÃ¤lt UseCase-Namen im Betreff' {
+    It 'Enthält UseCase-Namen im Betreff' {
         $result = New-JobNotificationSubject -Status 'Succeeded' -UseCaseName 'GenericUser.RenameAccount'
         $result | Should -Match 'GenericUser.RenameAccount'
     }
 
-    It 'EnthÃ¤lt JobId im Betreff wenn angegeben' {
+    It 'Enthält JobId im Betreff wenn angegeben' {
         $result = New-JobNotificationSubject -Status 'Failed' -UseCaseName 'GenericUser.RenameAccount' -JobId 'abc-456'
         $result | Should -Match 'abc-456'
     }
 
-    It 'EnthÃ¤lt keine JobId wenn nicht angegeben' {
+    It 'Enthält keine JobId wenn nicht angegeben' {
         $result = New-JobNotificationSubject -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
         $result | Should -Not -Match ' - $'
     }
 
-    It 'EnthÃ¤lt AdeaJobEngine im Betreff' {
+    It 'Enthält AdeaJobEngine im Betreff' {
         $result = New-JobNotificationSubject -Status 'Succeeded' -UseCaseName 'GenericUser.Create'
         $result | Should -Match 'AdeaJobEngine'
     }
@@ -305,7 +305,7 @@ Describe 'Send-JobNotification' {
 
     Context 'Mailversand-Fehler' {
 
-        It 'Wirft keine Exception wenn Mailversand fehlschlÃ¤gt' {
+        It 'Wirft keine Exception wenn Mailversand fehlschlägt' {
             Mock Send-MailMessage { throw 'SMTP-Fehler' } -ModuleName 'MailNotification'
 
             $config = @{
@@ -398,11 +398,11 @@ Describe 'ConvertTo-HtmlEncodedText' {
         ConvertTo-HtmlEncodedText -Value 'A & B' | Should -Be 'A &amp; B'
     }
 
-    It 'Gibt leeren String fÃ¼r null zurÃ¼ck' {
+    It 'Gibt leeren String für null zurück' {
         ConvertTo-HtmlEncodedText -Value $null | Should -Be ''
     }
 
-    It 'Gibt normalen Text unverÃ¤ndert zurÃ¼ck' {
+    It 'Gibt normalen Text unverändert zurück' {
         ConvertTo-HtmlEncodedText -Value 'HelloWorld' | Should -Be 'HelloWorld'
     }
 }

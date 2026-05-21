@@ -1,5 +1,5 @@
-﻿$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\JobState.psm1'
-Import-Module -Name $modulePath -Force
+$modulePath = Join-Path -Path $PSScriptRoot -ChildPath '..\..\core\JobState.psm1'
+Import-Module -Name $modulePath -Force -DisableNameChecking
 
 Describe 'PersonMailbox state machine persistence' {
     BeforeAll {

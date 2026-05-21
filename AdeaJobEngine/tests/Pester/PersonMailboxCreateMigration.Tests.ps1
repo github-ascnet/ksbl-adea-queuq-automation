@@ -1,13 +1,13 @@
-﻿BeforeAll {
+BeforeAll {
     $root = Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..\..')
 
-    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force
-    Import-Module -Name (Join-Path $root 'core\JobState.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force
-    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force
-    Import-Module -Name (Join-Path $root 'usecases\PersonMailbox\CreateNonStdPersonMailbox.psm1') -Force
+    Import-Module -Name (Join-Path $root 'core\JobResult.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Validation.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\Logging.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'core\JobState.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\PasswordGenerator.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'shared\PersonMailboxService.psm1') -Force -DisableNameChecking
+    Import-Module -Name (Join-Path $root 'usecases\PersonMailbox\CreateNonStdPersonMailbox.psm1') -Force -DisableNameChecking
 
     function New-TestLogger {
         [pscustomobject]@{
