@@ -50,22 +50,22 @@ function ConvertTo-MailboxPermissionRawPermissions {
         if ($null -eq $record) { continue }
 
         [pscustomobject]@{
-            SourceSystem                            = $SourceSystem
-            PermissionType                          = $PermissionType
-            MailboxIdentity                         = [string]$record.MailboxIdentity
-            MailboxName                             = [string]$record.MailboxName
-            MailboxDistinguishedName                = [string]$record.MailboxDistinguishedName
-            MailboxGuid                             = [string]$record.MailboxGuid
-            MailboxHiddenFromAddressListsEnabled    = $record.MailboxHiddenFromAddressListsEnabled
-            TrusteeIdentity                         = [string]$record.TrusteeIdentity
-            TrusteeName                             = [string]$record.TrusteeName
-            TrusteeDomain                           = [string]$record.TrusteeDomain
-            TrusteeDistinguishedName                = [string]$record.TrusteeDistinguishedName
-            TrusteeSid                              = [string]$record.TrusteeSid
-            TrusteeObjectClass                      = [string]$record.TrusteeObjectClass
-            AccessRights                            = $record.AccessRights
-            IsInherited                             = $record.IsInherited
-            Deny                                    = $record.Deny
+            SourceSystem                         = $SourceSystem
+            PermissionType                       = $PermissionType
+            MailboxIdentity                      = [string]$record.MailboxIdentity
+            MailboxName                          = [string]$record.MailboxName
+            MailboxDistinguishedName             = [string]$record.MailboxDistinguishedName
+            MailboxGuid                          = [string]$record.MailboxGuid
+            MailboxHiddenFromAddressListsEnabled = $record.MailboxHiddenFromAddressListsEnabled
+            TrusteeIdentity                      = [string]$record.TrusteeIdentity
+            TrusteeName                          = [string]$record.TrusteeName
+            TrusteeDomain                        = [string]$record.TrusteeDomain
+            TrusteeDistinguishedName             = [string]$record.TrusteeDistinguishedName
+            TrusteeSid                           = [string]$record.TrusteeSid
+            TrusteeObjectClass                   = [string]$record.TrusteeObjectClass
+            AccessRights                         = $record.AccessRights
+            IsInherited                          = $record.IsInherited
+            Deny                                 = $record.Deny
         }
     }
 
