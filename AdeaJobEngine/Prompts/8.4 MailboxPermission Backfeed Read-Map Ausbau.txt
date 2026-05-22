@@ -1,0 +1,489 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-OnPrem-, Exchange-Online-, Active-Directory-, SQL-Server-, ETL-/Backfeed-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nur gelesen, nicht verändert.
+
+Der aktuelle Stand ist stabil committed:
+
+Add Backfeed foundation and MailboxPermission skeleton
+
+Die vollständige Pester-Suite war grün:
+
+485 Tests
+0 Failed
+
+
+O = Ziel
+
+Baue als nächste kontrollierte Umsetzungsphase den MailboxPermission Backfeed SourceReader und Mapper fachlich weiter aus.
+
+Ziel ist eine testbare Pipeline:
+
+Read
+  → Map
+  → Stage
+  → Result
+
+Der Schwerpunkt liegt jetzt auf:
+
+Exchange OnPrem FullAccess lesen
+Exchange OnPrem SendAs lesen
+Exchange Online FullAccess lesen
+Exchange Online SendAs lesen
+alle Quellen in ein einheitliches RawPermission-Format bringen
+RawPermissions in ein einheitliches Staging-DTO normalisieren
+Service-Zähler korrekt setzen
+
+Noch nicht bauen:
+
+Delta
+Merge
+History
+produktive SQL-Refresh-Logik
+Bulk Copy
+SQL-Schemaänderungen
+produktive TRUNCATE-/INSERT-/MERGE-Logik
+direkte Exchange-/EXO-Cmdlet-Aufrufe ausserhalb der Gateways
+
+
+K = Kontext
+
+Vorhandene Dateien:
+
+backfeed/Invoke-BackfeedProcessor.ps1
+config/backfeed.json
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+Fachliche Referenz:
+
+current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+current-scripts/Schema KSBL_IAM.sql
+
+Relevante Tabellen:
+
+stg_MailboxPermissions
+MailboxPermissions
+hist_MailboxPermissions
+
+Für diese Phase wird weiterhin nur bis Stage gearbeitet.
+
+Ziel-DTO für spätere Staging-Schicht:
+
+SourceSystem
+PermissionType
+MailboxKey
+MailboxName
+TrusteeKey
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+IsInherited
+Deny
+AccessRights
+RowHash
+
+Wichtige spätere Delta-Schlüsselidee:
+
+MailboxKey
+TrusteeKey
+PermissionType
+SourceSystem
+
+
+A = Architekturvorgaben
+
+SourceReader darf keine direkten Exchange-, EXO-, AD- oder SQL-Cmdlets ausführen.
+
+Nicht erlaubt im SourceReader:
+
+Get-MailboxPermission
+Get-RecipientPermission
+Get-Mailbox
+Get-EXOMailbox
+Get-EXOMailboxPermission
+Get-Recipient
+Get-ADUser
+Get-ADObject
+Connect-ExchangeOnline
+New-PSSession
+Invoke-Sqlcmd
+
+SourceReader darf nur bestehende Gateway-Funktionen aufrufen oder klar getrennte interne private Reader-Funktionen verwenden, die in Tests gemockt werden können.
+
+Bestehende Gateways sollen nicht auf Verdacht verändert werden.
+
+Falls Gateway-Funktionen fehlen:
+
+In dieser Phase keine produktiven Gateway-Erweiterungen erzwingen.
+Stattdessen SourceReader so strukturieren, dass die Gateway-Aufrufe später sauber ergänzt werden können.
+Tests sollen die Reader-Funktionen mocken.
+
+Mapper ist reine Transformation.
+
+Mapper darf nicht aufrufen:
+
+Exchange
+ExchangeOnline
+ActiveDirectory
+SQL
+Gateways
+
+StagingWriter bleibt in dieser Phase weiterhin nur mockbar/skeleton-artig.
+
+Kein Merge.
+Kein Delta.
+Keine History.
+
+
+E = Execution
+
+1. MailboxPermissionSourceReader.psm1 erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+
+Hauptfunktion:
+
+Read-MailboxPermissionBackfeedSources
+
+Erwartetes Verhalten:
+
+Die Funktion liest gemäss BackfeedContext.Config oder BackfeedContext.BackfeedType-Konfiguration die aktivierten Quellen.
+
+Unterstützte Quellen:
+
+ExchangeOnPrem
+ExchangeOnline
+
+Die Funktion soll intern klar getrennte Lesephasen haben:
+
+Read-OnPremMailboxFullAccessPermissions
+Read-OnPremMailboxSendAsPermissions
+Read-ExchangeOnlineMailboxFullAccessPermissions
+Read-ExchangeOnlineMailboxSendAsPermissions
+
+Falls diese Hilfsfunktionen exportiert werden müssen, dann nur wenn es zur bestehenden Projektkonvention passt. Sonst intern halten, aber testbar über Mocks oder statische Tests.
+
+Jede Hilfsfunktion gibt RawPermission-Objekte zurück.
+
+RawPermission-Objekt mindestens:
+
+SourceSystem
+PermissionType
+MailboxIdentity
+MailboxName
+MailboxDistinguishedName
+MailboxGuid
+MailboxHiddenFromAddressListsEnabled
+TrusteeIdentity
+TrusteeName
+TrusteeDomain
+TrusteeDistinguishedName
+TrusteeSid
+TrusteeObjectClass
+AccessRights
+IsInherited
+Deny
+
+SourceSystem-Werte:
+
+OnPrem
+ExchangeOnline
+
+PermissionType-Werte:
+
+FullAccess
+SendAs
+
+Wichtig:
+
+Keine direkten Cmdlets.
+Keine echten Zielsystemzugriffe in Tests.
+Keine produktiven Verbindungen aufbauen.
+Keine EXO-Connection im SourceReader erzwingen.
+Keine OnPrem-PSSession im SourceReader erzwingen.
+
+
+2. MailboxPermissionMapper.psm1 erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+
+Funktion:
+
+ConvertTo-MailboxPermissionBackfeedRows
+
+Aufgabe:
+
+Normalisiert RawPermission-Objekte in ein einheitliches Staging-DTO.
+
+Mapping-Regeln:
+
+SourceSystem bleibt erhalten.
+PermissionType bleibt erhalten.
+MailboxKey wird bevorzugt aus MailboxGuid gebildet.
+Wenn MailboxGuid fehlt, dann MailboxDistinguishedName.
+Wenn MailboxDistinguishedName fehlt, dann MailboxIdentity.
+TrusteeKey wird bevorzugt aus TrusteeSid gebildet.
+Wenn TrusteeSid fehlt, dann TrusteeDistinguishedName.
+Wenn TrusteeDistinguishedName fehlt, dann TrusteeDomain + TrusteeName.
+MailboxName kommt aus MailboxName oder MailboxIdentity.
+TrusteeName kommt aus TrusteeName oder TrusteeIdentity.
+TrusteeDomain wird aus TrusteeDomain übernommen, falls vorhanden.
+ObjectClass kommt aus TrusteeObjectClass.
+AcePermissions wird aus PermissionType oder AccessRights abgeleitet.
+DistinguishedName wird MailboxDistinguishedName.
+ExchHideFromAddressLists wird aus MailboxHiddenFromAddressListsEnabled abgeleitet.
+AdReferenceObjectGuid wird MailboxGuid.
+IsInherited, Deny und AccessRights bleiben erhalten.
+RowHash soll deterministisch gebildet werden.
+
+RowHash:
+
+Wenn bereits eine BackfeedHash-Funktion existiert, diese verwenden.
+Wenn keine BackfeedHash-Funktion existiert, implementiere im Mapper eine kleine interne deterministische Hash-Funktion auf Basis der relevanten DTO-Felder.
+Keine neue grosse Hash-Infrastruktur bauen.
+Hash-Eingang soll stabil sein und mindestens enthalten:
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+AcePermissions
+IsInherited
+Deny
+
+Validierung:
+
+Unklare oder leere PermissionType-Werte sollen kontrolliert abgewiesen oder übersprungen werden.
+Nur FullAccess und SendAs sind in dieser Phase erlaubt.
+Leere Eingabe ergibt leeres Array.
+
+
+3. MailboxPermissionBackfeedService.psm1 erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Funktion:
+
+Invoke-MailboxPermissionBackfeed
+
+Pipeline:
+
+Read-MailboxPermissionBackfeedSources
+  → ConvertTo-MailboxPermissionBackfeedRows
+  → Write-MailboxPermissionBackfeedStaging
+  → New-BackfeedResult
+
+Erwartetes Result:
+
+Status = Succeeded bei Erfolg
+ReadCount = Anzahl RawPermissions
+StagedCount = StagingWriter.StagedCount
+InsertedCount = 0
+UpdatedCount = 0
+DeletedCount = 0
+UnchangedCount = 0
+FailedCount = 0
+Errors = leeres Array
+
+Fehlerverhalten:
+
+Reader-Fehler → Status = Failed
+Mapper-Fehler → Status = Failed
+Writer-Fehler → Status = Failed
+Errors enthält verständliche strukturierte Fehlermeldung
+Bereits bekannte Zähler bleiben erhalten, soweit möglich
+
+Wichtig:
+
+Kein Delta.
+Kein Merge.
+Keine History.
+Keine produktive SQL-Refresh-Logik.
+
+
+4. Tests erweitern
+
+Erweitere:
+
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+Da es in der letzten Runde Pester-Scope-Fallen gab, dürfen Skeleton-/Strukturtests source-basiert bleiben.
+
+Für Mapper-Logik sollen echte Unit-Tests erlaubt sein, da der Mapper keine Zielsysteme aufruft.
+
+Mindesttests:
+
+SourceReader-Struktur:
+
+1. SourceReader enthält Read-MailboxPermissionBackfeedSources.
+2. SourceReader enthält logisch getrennte OnPrem- und ExchangeOnline-Pfade.
+3. SourceReader enthält FullAccess- und SendAs-Pfade.
+4. SourceReader enthält keine direkten verbotenen Cmdlets:
+   Get-MailboxPermission
+   Get-RecipientPermission
+   Get-Mailbox
+   Get-EXOMailbox
+   Get-EXOMailboxPermission
+   Connect-ExchangeOnline
+   New-PSSession
+   Get-ADUser
+   Get-ADObject
+   Invoke-Sqlcmd
+
+Mapper-Unit-Tests:
+
+5. Leere Eingabe ergibt leeres Array.
+6. OnPrem FullAccess wird korrekt normalisiert.
+7. OnPrem SendAs wird korrekt normalisiert.
+8. ExchangeOnline FullAccess wird korrekt normalisiert.
+9. ExchangeOnline SendAs wird korrekt normalisiert.
+10. MailboxKey bevorzugt MailboxGuid.
+11. MailboxKey fällt auf DistinguishedName zurück, wenn MailboxGuid fehlt.
+12. TrusteeKey bevorzugt TrusteeSid.
+13. TrusteeKey fällt auf DistinguishedName zurück, wenn TrusteeSid fehlt.
+14. TrusteeKey fällt auf Domain + Name zurück, wenn SID und DN fehlen.
+15. RowHash ist deterministisch.
+16. Nur FullAccess und SendAs werden akzeptiert.
+17. DTO enthält SourceSystem, PermissionType, MailboxKey, TrusteeKey, AcePermissions und RowHash.
+
+Service-/Pipeline-Tests:
+
+18. Service-Pipeline erzeugt Succeeded mit korrektem ReadCount und StagedCount.
+19. Reader-Fehler erzeugt Failed.
+20. Writer-Fehler erzeugt Failed.
+21. Delta-/Merge-Zähler bleiben 0.
+22. Service enthält keine direkte Exchange-/AD-/SQL-Cmdlet-Nutzung.
+
+Architekturtests:
+
+23. JobEngine.psm1 bleibt frei von MailboxPermission-Backfeed-Fachlogik.
+24. JobFileQueue.psm1 bleibt frei von Backfeed-Fachlogik.
+25. usecases.json enthält keine Backfeed-Einträge.
+26. Gateway-Dateien wurden nicht verändert, ausser ausdrücklich notwendig.
+27. Legacy-Skripte wurden nicht verändert.
+
+Pester-Konvention:
+
+Pester 5.7.1-kompatibel bleiben.
+Keine alte Syntax verwenden:
+Should Be
+Should Not Be
+
+Nur verwenden:
+Should -Be
+Should -Not -Be
+
+Keine using:-Variablen innerhalb InModuleScope verwenden.
+Wenn InModuleScope nötig ist, InModuleScope -Parameters verwenden.
+
+
+5. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ExchangeOnlineGateway.psm1
+infrastructure/ActiveDirectoryGateway.psm1
+infrastructure/SqlGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+
+Nur falls absolut nötig:
+
+backfeed/Invoke-BackfeedProcessor.ps1
+
+Aber nur wenn der Service sauber geladen werden muss.
+
+
+6. Pester ausführen
+
+Zuerst:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed\MailboxPermissionBackfeed.Tests.ps1'"
+
+Danach:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Was der SourceReader jetzt strukturell kann
+Welche OnPrem-/EXO-Pfade vorbereitet wurden
+Was der Mapper normalisiert
+Wie MailboxKey gebildet wird
+Wie TrusteeKey gebildet wird
+Wie RowHash gebildet wird
+Was der StagingWriter weiterhin bewusst nicht macht
+Wie Invoke-MailboxPermissionBackfeed die Pipeline ausführt
+Welche Tests ergänzt wurden
+Bestätigung, dass kein Delta/Merge implementiert wurde
+Bestätigung, dass keine History-Logik implementiert wurde
+Bestätigung, dass keine produktive SQL-Refresh-Logik implementiert wurde
+Bestätigung, dass keine Gateway-Dateien verändert wurden
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+
+Wichtigste Zielregel
+
+Baue nur den MailboxPermission Backfeed Read/Map-Ausbau bis Stage.
+
+Noch kein Delta.
+Noch kein Merge.
+Noch keine History.
+Keine produktive Refresh-Logik.
+
+Ziel ist:
+
+Exchange OnPrem / Exchange Online Permission-Rohdaten strukturell lesen
+  → einheitlich normalisieren
+  → mockbar stagen
+  → BackfeedResult zurückgeben.
