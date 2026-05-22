@@ -1,0 +1,325 @@
+Prüfe die zuletzt durchgeführten Änderungen im Workspace.
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine neuen Dateien.
+Lösche keine Dateien.
+Führe keine automatischen Korrekturen aus.
+Gib nur eine Review mit konkreten Befunden zurück.
+
+Kontext:
+Die Änderungen betreffen ausschliesslich die dringende Hospis-Inaktivierung in der AdeaJobEngine.
+
+Zu prüfen sind insbesondere:
+
+Invoke-InactivateHospisPerson
+HospisPersonService.UrgentInactivation
+ActiveDirectoryGateway
+ExchangeOnPremGateway
+SqlGateway oder HospisSqlService
+Gruppenmitgliedschaftslogik
+Pester-Tests zur InactivateHospisPerson- und UrgentInactivation-Logik
+
+Wichtig:
+Invoke-UrgentRecipientAttributeChange und UrgentRecipientService sind bereits abgeschlossen und dürfen nicht erneut umgebaut worden sein.
+
+Fachliche Zielregel:
+Invoke-InactivateHospisPerson beziehungsweise HospisPersonService.UrgentInactivation ist für die vollständige dringende Hospis-Inaktivierung zuständig.
+
+Diese Inaktivierung umfasst fachlich:
+
+AD User deaktivieren
+bei vorhandener homeMdb MailboxAutoReplyConfiguration setzen
+bei vorhandener homeMdb EMailRevocations per SQL schliessen
+definierte Gruppenmitgliedschaften entfernen
+extensionAttribute6 löschen
+msDS-cloudExtensionAttribute15 löschen
+Description setzen
+bei ActionType Inaktivieren die Stored Procedure usp_create_urgent_inaktivieren_transaction ausführen
+
+Verbindliche Architekturregeln:
+
+Handler rufen Services auf.
+Services rufen Gateways auf.
+Gateways kapseln technische Zielsystemzugriffe.
+Keine direkten produktiven AD-, Exchange-OnPrem-, ExchangeOnline-, SQL-, DFS- oder Filesystem-Zugriffe in Handlern.
+Keine fachliche Logik in JobEngine.psm1.
+Keine produktiven Werte im Code hardcoden.
+Keine produktiven KSBL-Werte in appsettings.json.
+Produktive Werte gehören nur in environments.onprem.json oder environments.hybrid.json.
+Exchange Online darf für diesen Urgent-/Hospis-Inaktivierungsprozess nicht eingeführt werden.
+TenantState.psm1 bleibt unberührt und darf nicht produktiv verdrahtet werden.
+msDS-cloudExtensionAttribute15 wird direkt über ActiveDirectoryGateway gelöscht, wenn die Entra-Sync-Deaktivierung im Urgent-Prozess erforderlich ist.
+Invoke-UrgentRecipientAttributeChange bleibt unverändert.
+UrgentRecipientService bleibt unverändert.
+Pester muss Version 5.7.1-kompatibel bleiben.
+Keine alte Pester-Syntax wie Should Be verwenden.
+Keine Merge-Konfliktmarker hinterlassen.
+
+Prüfe bitte gezielt:
+
+1. Geänderte Dateien
+Liste alle geänderten Dateien auf.
+Markiere, ob jede Änderung fachlich zum InactivateHospisPerson-/UrgentInactivation-Scope gehört.
+Markiere jede Änderung ausserhalb dieses Scopes als Risiko.
+
+2. Handler Invoke-InactivateHospisPerson
+Prüfe, ob der Handler nur validiert, normalisiert, den Service aufruft und JobResult zurückgibt.
+Prüfe, ob der Handler keine direkten AD-, Exchange- oder SQL-Befehle enthält.
+Prüfe, ob Context.Payload korrekt als Zeilenliste verarbeitet wird.
+Prüfe, ob Pflichtfelder sauber validiert werden.
+Prüfe, ob mehrere Payload-Zeilen korrekt verarbeitet werden.
+Prüfe, ob bei Teilfehlern Output mit allen Zeilenresultaten erhalten bleibt.
+
+3. HospisPersonService.UrgentInactivation
+Prüfe, ob die fachliche Orchestrierung im Service liegt und nicht im Handler.
+Prüfe, ob pro Person ein strukturiertes Result zurückgegeben wird.
+Erwartete Result-Informationen sind mindestens:
+
+Success
+Identity oder AdObjectName
+PersId
+ActionType
+Disabled
+MailboxHandled
+AutoReplyConfigured
+EmailRevocationsClosed
+GroupsRemoved
+ExtensionAttribute6Cleared
+CloudExtensionAttribute15Cleared
+DescriptionSet
+UrgentTransactionCreated
+Message
+ErrorCode
+
+4. AD User deaktivieren
+Prüfe, ob der AD User über ActiveDirectoryGateway deaktiviert wird.
+Prüfe, ob Set-ADUser nicht direkt im Handler oder Service aufgerufen wird, ausser es befindet sich bewusst innerhalb der Gateway-Schicht.
+Prüfe, ob Fehler beim Deaktivieren sauber geloggt und im Result abgebildet werden.
+
+5. homeMdb-Logik
+Prüfe, ob mailboxbezogene Aktionen nur ausgeführt werden, wenn homeMdb vorhanden ist.
+Wenn homeMdb vorhanden ist, müssen geprüft werden:
+
+AutoReply wird gesetzt.
+EMailRevocations werden geschlossen.
+Falls vorhandene Funktion existiert, Mailbox Hidden / Feature-State wird fachlich korrekt verwendet.
+
+Wenn homeMdb nicht vorhanden ist:
+
+Keine AutoReply-Konfiguration erzwingen.
+Keine mailboxbezogene Exchange-Operation ausführen.
+AD-Deaktivierung, Attribut-Clears und Description laufen weiterhin.
+
+6. MailboxAutoReplyConfiguration
+Prüfe, ob Set-MailboxAutoReplyConfiguration nicht direkt im Handler steht.
+Prüfe, ob ExchangeOnPremGateway verwendet wird.
+Prüfe, ob AutoReplyState korrekt gesetzt wird.
+Prüfe, ob InternalMessage und ExternalMessage aus Config kommen:
+
+Hospis.AustrittOOOInternalMessage
+Hospis.AustrittOOOExternalMessage
+
+Prüfe, ob diese Texte nicht hardcodiert wurden.
+Prüfe, ob keine ExchangeOnline-Logik verwendet wird.
+
+7. SQL EMailRevocations
+Prüfe, ob EMailRevocations.ValidTo per SQL-/Hospis-Service geschlossen wird.
+Prüfe, ob SQL-Zugriffe nicht direkt im Handler stehen.
+Prüfe, ob Invoke-Sqlcmd nicht direkt im Handler steht.
+Prüfe, ob PersId sauber übergeben wird.
+Prüfe, ob keine unsichere String-Konkatenation mit Userdaten eingebaut wurde, falls das Projekt parametrisierte SQL-Funktionen unterstützt.
+
+8. Stored Procedure usp_create_urgent_inaktivieren_transaction
+Prüfe, ob die Stored Procedure nur bei ActionType Inaktivieren ausgelöst wird.
+Prüfe, ob folgende Parameter sauber übergeben werden:
+
+PersId
+CurrentUserDomainName
+CurrentUserName
+
+Prüfe, ob die Ausführung über SqlGateway oder HospisSqlService erfolgt.
+Prüfe, ob die Stored Procedure nicht direkt im Handler aufgerufen wird.
+
+9. Gruppenmitgliedschaften entfernen
+Prüfe, ob folgende Gruppenpräfixe berücksichtigt werden:
+
+CN=TPL-
+CN=GG-KSBL-VDI-Remote
+CN=GG-OneSign
+
+Prüfe, ob keine zusätzlichen Gruppenpräfixe erfunden wurden.
+Prüfe, ob die Gruppenentfernung über ActiveDirectoryGateway oder GroupMembershipService läuft.
+Prüfe, ob Remove-ADGroupMember nicht direkt im Handler steht.
+Prüfe, ob die entfernten Gruppen im Result nachvollziehbar sind.
+
+10. extensionAttribute6
+Prüfe, ob extensionAttribute6 über ActiveDirectoryGateway gelöscht wird.
+Prüfe, ob eine echte Clear-Operation verwendet wird und nicht nur ein leerer String gesetzt wird, sofern die Gateway-Funktion Clear unterstützt.
+Prüfe, ob Fehler beim Löschen sauber abgebildet werden.
+
+11. msDS-cloudExtensionAttribute15
+Prüfe besonders, ob msDS-cloudExtensionAttribute15 über ActiveDirectoryGateway gelöscht wird.
+Prüfe, ob dies nicht über TenantState.psm1 erfolgt.
+Prüfe, ob die Logik eindeutig als Entra-Sync-Deaktivierung über AD-Attribut-Clear umgesetzt ist.
+Prüfe, ob Set-TenantState nicht verwendet wird.
+
+12. Description
+Prüfe, ob die Description über ActiveDirectoryGateway gesetzt wird.
+Erwartetes Format:
+
+Inaktiviert (Urgent) am yyyy-MM-dd von CurrentUserName
+
+Prüfe, ob das Datum stabil und testbar erzeugt wird.
+Prüfe, ob keine Culture-abhängige Formatierung verwendet wird, die Tests oder Produktion instabil machen könnte.
+
+13. TenantState
+Prüfe, ob TenantState.psm1 unverändert geblieben ist.
+Prüfe, ob Get-TenantState oder Set-TenantState nicht produktiv im Urgent-Inaktivierungsprozess verwendet wird.
+Falls TenantState irgendwo im neuen Code referenziert wird, bewerte das als kritischen Befund.
+
+14. Exchange Online Nichtverwendung
+Prüfe statisch und fachlich, ob für diesen Prozess keine ExchangeOnline-Logik eingeführt wurde.
+Nicht erlaubt:
+
+ExchangeOnlineGateway
+Connect-ExchangeOnline
+Get-EXORecipient
+Set-EXOMailbox
+EXO-Mailboxpermission-Logik
+
+15. Fehlerbehandlung und JobResult
+Prüfe, ob pro Person ein Ergebnis gesammelt wird.
+Prüfe, ob alle erfolgreichen Personen zu Succeeded führen.
+Prüfe, ob mindestens ein Fehler zu Failed führt.
+Prüfe, ob Output im Failed-Fall alle Personenresultate enthält.
+Prüfe, ob Fehler nicht verschluckt werden.
+Prüfe, ob ErrorCode und Message brauchbar sind.
+
+16. Logging
+Prüfe, ob Write-LogInfo, Write-LogWarn und Write-LogError konsistent verwendet werden.
+Prüfe, ob relevante Angaben wie Identity, PersId und ActionType geloggt werden.
+Prüfe, ob keine Secrets oder SecureString-Inhalte geloggt werden.
+
+17. Tests für Invoke-InactivateHospisPerson
+Prüfe, ob Tests vorhanden sind für:
+
+Fehlende Pflichtfelder führen zu Failed.
+Eine gültige Zeile führt zu Succeeded.
+Mehrere gültige Zeilen führen zu Succeeded.
+Eine fehlerhafte von mehreren Zeilen führt zu Failed.
+Output enthält alle Zeilenresultate.
+Handler ruft Service auf.
+Handler ruft keine Gateways direkt auf.
+Handler enthält kein Set-ADUser.
+Handler enthält kein Set-MailboxAutoReplyConfiguration.
+Handler enthält kein Invoke-Sqlcmd.
+Handler enthält keine ExchangeOnline-Referenz.
+Handler enthält keine TenantState-Referenz.
+
+18. Tests für HospisPersonService.UrgentInactivation
+Prüfe, ob Tests vorhanden sind für:
+
+AD User wird über Gateway deaktiviert.
+Wenn homeMdb gesetzt ist, wird AutoReply über ExchangeOnPremGateway gesetzt.
+AutoReply InternalMessage und ExternalMessage kommen aus Config.
+Wenn homeMdb nicht gesetzt ist, wird AutoReply nicht gesetzt.
+EMailRevocations werden über SQL-/Hospis-Service geschlossen, wenn homeMdb gesetzt ist.
+Gruppen mit CN=TPL- werden entfernt.
+Gruppen mit CN=GG-KSBL-VDI-Remote werden entfernt.
+Gruppen mit CN=GG-OneSign werden entfernt.
+extensionAttribute6 wird gelöscht.
+msDS-cloudExtensionAttribute15 wird gelöscht.
+Description wird im erwarteten Format gesetzt.
+Bei ActionType Inaktivieren wird usp_create_urgent_inaktivieren_transaction ausgelöst.
+TenantState.psm1 wird nicht produktiv aufgerufen.
+ExchangeOnlineGateway wird nicht verwendet.
+Keine echte Exchange- oder SQL-Verbindung wird im Test aufgebaut.
+
+19. Mocking
+Prüfe, ob Pester-Mocks im richtigen Modul-Scope gesetzt sind.
+Prüfe, ob InModuleScope korrekt verwendet wird.
+Prüfe, ob kein using:-Scope innerhalb InModuleScope verwendet wird.
+Wenn Werte in InModuleScope übergeben werden, soll InModuleScope -Parameters verwendet werden.
+Prüfe, ob keine echten Zielsysteme in Tests aufgerufen werden.
+
+20. Seiteneffekte
+Prüfe, ob folgende Bereiche unverändert geblieben sind:
+
+Invoke-UrgentRecipientAttributeChange
+UrgentRecipientService
+JobEngine.psm1
+JobFileQueue.psm1
+usecases.json
+ExchangeOnlineGateway
+HybridMailboxResolver
+Resolve-MailboxExecutionContext
+Backfeed
+TenantState.psm1
+Runtime-Config
+produktive Environment-Dateien
+Legacy-Skripte
+
+21. Pester-Kompatibilität
+Prüfe, ob alle Tests Pester 5.7.1-kompatibel sind.
+Suche nach alter Syntax:
+
+Should Be
+Should Not Be
+
+Erwartet:
+
+Should -Be
+Should -Not -Be
+
+22. Merge- und Syntaxqualität
+Suche nach Merge-Konfliktmarkern:
+
+<<<<<<<
+=======
+>>>>>>>
+
+Prüfe auf offensichtliche StrictMode-Probleme:
+
+nicht initialisierte Variablen
+Properties, die nicht garantiert existieren
+unklare Null-Zugriffe
+falsche Typannahmen
+Count auf Einzelobjekten ohne Array-Klammerung
+
+Gib das Ergebnis als Review-Matrix aus mit diesen Spalten:
+
+Datei
+Änderung
+Bewertung
+Risiko
+Empfehlung
+
+Danach zusätzlich:
+
+Gesamtbewertung:
+Architekturkonform:
+Fachliche Trennung korrekt:
+Handler korrekt schlank:
+Service-Orchestrierung korrekt:
+AD-Gateway-Nutzung:
+ExchangeOnPrem-Nutzung:
+ExchangeOnline-frei:
+TenantState unverändert:
+SQL sauber gekapselt:
+Gruppenentfernung korrekt:
+Attribut-Clears korrekt:
+Testabdeckung:
+Kritische Risiken:
+Mittlere Risiken:
+Niedrige Risiken:
+Empfohlene nächste Schritte:
+Pester-Befehl für lokale Validierung:
+
+Verwende als Pester-Befehl:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path .\tests\Pester"
+
+Wichtig:
+Nimm keine Änderungen vor.
+Antworte nur mit der Review.

@@ -187,6 +187,51 @@ function New-UrgentHospisInactivationSql {
     return "EXEC KSBL_Hospis_Staging.dbo.usp_create_urgent_inaktivieren_transaction '$persId','$requestor'"
 }
 
+function New-UrgentHospisInactivationResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][bool]$Success,
+        [Parameter(Mandatory = $true)][psobject]$Data,
+        [string]$Identity,
+        [bool]$Disabled = $false,
+        [bool]$MailboxHandled = $false,
+        [bool]$AutoReplyConfigured = $false,
+        [bool]$EmailRevocationsClosed = $false,
+        [int]$GroupsRemoved = 0,
+        [bool]$ExtensionAttribute6Cleared = $false,
+        [bool]$CloudExtensionAttribute15Cleared = $false,
+        [bool]$DescriptionSet = $false,
+        [bool]$UrgentTransactionCreated = $false,
+        [string]$Message,
+        [string]$ErrorCode,
+        [bool]$Changed = $false,
+        [bool]$Simulated = $false,
+        [object]$Output
+    )
+
+    [pscustomobject]@{
+        Success                          = $Success
+        Identity                         = $Identity
+        PersId                           = (Get-HospisDataValue -Data $Data -Name 'PersId')
+        ActionType                       = (Get-HospisDataValue -Data $Data -Name 'ActionType')
+        Disabled                         = $Disabled
+        MailboxHandled                   = $MailboxHandled
+        AutoReplyConfigured              = $AutoReplyConfigured
+        EmailRevocationsClosed           = $EmailRevocationsClosed
+        GroupsRemoved                    = $GroupsRemoved
+        ExtensionAttribute6Cleared       = $ExtensionAttribute6Cleared
+        CloudExtensionAttribute15Cleared = $CloudExtensionAttribute15Cleared
+        DescriptionSet                   = $DescriptionSet
+        UrgentTransactionCreated         = $UrgentTransactionCreated
+        Message                          = $Message
+        ErrorCode                        = $ErrorCode
+        Changed                          = $Changed
+        Simulated                        = $Simulated
+        DisplayName                      = (Get-HospisDataValue -Data $Data -Name 'DisplayName')
+        Output                           = $Output
+    }
+}
+
 function Disable-HospisResourceForestUser {
     [CmdletBinding()]
     param(
@@ -200,6 +245,7 @@ function Disable-HospisResourceForestUser {
     if ($User.PSObject.Properties['mailNickname']) { $mailNickname = [string]$User.mailNickname }
 
     $actions = @()
+    $groupsRemovedCount = 0
 
     $actions += Disable-AdAccountSafe -Identity $sam -WhatIfMode:$Context.WhatIfMode
 
@@ -240,19 +286,36 @@ function Disable-HospisResourceForestUser {
                 $groupDnText.StartsWith('CN=GG-KSBL-VDI-Remote') -or
                 $groupDnText.StartsWith('CN=GG-OneSign')) {
 
-                $actions += Remove-AdGroupMemberSafe -Identity $groupDnText -Members @($sam) -ConfirmRemoval:$false -WhatIfMode:$Context.WhatIfMode
+                $removeResult = Remove-AdGroupMemberSafe -Identity $groupDnText -Members @($sam) -ConfirmRemoval:$false -WhatIfMode:$Context.WhatIfMode
+                $actions += $removeResult
+
+                $countRemoval = $true
+                if ($removeResult -and $removeResult.PSObject.Properties['Success']) {
+                    $countRemoval = [bool]$removeResult.Success
+                }
+
+                if ($countRemoval) {
+                    $groupsRemovedCount++
+                }
             }
         }
     }
 
     # Legacy source disables Entra sync by clearing extensionAttribute6 and msDS-cloudExtensionAttribute15.
-    $actions += Set-AdUserSafe -Parameters @{ Identity = $sam; Clear = @('extensionAttribute6','msDS-cloudExtensionAttribute15') } -WhatIfMode:$Context.WhatIfMode
+    $actions += Set-AdUserSafe -Parameters @{ Identity = $sam; Clear = @('extensionAttribute6', 'msDS-cloudExtensionAttribute15') } -WhatIfMode:$Context.WhatIfMode
     $actions += Set-AdUserSafe -Parameters @{ Identity = $sam; Description = "Inaktiviert (Urgent) am $(Get-Date -Format 'yyyy-MM-dd') von $($Data.CurrentUserName)" } -WhatIfMode:$Context.WhatIfMode
 
     return [pscustomobject]@{
-        SamAccountName = $sam
-        HasMailbox     = $hasMailbox
-        Actions        = $actions
+        SamAccountName                   = $sam
+        HasMailbox                       = $hasMailbox
+        Disabled                         = $true
+        AutoReplyConfigured              = $hasMailbox
+        EmailRevocationsClosed           = $hasMailbox
+        GroupsRemoved                    = $groupsRemovedCount
+        ExtensionAttribute6Cleared       = $true
+        CloudExtensionAttribute15Cleared = $true
+        DescriptionSet                   = $true
+        Actions                          = $actions
     }
 }
 
@@ -270,45 +333,77 @@ function Invoke-UrgentHospisPersonInactivation {
         Sql   = $null
     }
 
-    if ($Context.WhatIfMode) {
-        $simulatedUser = [pscustomobject]@{
-            SamAccountName = "whatif-$($Data.PersId)"
-            mailNickname   = "whatif-$($Data.PersId)"
-            homeMdb        = 'WHATIF-MDB'
-            memberof       = @('CN=TPL-WHATIF,OU=Groups,DC=example,DC=test')
+    try {
+        if ($Context.WhatIfMode) {
+            $simulatedUser = [pscustomobject]@{
+                SamAccountName = "whatif-$($Data.PersId)"
+                mailNickname   = "whatif-$($Data.PersId)"
+                homeMdb        = 'WHATIF-MDB'
+                memberof       = @('CN=TPL-WHATIF,OU=Groups,DC=example,DC=test')
+            }
+            $output.Users += Disable-HospisResourceForestUser -Context $Context -User $simulatedUser -Data $Data
         }
-        $output.Users += Disable-HospisResourceForestUser -Context $Context -User $simulatedUser -Data $Data
-    }
-    else {
-        $users = @(Get-AdUsersByEmployeeIdSafe -EmployeeId (Get-HospisDataValue -Data $Data -Name 'PersId') -Properties @('mail','proxyAddresses','extensionAttribute6','msDS-cloudExtensionAttribute15','SamAccountName','mailNickname','AccountExpirationDate','homeMdb','memberof','extensionAttribute11'))
-        if ($users.Count -eq 0) {
-            return New-HospisPersonResult -Success $false -Changed $false -Action (Get-HospisDataValue -Data $Data -Name 'ActionType') -PersId (Get-HospisDataValue -Data $Data -Name 'PersId') -DisplayName (Get-HospisDataValue -Data $Data -Name 'DisplayName') -Message "No AD user found for PersId '$($Data.PersId)'." -ErrorCode 'HOSPIS_USER_NOT_FOUND'
+        else {
+            $users = @(Get-AdUsersByEmployeeIdSafe -EmployeeId (Get-HospisDataValue -Data $Data -Name 'PersId') -Properties @('mail', 'proxyAddresses', 'extensionAttribute6', 'msDS-cloudExtensionAttribute15', 'SamAccountName', 'mailNickname', 'AccountExpirationDate', 'homeMdb', 'memberof', 'extensionAttribute11'))
+            if ($users.Count -eq 0) {
+                return New-UrgentHospisInactivationResult -Success $false -Data $Data -Message "No AD user found for PersId '$($Data.PersId)'." -ErrorCode 'HOSPIS_USER_NOT_FOUND'
+            }
+
+            foreach ($user in $users) {
+                $output.Users += Disable-HospisResourceForestUser -Context $Context -User $user -Data $Data
+            }
         }
 
-        foreach ($user in $users) {
-            $output.Users += Disable-HospisResourceForestUser -Context $Context -User $user -Data $Data
+        $urgentTransactionCreated = $false
+        if ([string]$Data.ActionType -eq 'Inaktivieren') {
+            $sql = New-UrgentHospisInactivationSql -Data $Data
+            $output.Sql = Invoke-HospisSqlNonQuery -Context $Context -Query $sql
+            $urgentTransactionCreated = $true
         }
-    }
 
-    if ([string]$Data.ActionType -eq 'Inaktivieren') {
-        $sql = New-UrgentHospisInactivationSql -Data $Data
-        $output.Sql = Invoke-HospisSqlNonQuery -Context $Context -Query $sql
-    }
+        $identity = $null
+        if ($output.Users.Count -gt 0) { $identity = [string]$output.Users[0].SamAccountName }
 
-    New-HospisPersonResult `
-        -Success $true `
-        -Changed $true `
-        -Simulated:$Context.WhatIfMode `
-        -Action (Get-HospisDataValue -Data $Data -Name 'ActionType') `
-        -PersId (Get-HospisDataValue -Data $Data -Name 'PersId') `
-        -DisplayName (Get-HospisDataValue -Data $Data -Name 'DisplayName') `
-        -Message "Urgent Hospis person inactivation processed." `
-        -Output $output
+        $mailboxHandled = @($output.Users | Where-Object { $_.HasMailbox }).Count -gt 0
+        $groupsRemoved = ($output.Users | Measure-Object -Property GroupsRemoved -Sum).Sum
+        if ($null -eq $groupsRemoved) { $groupsRemoved = 0 }
+
+        return New-UrgentHospisInactivationResult `
+            -Success $true `
+            -Data $Data `
+            -Identity $identity `
+            -Disabled ($output.Users.Count -gt 0) `
+            -MailboxHandled $mailboxHandled `
+            -AutoReplyConfigured $mailboxHandled `
+            -EmailRevocationsClosed $mailboxHandled `
+            -GroupsRemoved ([int]$groupsRemoved) `
+            -ExtensionAttribute6Cleared ($output.Users.Count -gt 0) `
+            -CloudExtensionAttribute15Cleared ($output.Users.Count -gt 0) `
+            -DescriptionSet ($output.Users.Count -gt 0) `
+            -UrgentTransactionCreated $urgentTransactionCreated `
+            -Message "Urgent Hospis person inactivation processed." `
+            -Changed $true `
+            -Simulated:$Context.WhatIfMode `
+            -Output $output
+    }
+    catch {
+        Write-LogError -Logger $Context.Logger -Message "Invoke-UrgentHospisPersonInactivation failed for PersId '$($Data.PersId)'." -Exception $_.Exception
+
+        return New-UrgentHospisInactivationResult `
+            -Success $false `
+            -Data $Data `
+            -Message $_.Exception.Message `
+            -ErrorCode 'URGENT_HOSPIS_INACTIVATION_FAILED' `
+            -Changed $false `
+            -Simulated:$Context.WhatIfMode `
+            -Output $output
+    }
 }
 
 Export-ModuleMember -Function @(
     'Submit-HospisPersonTransaction',
     'Invoke-UrgentHospisPersonInactivation',
     'New-HospisPersonTransactionSql',
-    'New-UrgentHospisInactivationSql'
+    'New-UrgentHospisInactivationSql',
+    'New-UrgentHospisInactivationResult'
 )
