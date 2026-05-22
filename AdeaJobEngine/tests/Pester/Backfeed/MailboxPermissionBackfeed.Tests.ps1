@@ -354,6 +354,9 @@ Describe 'MailboxPermission Backfeed Read-Map' {
         Mock -ModuleName MailboxPermissionBackfeedService -CommandName Write-MailboxPermissionBackfeedStaging {
             [pscustomobject]@{ Success = $true; StagedCount = 1; Message = 'Rows staged.'; ErrorCode = $null }
         }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Get-MailboxPermissionBackfeedDelta {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = 'aaaaaaaa-1111-1111-1111-111111111111'; InsertedCount = 1; UpdatedCount = 0; DeletedCount = 0; UnchangedCount = 0; FailedCount = 0; Message = 'Delta counts resolved.'; ErrorCode = $null; Errors = @() }
+        }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-1' -BackfeedType 'MailboxPermission' -Mode 'Full'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
@@ -361,6 +364,7 @@ Describe 'MailboxPermission Backfeed Read-Map' {
         $result.Status | Should -Be 'Succeeded'
         $result.ReadCount | Should -Be 1
         $result.StagedCount | Should -Be 1
+        $result.InsertedCount | Should -Be 1
         $result.FailedCount | Should -Be 0
     }
 
@@ -396,7 +400,7 @@ Describe 'MailboxPermission Backfeed Read-Map' {
         $result.Errors.Count | Should -Be 1
     }
 
-    It 'Service keeps delta and merge counters at zero' {
+    It 'Service maps delta counters from delta service result' {
         Mock -ModuleName MailboxPermissionBackfeedService -CommandName Read-MailboxPermissionBackfeedSources {
             @([pscustomobject]@{ PermissionType = 'SendAs'; SourceSystem = 'ExchangeOnline' })
         }
@@ -406,14 +410,39 @@ Describe 'MailboxPermission Backfeed Read-Map' {
         Mock -ModuleName MailboxPermissionBackfeedService -CommandName Write-MailboxPermissionBackfeedStaging {
             [pscustomobject]@{ Success = $true; StagedCount = 1; Message = 'Rows staged.'; ErrorCode = $null }
         }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Get-MailboxPermissionBackfeedDelta {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = '55555555-aaaa-bbbb-cccc-555555555555'; InsertedCount = 1; UpdatedCount = 2; DeletedCount = 3; UnchangedCount = 4; FailedCount = 0; Message = 'Delta counts resolved.'; ErrorCode = $null; Errors = @() }
+        }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-4' -BackfeedType 'MailboxPermission' -Mode 'Delta'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
 
-        $result.InsertedCount | Should -Be 0
-        $result.UpdatedCount | Should -Be 0
-        $result.DeletedCount | Should -Be 0
-        $result.UnchangedCount | Should -Be 0
+        $result.InsertedCount | Should -Be 1
+        $result.UpdatedCount | Should -Be 2
+        $result.DeletedCount | Should -Be 3
+        $result.UnchangedCount | Should -Be 4
+    }
+
+    It 'Service returns Failed when delta service fails after staging' {
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Read-MailboxPermissionBackfeedSources {
+            @([pscustomobject]@{ PermissionType = 'SendAs'; SourceSystem = 'ExchangeOnline' })
+        }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName ConvertTo-MailboxPermissionBackfeedRows {
+            @([pscustomobject]@{ PermissionType = 'SendAs'; SourceSystem = 'ExchangeOnline'; RowHash = 'hash' })
+        }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Write-MailboxPermissionBackfeedStaging {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = '66666666-aaaa-bbbb-cccc-666666666666'; StagedCount = 1; FailedCount = 0; Message = 'Rows staged.'; ErrorCode = $null; Errors = @() }
+        }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Get-MailboxPermissionBackfeedDelta {
+            [pscustomobject]@{ Success = $false; BackfeedRunId = '66666666-aaaa-bbbb-cccc-666666666666'; InsertedCount = 1; UpdatedCount = 0; DeletedCount = 0; UnchangedCount = 0; FailedCount = 1; Message = 'delta failed'; ErrorCode = 'MAILBOX_PERMISSION_DELTA_FAILED'; Errors = @([pscustomobject]@{ Message = 'delta failed'; ErrorCode = 'MAILBOX_PERMISSION_DELTA_FAILED'; BackfeedRunId = '66666666-aaaa-bbbb-cccc-666666666666' }) }
+        }
+
+        $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-5' -BackfeedType 'MailboxPermission' -Mode 'Delta'
+        $result = Invoke-MailboxPermissionBackfeed -Context $context
+
+        $result.Status | Should -Be 'Failed'
+        $result.Errors.Count | Should -Be 1
+        $result.BackfeedRunId | Should -Be '66666666-aaaa-bbbb-cccc-666666666666'
     }
 
     It 'Service contains no direct Exchange AD or SQL cmdlets' {

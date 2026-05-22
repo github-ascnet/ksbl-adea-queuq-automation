@@ -86,7 +86,26 @@ function Invoke-BackfeedSqlScript {
     Invoke-SqlNonQueryParameterizedSafe -Query $query -Parameters $Parameters -ConnectionString $settings.ConnectionString -ServerInstance $settings.ServerInstance -Database $settings.Database -WhatIfMode:$Context.WhatIfMode
 }
 
+function Invoke-BackfeedSqlQueryScript {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Context,
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [hashtable]$Parameters = @{}
+    )
+
+    if (-not (Test-Path -Path $ScriptPath)) {
+        throw "SQL script not found: $ScriptPath"
+    }
+
+    $query = Get-Content -Path $ScriptPath -Raw
+    $settings = Get-BackfeedSqlConnectionSettings -Context $Context
+
+    Invoke-SqlQueryParameterizedSafe -Query $query -Parameters $Parameters -ConnectionString $settings.ConnectionString -ServerInstance $settings.ServerInstance -Database $settings.Database -WhatIfMode:$Context.WhatIfMode
+}
+
 Export-ModuleMember -Function @(
     'Get-BackfeedSqlConnectionSettings',
-    'Invoke-BackfeedSqlScript'
+    'Invoke-BackfeedSqlScript',
+    'Invoke-BackfeedSqlQueryScript'
 )

@@ -1,0 +1,551 @@
+R = Rolle
+
+Du bist ein sehr erfahrener SQL-Server-, PowerShell-, ETL-/Backfeed-, Delta-/Merge-, Datenmodellierungs-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map vorhanden
+OnPrem Gateway-Anbindung vorhanden
+ExchangeOnline Gateway-Anbindung vorhanden
+SQL-Staging in stg_MailboxPermissions_Backfeed vorhanden
+BackfeedRunId wird durch Context, Writer, Result und OutputJson konsistent geführt
+Gesamtsuite zuletzt grün mit 582 Tests, 0 Failed
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nicht verändert.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue nur die Delta-Ermittlung für MailboxPermission Backfeed.
+
+Ziel dieser Phase:
+
+Aus den Daten in stg_MailboxPermissions_Backfeed sollen Delta-Kandidaten ermittelt werden:
+
+Inserted
+Updated
+Deleted
+Unchanged
+
+Die Delta-Ermittlung soll BackfeedRunId-basiert erfolgen.
+
+Das Ergebnis soll als strukturierte Delta-Statistik in BackfeedResult sichtbar werden.
+
+Noch nicht bauen:
+
+Kein Merge in MailboxPermissions.
+Kein Insert/Update/Delete in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+Keine History-Logik.
+Keine produktive Zieltabellen-Aktualisierung.
+Keine Idempotenz-End-to-End-Umsetzung mit Zieltabellenänderung.
+Keine Scheduler-/Watermark-Logik.
+
+────────────────────────────────────────
+
+K = Kontext
+
+Aktuelle Pipeline:
+
+Read
+  → Map
+  → Stage
+  → Result
+
+Ziel nach dieser Phase:
+
+Read
+  → Map
+  → Stage
+  → Delta
+  → Result
+
+Aktuelle neue Backfeed-Stage-Tabelle:
+
+stg_MailboxPermissions_Backfeed
+
+Wichtige Stage-Spalten:
+
+BackfeedRunId
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+MailboxName
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+IsInherited
+Deny
+AccessRights
+StagingInserted
+
+Bestehende Zieltabelle:
+
+MailboxPermissions
+
+Wichtig:
+
+MailboxPermissions wird in dieser Phase nur lesend für Delta-Vergleich verwendet.
+MailboxPermissions darf nicht verändert werden.
+hist_MailboxPermissions darf nicht verändert werden.
+
+Aktuell ist noch unklar, ob MailboxPermissions bereits SourceSystem, PermissionType, MailboxKey, TrusteeKey oder RowHash besitzt.
+
+Wenn diese Felder in MailboxPermissions fehlen, darf die Delta-Ermittlung nur so weit umgesetzt werden, wie es das Schema zuverlässig erlaubt.
+
+Keine Spalten erfinden.
+Keine Schemaänderungen.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Zielkette:
+
+MailboxPermissionBackfeedService
+  → Write-MailboxPermissionBackfeedStaging
+  → Get-MailboxPermissionBackfeedDelta
+  → BackfeedResult
+
+Neue oder zu erweiternde Datei:
+
+backfeed/MailboxPermission/MailboxPermissionDeltaService.psm1
+
+Neue SQL-Datei unter:
+
+sql/backfeed/mailbox-permission
+
+Mögliche SQL-Datei:
+
+get-mailbox-permission-backfeed-delta-counts.sql
+
+oder:
+
+select-mailbox-permission-backfeed-delta.sql
+
+PowerShell soll Delta/Merge nicht selbst in grosser Logik berechnen.
+
+Delta-Ermittlung soll bevorzugt SQL-basiert erfolgen und über BackfeedSqlScriptRunner / SqlGateway laufen.
+
+Nicht erlaubt:
+
+Kein MERGE.
+Kein INSERT in MailboxPermissions.
+Kein UPDATE in MailboxPermissions.
+Kein DELETE aus MailboxPermissions.
+Kein INSERT in hist_MailboxPermissions.
+Keine TRUNCATE-Logik.
+Keine Schemaänderung.
+Keine direkte SqlConnection im DeltaService.
+Kein Invoke-Sqlcmd direkt im DeltaService.
+Keine Änderung an Exchange-/AD-Gateways.
+Keine Änderung an JobEngine.psm1, JobFileQueue.psm1 oder usecases.json.
+
+────────────────────────────────────────
+
+E = Execution
+
+1. Bestehendes SQL-Schema prüfen
+
+Prüfe im Workspace:
+
+current-scripts/Schema KSBL_IAM.sql
+
+Ermittle, welche Spalten in MailboxPermissions tatsächlich vorhanden sind.
+
+Wichtig:
+
+Wenn MailboxPermissions keine SourceSystem-, PermissionType-, MailboxKey-, TrusteeKey- und RowHash-Spalten hat, darf kein vollständiger moderner Delta-Vergleich gegen diese Spalten gebaut werden.
+
+In diesem Fall:
+
+DeltaService soll dies erkennen oder dokumentiert begrenzen.
+Tests sollen absichern, dass keine nicht existierenden Zielspalten blind verwendet werden.
+
+Ziel dieser Phase bleibt trotzdem:
+
+Delta-Ermittlung vorbereiten und soweit möglich Counts liefern.
+
+────────────────────────────────────────
+
+2. Delta-Service erstellen
+
+Erstelle oder erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionDeltaService.psm1
+
+Funktion:
+
+Get-MailboxPermissionBackfeedDelta
+
+Parameter:
+
+BackfeedContext
+BackfeedRunId
+
+Optional:
+
+StagedRows oder StageCount nur falls bereits vorhanden und sinnvoll.
+
+Rückgabeobjekt mindestens:
+
+Success
+BackfeedRunId
+InsertedCount
+UpdatedCount
+DeletedCount
+UnchangedCount
+FailedCount
+Message
+ErrorCode
+Errors
+
+Verhalten:
+
+Wenn BackfeedRunId fehlt oder ungültig ist:
+
+Success = false
+ErrorCode = INVALID_BACKFEED_RUN_ID
+
+Wenn SQL erfolgreich Delta-Counts liefert:
+
+Success = true
+Counts gemäss SQL übernehmen
+
+Wenn SQL Fehler wirft:
+
+Success = false
+ErrorCode = MAILBOX_PERMISSION_DELTA_FAILED
+Errors enthält strukturierte Fehlermeldung
+
+Wichtig:
+
+DeltaService ruft nur BackfeedSqlScriptRunner oder SqlGateway auf.
+Kein direkter SQL-Zugriff.
+Kein Merge.
+Kein History.
+
+────────────────────────────────────────
+
+3. SQL-Datei für Delta-Counts erstellen
+
+Erstelle:
+
+sql/backfeed/mailbox-permission/get-mailbox-permission-backfeed-delta-counts.sql
+
+Ziel:
+
+Liefert eine einzelne Ergebniszeile mit:
+
+InsertedCount
+UpdatedCount
+DeletedCount
+UnchangedCount
+
+Parameter:
+
+BackfeedRunId
+
+Wichtig:
+
+Diese SQL-Datei darf keine Daten verändern.
+
+Nicht erlaubt in dieser SQL-Datei:
+
+INSERT
+UPDATE
+DELETE
+MERGE
+TRUNCATE
+DROP
+ALTER
+
+Es handelt sich nur um SELECT-Logik.
+
+Falls MailboxPermissions die modernen BusinessKey-/RowHash-Spalten nicht besitzt:
+
+Verwende keine nicht existierenden Spalten.
+Baue die SQL-Datei entweder defensiv mit klarer TODO-Markierung oder liefere für Updated/Deleted/Unchanged zunächst 0 und InsertedCount als Anzahl der staged Rows dieses BackfeedRunId.
+Dokumentiere dies im Kommentar der SQL-Datei.
+
+Falls die Zielspalten vorhanden sind:
+
+Empfohlene Logik:
+
+Inserted:
+Stage-Zeilen des aktuellen Runs, die im Ziel anhand BusinessKey nicht existieren.
+
+Updated:
+Stage-Zeilen des aktuellen Runs, deren BusinessKey existiert, aber RowHash abweicht.
+
+Unchanged:
+Stage-Zeilen des aktuellen Runs, deren BusinessKey existiert und RowHash gleich ist.
+
+Deleted:
+Ziel-Zeilen, die für SourceSystem/PermissionType im aktuellen Run nicht mehr vorhanden sind.
+
+Wichtig:
+
+Delete-Erkennung muss SourceSystem-bewusst sein.
+OnPrem und ExchangeOnline dürfen nicht kollidieren.
+
+────────────────────────────────────────
+
+4. BackfeedSqlScriptRunner / SqlGateway prüfen
+
+Prüfe:
+
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+infrastructure/SqlGateway.psm1
+
+Ziel:
+
+DeltaService muss eine SQL-Datei ausführen können, die ein Resultset mit Counts zurückgibt.
+
+Falls bisher nur NonQuery unterstützt wird:
+
+Ergänze minimal eine Query-/Scalar-/SingleRow-Funktion.
+
+Anforderungen:
+
+SQL-Datei laden
+Parameter übergeben
+eine Ergebniszeile zurückgeben
+keine eigene ConnectionString-Logik im DeltaService
+keine zweite SQL-Engine bauen
+
+Nur minimal erweitern, falls nötig.
+
+────────────────────────────────────────
+
+5. MailboxPermissionBackfeedService erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Pipeline nach Stage:
+
+Read
+  → Map
+  → Stage
+  → Delta
+  → Result
+
+Verhalten:
+
+Nach erfolgreichem Stage:
+
+Get-MailboxPermissionBackfeedDelta mit BackfeedRunId aufrufen.
+
+Bei Delta Success:
+
+BackfeedResult enthält:
+InsertedCount
+UpdatedCount
+DeletedCount
+UnchangedCount
+StagedCount
+ReadCount
+BackfeedRunId
+
+Bei Delta Failure:
+
+BackfeedResult Status = Failed
+Errors aus Delta übernehmen
+Bereits bekannte Counts erhalten, soweit möglich
+
+Wichtig:
+
+Kein Merge ausführen.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+
+Falls Delta-Service bewusst nur eingeschränkt arbeitet, z. B. nur InsertedCount als StagedCount liefert, muss dies in Message/Errors/TODO dokumentiert sein.
+
+────────────────────────────────────────
+
+6. Tests ergänzen
+
+Ergänze oder aktualisiere Tests unter:
+
+tests/Pester/Backfeed
+
+Empfohlene neue Datei:
+
+MailboxPermissionDeltaService.Tests.ps1
+
+Mindesttests:
+
+SQL-Datei / Struktur:
+
+1. get-mailbox-permission-backfeed-delta-counts.sql existiert.
+2. SQL-Datei enthält Parameter BackfeedRunId.
+3. SQL-Datei enthält SELECT.
+4. SQL-Datei enthält kein INSERT.
+5. SQL-Datei enthält kein UPDATE.
+6. SQL-Datei enthält kein DELETE.
+7. SQL-Datei enthält kein MERGE.
+8. SQL-Datei enthält kein TRUNCATE.
+9. SQL-Datei enthält kein ALTER.
+10. SQL-Datei schreibt nicht in MailboxPermissions.
+11. SQL-Datei schreibt nicht in hist_MailboxPermissions.
+
+DeltaService:
+
+12. DeltaService-Datei existiert.
+13. Get-MailboxPermissionBackfeedDelta existiert.
+14. Ungültige BackfeedRunId führt zu Success = false und ErrorCode INVALID_BACKFEED_RUN_ID.
+15. Erfolgreiche SQL-Count-Rückgabe wird korrekt in Inserted/Updated/Deleted/Unchanged übernommen.
+16. SQL-Fehler führt zu Success = false und ErrorCode MAILBOX_PERMISSION_DELTA_FAILED.
+17. DeltaService enthält kein Invoke-Sqlcmd.
+18. DeltaService enthält keine SqlConnection.
+19. DeltaService enthält kein MERGE.
+20. DeltaService enthält keine Zieltabellen-Schreiblogik.
+
+Service:
+
+21. MailboxPermissionBackfeedService ruft DeltaService nach Stage auf.
+22. BackfeedResult übernimmt InsertedCount.
+23. BackfeedResult übernimmt UpdatedCount.
+24. BackfeedResult übernimmt DeletedCount.
+25. BackfeedResult übernimmt UnchangedCount.
+26. Delta-Fehler führt zu BackfeedResult Status = Failed.
+27. BackfeedRunId bleibt im Result erhalten.
+
+Architektur:
+
+28. JobEngine.psm1 unverändert frei von Backfeed-Fachlogik.
+29. JobFileQueue.psm1 unverändert frei von Backfeed-Fachlogik.
+30. usecases.json enthält keine Backfeed-Einträge.
+31. ExchangeOnPremGateway wurde nicht geändert.
+32. ExchangeOnlineGateway wurde nicht geändert.
+33. ActiveDirectoryGateway wurde nicht geändert.
+34. Legacy-Skripte wurden nicht geändert.
+35. Keine SQL-Datei schreibt in hist_MailboxPermissions.
+
+Pester-Regeln:
+
+Pester 5.7.1-kompatibel bleiben.
+Keine alte Syntax:
+Should Be
+Should Not Be
+
+Nur:
+Should -Be
+Should -Not -Be
+
+Keine using:-Variablen innerhalb InModuleScope.
+
+────────────────────────────────────────
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+MailboxPermissionSourceReader.psm1
+MailboxPermissionMapper.psm1
+MailboxPermissionStagingWriter.psm1, ausser absolut nötig
+
+Nur falls nötig ändern:
+
+MailboxPermissionDeltaService.psm1
+MailboxPermissionBackfeedService.psm1
+BackfeedSqlScriptRunner.psm1
+SqlGateway.psm1
+sql/backfeed/mailbox-permission
+tests/Pester/Backfeed
+
+────────────────────────────────────────
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue SQL-Datei
+Neue DeltaService-Datei
+Ob BackfeedSqlScriptRunner oder SqlGateway erweitert wurde
+Wie Delta-Counts ermittelt werden
+Welche Counts unterstützt werden
+Welche Begrenzung wegen aktuellem Zieltabellenschema besteht
+Wie MailboxPermissionBackfeedService Delta einbindet
+Wie BackfeedResult die Delta-Counts übernimmt
+Welche Tests ergänzt wurden
+Bestätigung, dass kein Merge implementiert wurde
+Bestätigung, dass keine History implementiert wurde
+Bestätigung, dass MailboxPermissions nicht beschrieben wird
+Bestätigung, dass hist_MailboxPermissions nicht beschrieben wird
+Bestätigung, dass Exchange-/AD-Gateways unverändert blieben
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Baue nur die Delta-Ermittlung ohne Merge.
+
+Kein Merge.
+Keine History.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+
+Ziel ist:
+
+Read
+  → Map
+  → Stage
+  → Delta-Counts
+  → Result.
