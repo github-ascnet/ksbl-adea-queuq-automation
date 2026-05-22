@@ -1,0 +1,444 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, SQL-Server-, ETL-/Backfeed-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map vorhanden
+OnPrem Gateway-Anbindung vorhanden
+ExchangeOnline Gateway-Anbindung vorhanden
+SQL-Staging in stg_MailboxPermissions_Backfeed vorhanden
+BackfeedRunId wird aktuell im StagingWriter erzeugt oder abgeleitet
+Gesamtsuite zuletzt grün mit 571 Tests, 0 Failed
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nicht verändert.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Mache BackfeedRunId konsistent über den gesamten Backfeed-Lauf verfügbar.
+
+Ziel dieser Phase:
+
+BackfeedRunId wird im BackfeedContext gesetzt.
+BackfeedRunId wird im BackfeedResult ausgegeben.
+MailboxPermissionStagingWriter verwendet die BackfeedRunId aus dem Context.
+Writer-Result enthält weiterhin die verwendete BackfeedRunId.
+OutputJson des BackfeedProcessors enthält BackfeedRunId.
+Pester-Tests sichern die Durchgängigkeit ab.
+
+Noch nicht bauen:
+
+Delta
+Merge
+History
+Schreiben in MailboxPermissions
+Schreiben in hist_MailboxPermissions
+neue SQL-Merge-Dateien
+Run-Tracking-Tabelle
+Watermark-Logik
+Scheduler-Logik
+
+────────────────────────────────────────
+
+K = Kontext
+
+Aktueller Stand:
+
+Die neue Tabelle stg_MailboxPermissions_Backfeed enthält BackfeedRunId.
+MailboxPermissionStagingWriter setzt BackfeedRunId aktuell nach folgender Priorität:
+
+1. Context.BackfeedRunId, wenn gültige GUID
+2. Context.CorrelationId, wenn gültige GUID
+3. neue GUID als Fallback
+
+Das ist grundsätzlich richtig, aber BackfeedRunId ist noch nicht konsistent im BackfeedResult als Top-Level-Property sichtbar.
+
+Für spätere Delta-/Merge-Logik ist BackfeedRunId zentral:
+
+Stage-Lauf sauber abgrenzen
+Delta auf genau einen aktuellen Lauf beziehen
+Delete-Erkennung pro Run ermöglichen
+SQL-Diagnose vereinfachen
+OutputJson maschinenlesbar korrelieren
+Fehleranalyse vereinfachen
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+BackfeedRunId gehört fachlich in:
+
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+backfeed/Invoke-BackfeedProcessor.ps1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Regeln:
+
+BackfeedRunId ist eine GUID.
+Wenn ein BackfeedRunId übergeben oder im Context vorhanden ist, wird dieser verwendet.
+Wenn kein BackfeedRunId vorhanden ist, wird eine neue GUID erzeugt.
+Wenn CorrelationId eine gültige GUID ist und BackfeedRunId fehlt, darf CorrelationId als BackfeedRunId verwendet werden.
+Wenn CorrelationId keine GUID ist, bleibt CorrelationId als technische Korrelation erhalten, aber BackfeedRunId wird separat neu erzeugt.
+BackfeedRunId soll im Result sichtbar sein.
+BackfeedRunId soll im OutputJson sichtbar sein.
+StagingWriter darf keine eigene abweichende BackfeedRunId erzeugen, wenn im Context bereits eine gesetzt ist.
+
+Nicht erlaubt:
+
+Keine Änderung an JobEngine.psm1.
+Keine Änderung an JobFileQueue.psm1.
+Keine Änderung an usecases.json.
+Keine Änderung an ExchangeOnPremGateway.psm1.
+Keine Änderung an ExchangeOnlineGateway.psm1.
+Keine Änderung an ActiveDirectoryGateway.psm1.
+Keine Änderung an produktiven Environment-Dateien.
+Keine neue Run-Tabelle.
+Keine Watermark-Implementierung.
+Kein Delta/Merge.
+Keine History-Logik.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+
+────────────────────────────────────────
+
+E = Execution
+
+1. BackfeedContext erweitern
+
+Prüfe und erweitere:
+
+shared/Backfeed/BackfeedContext.psm1
+
+Ziel:
+
+BackfeedContext enthält BackfeedRunId als Top-Level-Property.
+
+Erwartetes Verhalten:
+
+Wenn beim Erzeugen des Context eine BackfeedRunId übergeben wird und gültig ist:
+diese verwenden.
+
+Wenn keine BackfeedRunId übergeben wird, aber CorrelationId eine gültige GUID ist:
+CorrelationId als BackfeedRunId verwenden.
+
+Wenn weder BackfeedRunId noch CorrelationId als GUID verwendbar ist:
+neue GUID erzeugen.
+
+CorrelationId bleibt weiterhin als separate Property erhalten.
+
+Wichtig:
+
+Keine bestehende Context-Struktur unnötig brechen.
+Bestehende Tests müssen grün bleiben.
+
+────────────────────────────────────────
+
+2. BackfeedResult erweitern
+
+Prüfe und erweitere:
+
+shared/Backfeed/BackfeedResult.psm1
+
+Ziel:
+
+BackfeedResult enthält BackfeedRunId als Top-Level-Property.
+
+Erwartete Properties:
+
+BackfeedRunId
+BackfeedType
+Mode
+Status
+ReadCount
+StagedCount
+InsertedCount
+UpdatedCount
+DeletedCount
+UnchangedCount
+FailedCount
+StartedAt
+CompletedAt
+DurationSeconds
+Errors
+
+Falls BackfeedResult bereits CorrelationId enthält:
+CorrelationId erhalten und BackfeedRunId zusätzlich ergänzen.
+
+Falls BackfeedResult CorrelationId noch nicht enthält:
+nicht zwingend neu einführen, ausser es passt zur bestehenden Struktur.
+
+────────────────────────────────────────
+
+3. BackfeedProcessor prüfen
+
+Prüfe:
+
+backfeed/Invoke-BackfeedProcessor.ps1
+
+Ziel:
+
+Der Processor erzeugt einen BackfeedContext mit konsistenter BackfeedRunId.
+Der Processor gibt bei OutputJson ein Result aus, das BackfeedRunId enthält.
+
+Optionaler Parameter:
+
+Falls sinnvoll und minimal möglich, ergänze einen optionalen Parameter:
+
+BackfeedRunId
+
+Typ:
+
+string oder guid
+
+Nur ergänzen, wenn es sauber zur bestehenden Parameterstruktur passt.
+
+Falls kein Parameter ergänzt wird:
+Context muss trotzdem intern eine BackfeedRunId erzeugen.
+
+Wichtig:
+
+OutputJson muss weiterhin valides JSON bleiben.
+Keine dekorativen Logs in stdout bei OutputJson.
+Bestehende Processor-Tests müssen grün bleiben.
+
+────────────────────────────────────────
+
+4. MailboxPermissionStagingWriter anpassen
+
+Prüfe:
+
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+
+Ziel:
+
+Der Writer verwendet primär Context.BackfeedRunId.
+Er erzeugt nur dann eine BackfeedRunId, wenn Context.BackfeedRunId fehlt oder ungültig ist.
+Wenn der Writer eine Fallback-GUID erzeugt, soll diese im Writer-Result zurückgegeben werden.
+
+Erwartung:
+
+Wenn Context.BackfeedRunId vorhanden ist:
+alle SQL-Parameter verwenden exakt diese BackfeedRunId.
+
+Wenn Context.BackfeedRunId fehlt:
+Writer darf Fallback erzeugen, aber idealerweise sollte das nur ein Sicherheitsnetz sein; normalerweise soll der Context sie liefern.
+
+Writer-Result enthält:
+
+BackfeedRunId
+Success
+StagedCount
+FailedCount
+Message
+ErrorCode
+Errors
+
+────────────────────────────────────────
+
+5. MailboxPermissionBackfeedService anpassen
+
+Prüfe:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Ziel:
+
+Invoke-MailboxPermissionBackfeed gibt ein BackfeedResult zurück, das BackfeedRunId aus dem Context enthält.
+
+Wenn Writer-Result eine BackfeedRunId zurückgibt:
+Sie muss mit Context.BackfeedRunId übereinstimmen.
+
+Falls Writer wegen Fallback eine BackfeedRunId erzeugt:
+Service soll diese im Result sichtbar machen.
+
+Delta-/Merge-Zähler bleiben weiterhin 0.
+
+Kein Delta.
+Kein Merge.
+Keine History.
+
+────────────────────────────────────────
+
+6. Tests ergänzen
+
+Ergänze oder aktualisiere Tests unter:
+
+tests/Pester/Backfeed
+
+Falls sinnvoll:
+
+BackfeedContext.Tests.ps1
+BackfeedResult.Tests.ps1
+BackfeedProcessor.Tests.ps1
+MailboxPermissionStagingWriter.Tests.ps1
+
+Mindesttests:
+
+BackfeedContext:
+
+1. Context enthält BackfeedRunId.
+2. Gültige explizite BackfeedRunId wird übernommen.
+3. Wenn BackfeedRunId fehlt und CorrelationId GUID ist, wird CorrelationId als BackfeedRunId verwendet.
+4. Wenn BackfeedRunId fehlt und CorrelationId keine GUID ist, wird neue GUID erzeugt.
+5. CorrelationId bleibt erhalten und wird nicht überschrieben.
+
+BackfeedResult:
+
+6. BackfeedResult enthält BackfeedRunId.
+7. New-BackfeedResult übernimmt BackfeedRunId aus Context oder Parameter.
+8. OutputJson enthält BackfeedRunId.
+
+Processor:
+
+9. Invoke-BackfeedProcessor OutputJson enthält BackfeedRunId.
+10. Optionaler Parameter BackfeedRunId wird, falls implementiert, in OutputJson übernommen.
+11. OutputJson bleibt valides JSON.
+
+StagingWriter:
+
+12. Writer verwendet Context.BackfeedRunId für SQL-Parameter.
+13. Writer-Result enthält BackfeedRunId.
+14. Writer erzeugt Fallback-GUID nur bei fehlender Context.BackfeedRunId.
+15. SQL-Parameter BackfeedRunId ist für alle Rows identisch.
+16. Fehlerobjekte enthalten BackfeedRunId.
+
+Service:
+
+17. Invoke-MailboxPermissionBackfeed Result enthält BackfeedRunId.
+18. Result.BackfeedRunId stimmt mit Context.BackfeedRunId überein.
+19. Writer-BackfeedRunId und Result-BackfeedRunId stimmen überein.
+
+Architektur:
+
+20. JobEngine.psm1 unverändert frei von Backfeed-Fachlogik.
+21. JobFileQueue.psm1 unverändert frei von Backfeed-Fachlogik.
+22. usecases.json enthält keine Backfeed-Einträge.
+23. Keine Exchange-/AD-Gateway-Dateien wurden geändert.
+24. Kein Delta/Merge wurde implementiert.
+25. Keine History-Logik wurde implementiert.
+26. Keine MailboxPermissions-Zieltabelle wird beschrieben.
+27. Keine hist_MailboxPermissions-Zieltabelle wird beschrieben.
+
+Pester-Regeln:
+
+Pester 5.7.1-kompatibel bleiben.
+Keine alte Syntax:
+
+Should Be
+Should Not Be
+
+Nur:
+
+Should -Be
+Should -Not -Be
+
+Keine using:-Variablen innerhalb InModuleScope.
+Falls InModuleScope nötig ist, InModuleScope -Parameters verwenden.
+
+────────────────────────────────────────
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+MailboxPermissionSourceReader.psm1
+MailboxPermissionMapper.psm1
+
+Nur falls nötig ändern:
+
+backfeed/Invoke-BackfeedProcessor.ps1
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+tests/Pester/Backfeed
+
+────────────────────────────────────────
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Wie BackfeedRunId im BackfeedContext gesetzt wird
+Wie BackfeedRunId im BackfeedResult gesetzt wird
+Ob Invoke-BackfeedProcessor einen BackfeedRunId-Parameter erhalten hat
+Wie OutputJson BackfeedRunId enthält
+Wie MailboxPermissionStagingWriter BackfeedRunId verwendet
+Wie Writer-Result BackfeedRunId zurückgibt
+Wie MailboxPermissionBackfeedService BackfeedRunId in das Result übernimmt
+Welche Tests ergänzt wurden
+Bestätigung, dass kein Delta/Merge implementiert wurde
+Bestätigung, dass keine History-Logik implementiert wurde
+Bestätigung, dass keine MailboxPermissions-Zieltabelle beschrieben wird
+Bestätigung, dass keine hist_MailboxPermissions-Zieltabelle beschrieben wird
+Bestätigung, dass Exchange-/AD-Gateways unverändert blieben
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Mache nur BackfeedRunId konsistent sichtbar und nutzbar.
+
+Noch kein Delta.
+Noch kein Merge.
+Noch keine History.
+Keine Zieltabellen-Schreiblogik.
+
+Ziel ist:
+
+BackfeedContext.BackfeedRunId
+  → StagingWriter SQL-Parameter BackfeedRunId
+  → Writer-Result.BackfeedRunId
+  → BackfeedResult.BackfeedRunId
+  → OutputJson.BackfeedRunId.

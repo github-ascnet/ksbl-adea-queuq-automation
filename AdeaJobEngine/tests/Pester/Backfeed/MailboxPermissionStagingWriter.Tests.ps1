@@ -115,6 +115,23 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         }
     }
 
+    It 'writer uses Context.BackfeedRunId for all SQL row parameters' {
+        Mock Invoke-MailboxPermissionBackfeedSqlScript { [pscustomobject]@{ Success = $true; RowsAffected = 1 } }
+
+        $rows = @(
+            [pscustomobject]@{ SourceSystem = 'OnPrem'; PermissionType = 'FullAccess'; MailboxKey = 'm1'; MailboxName = 'M1'; TrusteeKey = 't1'; TrusteeName = 'u1'; TrusteeDomain = 'EXAMPLE'; ObjectClass = 'user'; AcePermissions = 'FullAccess'; DistinguishedName = 'CN=M1,OU=Mailboxes,DC=example,DC=local'; ExchHideFromAddressLists = $false; AdReferenceObjectGuid = 'aaaaaaa1-1111-1111-1111-111111111111'; IsInherited = $false; Deny = $false; AccessRights = 'FullAccess'; RowHash = 'h1' },
+            [pscustomobject]@{ SourceSystem = 'ExchangeOnline'; PermissionType = 'SendAs'; MailboxKey = 'm2'; MailboxName = 'M2'; TrusteeKey = 't2'; TrusteeName = 'u2'; TrusteeDomain = 'EXAMPLE'; ObjectClass = 'user'; AcePermissions = 'SendAs'; DistinguishedName = 'CN=M2,OU=Mailboxes,DC=example,DC=local'; ExchHideFromAddressLists = $true; AdReferenceObjectGuid = 'bbbbbbb2-2222-2222-2222-222222222222'; IsInherited = $false; Deny = $false; AccessRights = 'SendAs'; RowHash = 'h2' }
+        )
+
+        $context = [pscustomobject]@{ BackfeedRunId = '12345678-1234-1234-1234-1234567890ab'; CorrelationId = 'ignored'; Config = [pscustomobject]@{}; WhatIfMode = $true }
+        $result = Write-MailboxPermissionBackfeedStaging -BackfeedContext $context -Rows $rows
+
+        $result.BackfeedRunId | Should -Be '12345678-1234-1234-1234-1234567890ab'
+        Should -Invoke -CommandName Invoke-MailboxPermissionBackfeedSqlScript -Times 2 -ParameterFilter {
+            $ScriptPath -like '*insert-stg-mailbox-permission-backfeed-row.sql' -and $Parameters.BackfeedRunId -eq '12345678-1234-1234-1234-1234567890ab'
+        }
+    }
+
     It 'writer persists SourceSystem PermissionType MailboxKey TrusteeKey and RowHash' {
         Mock Invoke-MailboxPermissionBackfeedSqlScript { [pscustomobject]@{ Success = $true; RowsAffected = 1 } }
 
@@ -166,6 +183,8 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
 
         $result.Success | Should -Be $false
         $result.ErrorCode | Should -Be 'MAILBOX_PERMISSION_STAGE_FAILED'
+        $result.BackfeedRunId | Should -Be 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+        $result.Errors[0].BackfeedRunId | Should -Be 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
     }
 
     It 'writer contains no Invoke-Sqlcmd' {
@@ -195,11 +214,12 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
             [pscustomobject]@{ Success = $true; BackfeedRunId = 'ffffffff-ffff-ffff-ffff-ffffffffffff'; StagedCount = 3; FailedCount = 0; Message = 'Rows staged.'; ErrorCode = $null; Errors = @() }
         }
 
-        $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-1' -BackfeedType 'MailboxPermission' -Mode 'Full'
+        $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-1' -BackfeedType 'MailboxPermission' -Mode 'Full' -BackfeedRunId 'ffffffff-ffff-ffff-ffff-ffffffffffff'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
 
         $result.Status | Should -Be 'Succeeded'
         $result.StagedCount | Should -Be 3
+        $result.BackfeedRunId | Should -Be 'ffffffff-ffff-ffff-ffff-ffffffffffff'
     }
 
     It 'service keeps delta merge counters at zero' {
@@ -225,11 +245,12 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
             [pscustomobject]@{ Success = $false; BackfeedRunId = '22222222-aaaa-bbbb-cccc-222222222222'; StagedCount = 0; FailedCount = 1; Message = 'writer failed'; ErrorCode = 'MAILBOX_PERMISSION_STAGE_FAILED'; Errors = @([pscustomobject]@{ Message = 'writer failed'; ErrorCode = 'MAILBOX_PERMISSION_STAGE_FAILED'; BackfeedRunId = '22222222-aaaa-bbbb-cccc-222222222222' }) }
         }
 
-        $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-3' -BackfeedType 'MailboxPermission' -Mode 'Full'
+        $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-3' -BackfeedType 'MailboxPermission' -Mode 'Full' -BackfeedRunId 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
 
         $result.Status | Should -Be 'Failed'
         $result.Errors.Count | Should -Be 1
+        $result.BackfeedRunId | Should -Be '22222222-aaaa-bbbb-cccc-222222222222'
         $result.Errors[0].BackfeedRunId | Should -Be '22222222-aaaa-bbbb-cccc-222222222222'
     }
 

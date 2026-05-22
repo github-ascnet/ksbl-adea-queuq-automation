@@ -12,6 +12,7 @@ function Invoke-MailboxPermissionBackfeed {
     param([Parameter(Mandatory = $true)][object]$Context)
 
     $startedAt = if ($Context.StartedAt) { [datetime]$Context.StartedAt } else { Get-Date }
+    $resultBackfeedRunId = if ($Context.PSObject.Properties['BackfeedRunId']) { [string]$Context.BackfeedRunId } else { '' }
     $rawPermissions = @()
     $rows = @()
     $stagedCount = 0
@@ -21,6 +22,9 @@ function Invoke-MailboxPermissionBackfeed {
         $rows = @(ConvertTo-MailboxPermissionBackfeedRows -RawPermissions $rawPermissions)
 
         $stageResult = Write-MailboxPermissionBackfeedStaging -BackfeedContext $Context -Rows $rows
+        if ($null -ne $stageResult -and $stageResult.PSObject.Properties.Name -contains 'BackfeedRunId' -and -not [string]::IsNullOrWhiteSpace([string]$stageResult.BackfeedRunId)) {
+            $resultBackfeedRunId = [string]$stageResult.BackfeedRunId
+        }
         if ($null -ne $stageResult -and $stageResult.PSObject.Properties.Name -contains 'StagedCount') {
             $stagedCount = [int]$stageResult.StagedCount
         }
@@ -36,19 +40,19 @@ function Invoke-MailboxPermissionBackfeed {
                         Message       = [string]$stageResult.Message
                         ErrorCode     = [string]$stageResult.ErrorCode
                         CorrelationId = [string]$Context.CorrelationId
-                        BackfeedRunId = if ($stageResult.PSObject.Properties.Name -contains 'BackfeedRunId') { [string]$stageResult.BackfeedRunId } else { $null }
+                        BackfeedRunId = $resultBackfeedRunId
                     })
             }
 
-            return New-BackfeedResult -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors $stageErrors
+            return New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors $stageErrors
         }
 
         $completedAt = Get-Date
-        New-BackfeedResult -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Succeeded' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 0 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors @()
+        New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Succeeded' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 0 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors @()
     }
     catch {
         $completedAt = Get-Date
-        New-BackfeedResult -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors @([pscustomobject]@{ Message = $_.Exception.Message; ErrorCode = 'MAILBOX_PERMISSION_BACKFEED_FAILED' })
+        New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors @([pscustomobject]@{ Message = $_.Exception.Message; ErrorCode = 'MAILBOX_PERMISSION_BACKFEED_FAILED'; BackfeedRunId = $resultBackfeedRunId })
     }
 }
 

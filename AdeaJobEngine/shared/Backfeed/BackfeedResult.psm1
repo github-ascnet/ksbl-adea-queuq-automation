@@ -1,8 +1,21 @@
 Set-StrictMode -Version Latest
 
+function Resolve-ResultBackfeedRunId {
+    [CmdletBinding()]
+    param([string]$BackfeedRunId)
+
+    $parsed = [guid]::Empty
+    if (-not [string]::IsNullOrWhiteSpace($BackfeedRunId) -and [guid]::TryParse([string]$BackfeedRunId, [ref]$parsed)) {
+        return $parsed.ToString()
+    }
+
+    [guid]::NewGuid().ToString()
+}
+
 function New-BackfeedResult {
     [CmdletBinding()]
     param(
+        [string]$BackfeedRunId,
         [Parameter(Mandatory = $true)][string]$BackfeedType,
         [Parameter(Mandatory = $true)][string]$Mode,
         [Parameter(Mandatory = $true)][string]$Status,
@@ -19,7 +32,10 @@ function New-BackfeedResult {
         [object[]]$Errors = @()
     )
 
+    $resolvedBackfeedRunId = Resolve-ResultBackfeedRunId -BackfeedRunId $BackfeedRunId
+
     [pscustomobject]@{
+        BackfeedRunId   = $resolvedBackfeedRunId
         BackfeedType    = $BackfeedType
         Mode            = $Mode
         Status          = $Status
@@ -37,4 +53,4 @@ function New-BackfeedResult {
     }
 }
 
-Export-ModuleMember -Function @('New-BackfeedResult')
+Export-ModuleMember -Function @('Resolve-ResultBackfeedRunId','New-BackfeedResult')

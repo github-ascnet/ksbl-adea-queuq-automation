@@ -3,7 +3,8 @@ param(
     [ValidateSet('Full', 'Delta')][string]$Mode = 'Delta',
     [string]$Environment = 'TODO',
     [switch]$OutputJson,
-    [string]$CorrelationId = ([guid]::NewGuid().ToString())
+    [string]$CorrelationId = ([guid]::NewGuid().ToString()),
+    [string]$BackfeedRunId = $null
 )
 
 Set-StrictMode -Version Latest
@@ -20,7 +21,7 @@ Import-Module -Name $resultModulePath -Force -DisableNameChecking
 
 $config = Get-Content -Path $configPath -Raw | ConvertFrom-Json
 $logger = [pscustomobject]@{ Enabled = $false }
-$context = New-BackfeedContext -Environment $Environment -Config $config -Logger $logger -StartedAt (Get-Date) -CorrelationId $CorrelationId -BackfeedType $BackfeedType -Mode $Mode
+$context = New-BackfeedContext -Environment $Environment -Config $config -Logger $logger -StartedAt (Get-Date) -CorrelationId $CorrelationId -BackfeedType $BackfeedType -Mode $Mode -BackfeedRunId $BackfeedRunId
 
 switch ($BackfeedType) {
     'User' {
@@ -35,6 +36,10 @@ switch ($BackfeedType) {
         Import-Module -Name (Join-Path -Path $engineRoot -ChildPath 'backfeed\MailboxPermission\MailboxPermissionBackfeedService.psm1') -Force -DisableNameChecking
         $result = Invoke-MailboxPermissionBackfeed -Context $context
     }
+}
+
+if ($null -ne $result) {
+    $result | Add-Member -NotePropertyName BackfeedRunId -NotePropertyValue ([string]$context.BackfeedRunId) -Force
 }
 
 if ($OutputJson) {

@@ -24,6 +24,11 @@ Describe 'Backfeed processor' {
         $values | Should -Contain 'Delta'
     }
 
+    It 'accepts optional BackfeedRunId parameter' {
+        $command = Get-Command -Name $script:processorPath -ErrorAction Stop
+        @($command.Parameters.Keys) | Should -Contain 'BackfeedRunId'
+    }
+
     It 'returns valid JSON when OutputJson is used' {
         $json = & $script:processorPath -BackfeedType User -Mode Delta -Environment Test -OutputJson -CorrelationId 'test-correlation'
         { $json | ConvertFrom-Json | Out-Null } | Should -Not -Throw
@@ -32,6 +37,14 @@ Describe 'Backfeed processor' {
         $result.Mode | Should -Be 'Delta'
         $result.Status | Should -Be 'NotImplemented'
         $result.CorrelationId | Should -BeNullOrEmpty
+        [guid]::Parse([string]$result.BackfeedRunId).ToString() | Should -Be ([string]$result.BackfeedRunId)
+    }
+
+    It 'uses provided BackfeedRunId in OutputJson' {
+        $expectedRunId = '99999999-9999-9999-9999-999999999999'
+        $json = & $script:processorPath -BackfeedType User -Mode Full -Environment Test -OutputJson -CorrelationId 'test-correlation' -BackfeedRunId $expectedRunId
+        $result = $json | ConvertFrom-Json
+        $result.BackfeedRunId | Should -Be $expectedRunId
     }
 
     It 'invokes the user service and keeps result shaping minimal' {

@@ -128,6 +128,12 @@ function Write-MailboxPermissionBackfeedStaging {
 
     $rowCount = @($Rows).Count
     $backfeedRunId = Resolve-MailboxPermissionBackfeedRunId -Context $BackfeedContext
+    if ($BackfeedContext.PSObject.Properties['BackfeedRunId']) {
+        $BackfeedContext.BackfeedRunId = $backfeedRunId
+    }
+    else {
+        $BackfeedContext | Add-Member -NotePropertyName BackfeedRunId -NotePropertyValue $backfeedRunId -Force
+    }
 
     if ($rowCount -eq 0) {
         return [pscustomobject]@{
