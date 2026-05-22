@@ -1,5 +1,9 @@
 Set-StrictMode -Version Latest
 
+$moduleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$engineRoot = Split-Path -Parent (Split-Path -Parent $moduleRoot)
+Import-Module -Name (Join-Path -Path $engineRoot -ChildPath 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+
 function Get-MailboxPermissionConfiguredSources {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$BackfeedContext)
@@ -32,10 +36,14 @@ function Get-MailboxPermissionConfiguredSources {
 function ConvertTo-MailboxPermissionRawPermissions {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][object[]]$Records,
+        [Parameter(Mandatory = $false)][AllowEmptyCollection()][object[]]$Records,
         [Parameter(Mandatory = $true)][string]$SourceSystem,
         [Parameter(Mandatory = $true)][string]$PermissionType
     )
+
+    if (@($Records).Count -eq 0) {
+        return @()
+    }
 
     $rows = foreach ($record in @($Records)) {
         if ($null -eq $record) { continue }
@@ -67,14 +75,66 @@ function Get-OnPremMailboxFullAccessPermissionRecords {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$Context)
 
-    @()
+    $mailboxes = @(Invoke-OnPremMailboxPermissionBackfeedMailboxesGatewayRead -Context $Context)
+    $records = @()
+
+    foreach ($mailbox in $mailboxes) {
+        if ($null -eq $mailbox) { continue }
+        $mailboxIdentity = [string]$mailbox.Identity
+        if ([string]::IsNullOrWhiteSpace($mailboxIdentity)) { continue }
+
+        $records += @(Invoke-OnPremMailboxFullAccessGatewayRead -Identity $mailboxIdentity -Context $Context)
+    }
+
+    @($records)
 }
 
 function Get-OnPremMailboxSendAsPermissionRecords {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$Context)
 
-    @()
+    $mailboxes = @(Invoke-OnPremMailboxPermissionBackfeedMailboxesGatewayRead -Context $Context)
+    $records = @()
+
+    foreach ($mailbox in $mailboxes) {
+        if ($null -eq $mailbox) { continue }
+        $mailboxIdentity = [string]$mailbox.Identity
+        if ([string]::IsNullOrWhiteSpace($mailboxIdentity)) { continue }
+
+        $records += @(
+            Invoke-OnPremMailboxSendAsGatewayRead -Identity $mailboxIdentity -DistinguishedName ([string]$mailbox.DistinguishedName) -Context $Context
+        )
+    }
+
+    @($records)
+}
+
+function Invoke-OnPremMailboxPermissionBackfeedMailboxesGatewayRead {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    Get-OnPremMailboxPermissionBackfeedMailboxes -Context $Context
+}
+
+function Invoke-OnPremMailboxFullAccessGatewayRead {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][object]$Context
+    )
+
+    Get-OnPremMailboxFullAccessPermissionsSafe -Identity $Identity -Context $Context
+}
+
+function Invoke-OnPremMailboxSendAsGatewayRead {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [string]$DistinguishedName,
+        [Parameter(Mandatory = $true)][object]$Context
+    )
+
+    Get-OnPremMailboxSendAsPermissionsSafe -Identity $Identity -DistinguishedName $DistinguishedName -Context $Context
 }
 
 function Get-ExchangeOnlineMailboxFullAccessPermissionRecords {

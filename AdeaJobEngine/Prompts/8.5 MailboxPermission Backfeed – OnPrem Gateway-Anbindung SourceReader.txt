@@ -1,0 +1,446 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-OnPrem-, Active-Directory-, SQL-Server-, ETL-/Backfeed-, Gateway-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map-Skeleton vorhanden
+SourceReader, Mapper, StagingWriter und Service existieren
+Gesamtsuite zuletzt grün mit 499 Tests, 0 Failed
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nur gelesen, nicht verändert.
+
+
+O = Ziel
+
+Baue nur die OnPrem-Gateway-Anbindung für den MailboxPermission SourceReader.
+
+Ziel dieser Phase:
+
+Exchange OnPrem FullAccess Permissions über ExchangeOnPremGateway lesen
+Exchange OnPrem SendAs Permissions über ExchangeOnPremGateway oder ActiveDirectoryGateway lesen
+Die bestehenden SourceReader-Collector-Platzhalter für OnPrem fachlich anbinden
+Rohdaten weiterhin als RawPermission-Objekte an den Mapper liefern
+Mapper, StagingWriter und Service möglichst unverändert weiterverwenden
+Pester-Tests mit gemockten Gateways ergänzen
+
+Noch nicht bauen:
+
+Exchange Online Reader
+Delta
+Merge
+History
+produktive SQL-Refresh-Logik
+Bulk Copy
+SQL-Schemaänderungen
+direkte Exchange-/AD-/SQL-Cmdlet-Aufrufe im SourceReader
+neue UseCases
+Queue-Integration
+
+
+K = Kontext
+
+Vorhandene Dateien:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ActiveDirectoryGateway.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+Legacy-Referenz:
+
+current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+
+Relevante Legacy-Logik:
+
+FullAccess:
+Get-MailboxPermission auf Mailboxen, Filter auf FullAccess
+
+SendAs:
+AD ACL auf Mailbox DistinguishedName, Filter auf SendAs ExtendedRight
+
+Wichtig:
+Der SourceReader selbst darf diese Cmdlets nicht direkt aufrufen.
+Direkte Exchange-/AD-Zugriffe gehören in Gateways.
+
+
+A = Architekturvorgaben
+
+Zielkette für OnPrem FullAccess:
+
+MailboxPermissionSourceReader
+  → ExchangeOnPremGateway
+  → Exchange OnPrem Remote PowerShell
+  → RawPermission DTO
+
+Zielkette für OnPrem SendAs:
+
+MailboxPermissionSourceReader
+  → ExchangeOnPremGateway oder ActiveDirectoryGateway
+  → OnPrem AD / Exchange OnPrem
+  → RawPermission DTO
+
+Der SourceReader darf nur Gateway-Funktionen aufrufen.
+
+Nicht erlaubt im SourceReader:
+
+Get-MailboxPermission
+Get-RecipientPermission
+Get-Mailbox
+Get-ADUser
+Get-ADObject
+Get-Acl
+Connect-ExchangeOnline
+New-PSSession
+Invoke-Sqlcmd
+
+Falls Gateway-Funktionen fehlen:
+
+Ergänze minimale, klar benannte, mockbare Gateway-Funktionen in ExchangeOnPremGateway.psm1 und falls zwingend nötig ActiveDirectoryGateway.psm1.
+Keine grosse Gateway-Refaktorierung.
+Keine bestehende Gateway-Logik brechen.
+Bestehende New-PSSession / Invoke-Command Architektur im ExchangeOnPremGateway beibehalten.
+
+
+E = Execution
+
+1. Bestehende Gateway-Funktionen analysieren
+
+Prüfe zuerst ExchangeOnPremGateway.psm1.
+
+Suche nach bestehenden Funktionen für:
+
+Mailbox-Listen
+MailboxPermission
+RecipientPermission
+DistributionGroup / Recipient Lookup
+Invoke-OnPremExchangeCommand
+Set-OnPrem...Safe
+Get-OnPrem...Safe
+
+Prüfe ActiveDirectoryGateway.psm1.
+
+Suche nach bestehenden Funktionen für:
+
+ACL / Get-Acl
+AD-Objektauflösung nach DistinguishedName
+SID
+GUID
+SamAccountName
+ObjectClass
+
+Verwende vorhandene Funktionen, wenn sie passen.
+Ergänze nur minimal, wenn wirklich nötig.
+
+
+2. ExchangeOnPremGateway minimal erweitern
+
+Falls passende Funktionen fehlen, ergänze maximal diese Gateway-Funktionen:
+
+Get-OnPremMailboxPermissionBackfeedMailboxes
+
+Zweck:
+Liefert die Mailboxen, für die Berechtigungen gelesen werden sollen.
+
+Rückgabe pro Mailbox mindestens:
+
+Identity
+Name
+DistinguishedName
+Guid
+PrimarySmtpAddress
+HiddenFromAddressListsEnabled
+
+Get-OnPremMailboxFullAccessPermissionsSafe
+
+Zweck:
+Liefert FullAccess-Berechtigungen für eine Mailbox.
+
+Parameter:
+
+Identity
+
+Rückgabe pro Permission mindestens:
+
+MailboxIdentity
+MailboxName
+MailboxDistinguishedName
+MailboxGuid
+MailboxHiddenFromAddressListsEnabled
+TrusteeIdentity
+TrusteeName
+TrusteeDomain
+TrusteeDistinguishedName
+TrusteeSid
+TrusteeObjectClass
+AccessRights
+IsInherited
+Deny
+
+Get-OnPremMailboxSendAsPermissionsSafe
+
+Zweck:
+Liefert SendAs-Berechtigungen für eine Mailbox.
+
+Parameter:
+
+DistinguishedName
+Identity
+
+Rückgabe pro Permission mindestens gleiche Felder wie oben.
+
+Wichtig:
+
+Gateway-Funktionen dürfen intern Exchange-OnPrem-/AD-Technik kapseln.
+SourceReader darf diese Cmdlets nicht direkt enthalten.
+Gateway-Funktionen müssen mockbar sein.
+Keine ExchangeOnline-Logik in ExchangeOnPremGateway einbauen.
+Keine produktiven Werte hardcoden.
+Keine Config-Werte verändern.
+
+Wenn SendAs im Gateway über AD ACL gelesen wird, kapsle das im Gateway.
+Der SourceReader sieht nur das normalisierte Gateway-Ergebnis.
+
+
+3. MailboxPermissionSourceReader OnPrem anbinden
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+
+Die vorhandenen OnPrem-Pfade sollen jetzt die Gateway-Funktionen nutzen:
+
+Read-OnPremMailboxFullAccessPermissions
+  → Get-OnPremMailboxPermissionBackfeedMailboxes
+  → Get-OnPremMailboxFullAccessPermissionsSafe pro Mailbox
+  → RawPermission-Objekte mit SourceSystem = OnPrem und PermissionType = FullAccess
+
+Read-OnPremMailboxSendAsPermissions
+  → Get-OnPremMailboxPermissionBackfeedMailboxes
+  → Get-OnPremMailboxSendAsPermissionsSafe pro Mailbox
+  → RawPermission-Objekte mit SourceSystem = OnPrem und PermissionType = SendAs
+
+RawPermission-Objekte müssen weiterhin das bestehende Schema erfüllen:
+
+SourceSystem
+PermissionType
+MailboxIdentity
+MailboxName
+MailboxDistinguishedName
+MailboxGuid
+MailboxHiddenFromAddressListsEnabled
+TrusteeIdentity
+TrusteeName
+TrusteeDomain
+TrusteeDistinguishedName
+TrusteeSid
+TrusteeObjectClass
+AccessRights
+IsInherited
+Deny
+
+Wichtig:
+
+Keine direkten Cmdlets im SourceReader.
+Keine EXO-Reader in dieser Phase produktiv anbinden.
+ExchangeOnline-Pfade bleiben Platzhalter oder unverändert.
+Kein Delta/Merge.
+Kein SQL-Refresh.
+
+
+4. Mapper nicht unnötig ändern
+
+MailboxPermissionMapper.psm1 soll möglichst unverändert bleiben.
+
+Nur wenn durch echte Gateway-Rückgaben minimale Feldnormalisierung nötig wird:
+
+kleine robuste Null-/Fallback-Behandlung ergänzen
+keine neue Mapping-Architektur
+keine Änderung der DTO-Zielstruktur
+
+
+5. Service nicht unnötig ändern
+
+MailboxPermissionBackfeedService.psm1 soll möglichst unverändert bleiben.
+
+Nur falls durch SourceReader-Rückgaben Zählerlogik angepasst werden muss:
+
+ReadCount korrekt setzen
+StagedCount unverändert vom StagingWriter übernehmen
+Delta-/Merge-Zähler bleiben 0
+
+
+6. Tests erweitern
+
+Erweitere:
+
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+oder ergänze eine separate Datei:
+
+tests/Pester/Backfeed/MailboxPermissionOnPremReader.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+Should Not Be
+
+Verwenden:
+
+Should -Be
+Should -Not -Be
+
+Mindesttests:
+
+SourceReader / OnPrem:
+
+1. OnPrem FullAccess-Pfad ruft Gateway-Mailboxliste und FullAccess-Gateway auf.
+2. OnPrem SendAs-Pfad ruft Gateway-Mailboxliste und SendAs-Gateway auf.
+3. FullAccess-Pfad liefert RawPermission mit SourceSystem = OnPrem und PermissionType = FullAccess.
+4. SendAs-Pfad liefert RawPermission mit SourceSystem = OnPrem und PermissionType = SendAs.
+5. Mehrere Mailboxen werden verarbeitet.
+6. Mailbox ohne Permissions erzeugt keine Permission-Zeile.
+7. Gateway-Fehler in einer Mailbox wird kontrolliert behandelt oder als Fehler gemäss bestehender SourceReader-Konvention weitergegeben.
+8. SourceReader enthält weiterhin keine direkten verbotenen Cmdlets:
+   Get-MailboxPermission
+   Get-RecipientPermission
+   Get-Mailbox
+   Get-ADUser
+   Get-ADObject
+   Get-Acl
+   Connect-ExchangeOnline
+   New-PSSession
+   Invoke-Sqlcmd
+
+Gateway:
+
+9. Neue Gateway-Funktionen sind exportiert, falls sie extern vom SourceReader benötigt werden.
+10. Gateway-Funktionen sind mockbar.
+11. ExchangeOnPremGateway enthält keine ExchangeOnline-Referenzen in diesen neuen Funktionen.
+12. Keine produktiven Werte im Gateway.
+
+Mapper / Pipeline:
+
+13. Gateway-Rohdaten aus OnPrem FullAccess werden vom Mapper korrekt normalisiert.
+14. Gateway-Rohdaten aus OnPrem SendAs werden vom Mapper korrekt normalisiert.
+15. Service-Pipeline mit gemockten OnPrem-Gateway-Daten liefert Succeeded.
+16. ReadCount und StagedCount stimmen.
+
+Architektur:
+
+17. JobEngine.psm1 unverändert frei von Backfeed-Fachlogik.
+18. JobFileQueue.psm1 unverändert frei von Backfeed-Fachlogik.
+19. usecases.json enthält keine Backfeed-Einträge.
+20. Legacy-Skripte wurden nicht geändert.
+21. ExchangeOnlineGateway wurde nicht geändert.
+
+Pester-Scope-Regeln:
+
+Keine using:-Variablen innerhalb InModuleScope.
+Falls InModuleScope nötig ist, InModuleScope -Parameters verwenden.
+Falls Runtime-Scope-Tests zu brüchig sind, darf für Struktur-/Architekturgrenzen source-basiert geprüft werden.
+Für Mapper-Tests echte Unit-Tests verwenden.
+
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+infrastructure/ExchangeOnlineGateway.psm1
+infrastructure/SqlGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+backfeed/Invoke-BackfeedProcessor.ps1, ausser absolut zwingend
+
+Nur falls notwendig ändern:
+
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ActiveDirectoryGateway.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Welche Gateway-Funktionen ergänzt oder wiederverwendet wurden
+Wie OnPrem Mailboxliste gelesen wird
+Wie OnPrem FullAccess gelesen wird
+Wie OnPrem SendAs gelesen wird
+Wie SourceReader RawPermission-Objekte erzeugt
+Ob Mapper oder Service angepasst wurden
+Welche Tests ergänzt wurden
+Bestätigung, dass ExchangeOnlineGateway nicht geändert wurde
+Bestätigung, dass kein EXO-Reader produktiv angebunden wurde
+Bestätigung, dass kein Delta/Merge implementiert wurde
+Bestätigung, dass keine SQL-Refresh-Logik implementiert wurde
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+
+Wichtigste Zielregel
+
+Baue nur die OnPrem-Gateway-Anbindung für MailboxPermission SourceReader.
+
+Noch kein Exchange Online.
+Noch kein Delta.
+Noch kein Merge.
+Noch keine History.
+Keine produktive SQL-Refresh-Logik.
+
+Ziel ist:
+
+Exchange OnPrem Mailbox Permissions über Gateways lesen
+  → RawPermission-Objekte erzeugen
+  → bestehenden Mapper nutzen
+  → mockbar testen
+  → BackfeedResult bleibt stabil.

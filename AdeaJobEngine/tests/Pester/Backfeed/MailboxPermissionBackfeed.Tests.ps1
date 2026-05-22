@@ -433,8 +433,8 @@ Describe 'MailboxPermission Backfeed Read-Map' {
         (Get-Content -Path $script:usecasesPath -Raw) -match 'Backfeed' | Should -Be $false
     }
 
-    It 'Gateway files contain no MailboxPermission Backfeed references' {
-        (Get-Content -Path $script:exchangeOnPremGatewayPath -Raw) -match 'MailboxPermissionBackfeed|Read-OnPremMailboxFullAccessPermissions|Read-OnPremMailboxSendAsPermissions' | Should -Be $false
+    It 'Only OnPrem gateway may contain MailboxPermission Backfeed references' {
+        (Get-Content -Path $script:exchangeOnPremGatewayPath -Raw) -match 'Get-OnPremMailboxPermissionBackfeedMailboxes|Get-OnPremMailboxFullAccessPermissionsSafe|Get-OnPremMailboxSendAsPermissionsSafe' | Should -Be $true
         (Get-Content -Path $script:exchangeOnlineGatewayPath -Raw) -match 'MailboxPermissionBackfeed|Read-ExchangeOnlineMailboxFullAccessPermissions|Read-ExchangeOnlineMailboxSendAsPermissions' | Should -Be $false
         (Get-Content -Path $script:activeDirectoryGatewayPath -Raw) -match 'MailboxPermissionBackfeed' | Should -Be $false
         (Get-Content -Path $script:sqlGatewayPath -Raw) -match 'MailboxPermissionBackfeed' | Should -Be $false

@@ -539,6 +539,122 @@ function Get-OnPremRecipientSafe {
     Get-Recipient -Identity $Identity -ErrorAction Stop
 }
 
+function Get-OnPremMailboxPermissionBackfeedMailboxes {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config,
+        [object]$Context
+    )
+
+    if ((Get-OnPremExecutionMode -Config $Config -Context $Context) -eq 'InvokeCommand') {
+        return Invoke-ExchangeOnPremCommand -Config $Config -Context $Context -ScriptBlock {
+            Get-Mailbox -ResultSize Unlimited -ErrorAction Stop |
+            Select-Object Identity, Name, DistinguishedName, Guid, PrimarySmtpAddress, HiddenFromAddressListsEnabled
+        }
+    }
+
+    $null = Get-ExchangeOnPremSession -Config $Config -Context $Context
+    Assert-OnPremCmdlet -Name 'Get-Mailbox'
+    Get-Mailbox -ResultSize Unlimited -ErrorAction Stop |
+    Select-Object Identity, Name, DistinguishedName, Guid, PrimarySmtpAddress, HiddenFromAddressListsEnabled
+}
+
+function Get-OnPremMailboxFullAccessPermissionsSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [hashtable]$Config,
+        [object]$Context
+    )
+
+    $mailbox = Get-OnPremMailboxSafe -Identity $Identity -Config $Config -Context $Context
+    $permissions = @(Get-OnPremMailboxPermissionSafe -Identity $Identity -Config $Config -Context $Context)
+
+    $rows = foreach ($permission in $permissions) {
+        if ($null -eq $permission) { continue }
+
+        $accessRightsText = @($permission.AccessRights) -join ','
+        if ([string]::IsNullOrWhiteSpace($accessRightsText)) { continue }
+        if ($accessRightsText -notmatch 'FullAccess') { continue }
+
+        $trusteeIdentity = [string]$permission.User
+        $trusteeName = $trusteeIdentity
+        $trusteeDomain = ''
+        if ($trusteeIdentity -match '^(?<Domain>[^\\]+)\\(?<Name>.+)$') {
+            $trusteeDomain = [string]$Matches.Domain
+            $trusteeName = [string]$Matches.Name
+        }
+
+        [pscustomobject]@{
+            MailboxIdentity                      = [string]$mailbox.Identity
+            MailboxName                          = [string]$mailbox.Name
+            MailboxDistinguishedName             = [string]$mailbox.DistinguishedName
+            MailboxGuid                          = [string]$mailbox.Guid
+            MailboxHiddenFromAddressListsEnabled = $mailbox.HiddenFromAddressListsEnabled
+            TrusteeIdentity                      = $trusteeIdentity
+            TrusteeName                          = $trusteeName
+            TrusteeDomain                        = $trusteeDomain
+            TrusteeDistinguishedName             = $null
+            TrusteeSid                           = $null
+            TrusteeObjectClass                   = $null
+            AccessRights                         = $accessRightsText
+            IsInherited                          = [bool]$permission.IsInherited
+            Deny                                 = [bool]$permission.Deny
+        }
+    }
+
+    @($rows)
+}
+
+function Get-OnPremMailboxSendAsPermissionsSafe {
+    [CmdletBinding()]
+    param(
+        [string]$DistinguishedName,
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [hashtable]$Config,
+        [object]$Context
+    )
+
+    $mailbox = Get-OnPremMailboxSafe -Identity $Identity -Config $Config -Context $Context
+    $permissionIdentity = if (-not [string]::IsNullOrWhiteSpace($DistinguishedName)) { $DistinguishedName } else { $Identity }
+    $permissions = @(Get-OnPremAdPermissionSafe -Identity $permissionIdentity -Config $Config -Context $Context)
+
+    $rows = foreach ($permission in $permissions) {
+        if ($null -eq $permission) { continue }
+
+        $extendedRightsText = @($permission.ExtendedRights) -join ','
+        if ([string]::IsNullOrWhiteSpace($extendedRightsText)) { continue }
+        if ($extendedRightsText -notmatch 'Send-As') { continue }
+
+        $trusteeIdentity = [string]$permission.User
+        $trusteeName = $trusteeIdentity
+        $trusteeDomain = ''
+        if ($trusteeIdentity -match '^(?<Domain>[^\\]+)\\(?<Name>.+)$') {
+            $trusteeDomain = [string]$Matches.Domain
+            $trusteeName = [string]$Matches.Name
+        }
+
+        [pscustomobject]@{
+            MailboxIdentity                      = [string]$mailbox.Identity
+            MailboxName                          = [string]$mailbox.Name
+            MailboxDistinguishedName             = [string]$mailbox.DistinguishedName
+            MailboxGuid                          = [string]$mailbox.Guid
+            MailboxHiddenFromAddressListsEnabled = $mailbox.HiddenFromAddressListsEnabled
+            TrusteeIdentity                      = $trusteeIdentity
+            TrusteeName                          = $trusteeName
+            TrusteeDomain                        = $trusteeDomain
+            TrusteeDistinguishedName             = $null
+            TrusteeSid                           = $null
+            TrusteeObjectClass                   = $null
+            AccessRights                         = 'SendAs'
+            IsInherited                          = [bool]$permission.IsInherited
+            Deny                                 = [bool]$permission.Deny
+        }
+    }
+
+    @($rows)
+}
+
 # Fügt Mailbox-Berechtigung sicher hinzu.
 function Add-OnPremMailboxPermissionSafe {
     [CmdletBinding()]
@@ -1221,6 +1337,9 @@ Export-ModuleMember -Function @(
     'Set-OnPremMailboxAutoReplyConfigurationSafe',
     'Set-OnPremMailboxSafe',
     'Get-OnPremRecipientSafe',
+    'Get-OnPremMailboxPermissionBackfeedMailboxes',
+    'Get-OnPremMailboxFullAccessPermissionsSafe',
+    'Get-OnPremMailboxSendAsPermissionsSafe',
     'Add-OnPremMailboxPermissionSafe',
     'Remove-OnPremMailboxPermissionSafe',
     'Add-OnPremSendAsPermissionSafe',
