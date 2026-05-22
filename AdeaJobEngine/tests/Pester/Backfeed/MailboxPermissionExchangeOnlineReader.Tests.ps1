@@ -47,6 +47,9 @@ Describe 'MailboxPermission ExchangeOnline Gateway integration' {
         . ([scriptblock]::Create($serviceScriptText))
 
         $writerScriptText = Get-Content -Path $script:writerPath -Raw
+        $writerModuleRoot = Split-Path -Parent $script:writerPath
+        $writerScriptText = $writerScriptText -replace [regex]::Escape('$moduleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path'), ('$moduleRoot = ''' + $writerModuleRoot + '''')
+        $writerScriptText = [regex]::Replace($writerScriptText, '(?m)^Import-Module\s+-Name\s+.*BackfeedSqlScriptRunner\.psm1.*$', '')
         $writerScriptText = [regex]::Replace($writerScriptText, '(?ms)^Export-ModuleMember\s+-Function\s+@\(.*?\)\s*$', '')
         . ([scriptblock]::Create($writerScriptText))
     }
@@ -184,6 +187,9 @@ Describe 'MailboxPermission ExchangeOnline Gateway integration' {
                 [pscustomobject]@{ SourceSystem = 'ExchangeOnline'; PermissionType = 'FullAccess'; MailboxIdentity = 'exo-svc'; MailboxName = 'EXO Service'; MailboxDistinguishedName = 'CN=exo-svc,OU=Cloud,DC=example,DC=local'; MailboxGuid = '80000000-0000-0000-0000-000000000008'; MailboxHiddenFromAddressListsEnabled = $false; TrusteeIdentity = 'EXAMPLE\exo.svc1'; TrusteeName = 'exo.svc1'; TrusteeDomain = 'EXAMPLE'; TrusteeDistinguishedName = 'CN=exo.svc1,OU=Users,DC=example,DC=local'; TrusteeSid = 'S-1-5-21-80-80-80-808'; TrusteeObjectClass = 'user'; AccessRights = 'FullAccess'; IsInherited = $false; Deny = $false },
                 [pscustomobject]@{ SourceSystem = 'ExchangeOnline'; PermissionType = 'SendAs'; MailboxIdentity = 'exo-svc'; MailboxName = 'EXO Service'; MailboxDistinguishedName = 'CN=exo-svc,OU=Cloud,DC=example,DC=local'; MailboxGuid = '80000000-0000-0000-0000-000000000008'; MailboxHiddenFromAddressListsEnabled = $false; TrusteeIdentity = 'EXAMPLE\exo.svc2'; TrusteeName = 'exo.svc2'; TrusteeDomain = 'EXAMPLE'; TrusteeDistinguishedName = 'CN=exo.svc2,OU=Users,DC=example,DC=local'; TrusteeSid = 'S-1-5-21-81-81-81-818'; TrusteeObjectClass = 'user'; AccessRights = 'SendAs'; IsInherited = $false; Deny = $false }
             )
+        }
+        Mock Write-MailboxPermissionBackfeedStaging {
+            [pscustomobject]@{ Success = $true; StagedCount = 2; FailedCount = 0; Message = 'Rows staged.'; ErrorCode = $null; Errors = @() }
         }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{ BackfeedTypes = [pscustomobject]@{ MailboxPermission = [pscustomobject]@{ Sources = @('ExchangeOnline') } } }) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-exo-1' -BackfeedType 'MailboxPermission' -Mode 'Full'

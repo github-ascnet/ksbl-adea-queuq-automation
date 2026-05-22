@@ -45,6 +45,9 @@ Describe 'MailboxPermission OnPrem Gateway integration' {
         . ([scriptblock]::Create($serviceScriptText))
 
         $writerScriptText = Get-Content -Path $script:writerPath -Raw
+        $writerModuleRoot = Split-Path -Parent $script:writerPath
+        $writerScriptText = $writerScriptText -replace [regex]::Escape('$moduleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path'), ('$moduleRoot = ''' + $writerModuleRoot + '''')
+        $writerScriptText = [regex]::Replace($writerScriptText, '(?m)^Import-Module\s+-Name\s+.*BackfeedSqlScriptRunner\.psm1.*$', '')
         $writerScriptText = [regex]::Replace($writerScriptText, '(?ms)^Export-ModuleMember\s+-Function\s+@\(.*?\)\s*$', '')
         . ([scriptblock]::Create($writerScriptText))
     }
@@ -177,6 +180,9 @@ Describe 'MailboxPermission OnPrem Gateway integration' {
                 [pscustomobject]@{ SourceSystem = 'OnPrem'; PermissionType = 'FullAccess'; MailboxIdentity = 'mbx-svc'; MailboxName = 'Mailbox Service'; MailboxDistinguishedName = 'CN=mbx-svc,OU=Mailboxes,DC=example,DC=local'; MailboxGuid = 'cccccccc-3333-3333-3333-cccccccccccc'; MailboxHiddenFromAddressListsEnabled = $false; TrusteeIdentity = 'EXAMPLE\svc-user'; TrusteeName = 'svc-user'; TrusteeDomain = 'EXAMPLE'; TrusteeDistinguishedName = 'CN=svc-user,OU=Users,DC=example,DC=local'; TrusteeSid = 'S-1-5-21-12-23-34-45'; TrusteeObjectClass = 'user'; AccessRights = 'FullAccess'; IsInherited = $false; Deny = $false },
                 [pscustomobject]@{ SourceSystem = 'OnPrem'; PermissionType = 'SendAs'; MailboxIdentity = 'mbx-svc'; MailboxName = 'Mailbox Service'; MailboxDistinguishedName = 'CN=mbx-svc,OU=Mailboxes,DC=example,DC=local'; MailboxGuid = 'cccccccc-3333-3333-3333-cccccccccccc'; MailboxHiddenFromAddressListsEnabled = $false; TrusteeIdentity = 'EXAMPLE\svc-user2'; TrusteeName = 'svc-user2'; TrusteeDomain = 'EXAMPLE'; TrusteeDistinguishedName = 'CN=svc-user2,OU=Users,DC=example,DC=local'; TrusteeSid = 'S-1-5-21-13-24-35-46'; TrusteeObjectClass = 'user'; AccessRights = 'SendAs'; IsInherited = $false; Deny = $false }
             )
+        }
+        Mock Write-MailboxPermissionBackfeedStaging {
+            [pscustomobject]@{ Success = $true; StagedCount = 2; FailedCount = 0; Message = 'Rows staged.'; ErrorCode = $null; Errors = @() }
         }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{ BackfeedTypes = [pscustomobject]@{ MailboxPermission = [pscustomobject]@{ Sources = @('ExchangeOnPrem') } } }) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-onprem-1' -BackfeedType 'MailboxPermission' -Mode 'Full'

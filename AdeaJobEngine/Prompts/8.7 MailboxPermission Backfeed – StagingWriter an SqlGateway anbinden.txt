@@ -1,0 +1,491 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, SQL-Server-, ETL-/Backfeed-, Gateway-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map-Skeleton vorhanden
+OnPrem-Gateway-Anbindung für MailboxPermission SourceReader vorhanden
+Exchange-Online-Gateway-Anbindung für MailboxPermission SourceReader vorhanden
+Gesamtsuite zuletzt grün mit 539 Tests, 0 Failed
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nur gelesen, nicht verändert.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue nur die SQL-Staging-Anbindung für den MailboxPermission Backfeed StagingWriter.
+
+Ziel dieser Phase:
+
+Normalisierte MailboxPermission-Backfeed-Rows in die Staging-Tabelle stg_MailboxPermissions schreiben
+SQL-Zugriffe ausschliesslich über SqlGateway oder eine sehr kleine Backfeed-SQL-Runner-Schicht kapseln
+SQL-Dateien unter sql/backfeed/mailbox-permission vorbereiten
+StagingWriter testbar und mockbar halten
+BackfeedResult-Zähler korrekt befüllen
+
+Noch nicht bauen:
+
+Delta
+Merge
+History
+produktives Refresh von MailboxPermissions
+TRUNCATE/INSERT in MailboxPermissions
+hist_MailboxPermissions-Logik
+BulkCopy, falls dafür keine bestehende Projektkonvention vorhanden ist
+SQL-Schemaänderungen
+neue UseCases
+Queue-Integration
+
+────────────────────────────────────────
+
+K = Kontext
+
+Vorhandene Dateien:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+infrastructure/SqlGateway.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+tests/Pester/Backfeed/MailboxPermissionOnPremReader.Tests.ps1
+tests/Pester/Backfeed/MailboxPermissionExchangeOnlineReader.Tests.ps1
+
+Bereits umgesetzt:
+
+OnPrem FullAccess / SendAs lesen
+ExchangeOnline FullAccess / SendAs lesen
+RawPermission DTO erzeugen
+Mapper normalisiert in ein einheitliches Staging-DTO
+RowHash deterministisch bilden
+Service-Pipeline Read → Map → Stage → Result
+
+Jetzt soll nur der Stage-Schritt an SQL angebunden werden.
+
+Relevante Tabelle:
+
+stg_MailboxPermissions
+
+Relevante bekannte Spalten aus der bisherigen Analyse:
+
+Name
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+StagingInserted
+
+Zusätzliche DTO-Felder wie SourceSystem, PermissionType, MailboxKey, TrusteeKey, RowHash, IsInherited, Deny und AccessRights sind für spätere Delta-/Merge-Logik wichtig, dürfen aber nur dann in SQL geschrieben werden, wenn die Staging-Tabelle diese Spalten tatsächlich besitzt. Keine SQL-Schemaänderungen in dieser Phase.
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Zielkette:
+
+MailboxPermissionBackfeedService
+  → Write-MailboxPermissionBackfeedStaging
+  → SqlGateway oder BackfeedSqlScriptRunner
+  → stg_MailboxPermissions
+
+Der StagingWriter darf keine direkte produktive SQL-Technik ausserhalb des Gateway-/Runner-Modells verwenden.
+
+Nicht erlaubt im StagingWriter:
+
+Invoke-Sqlcmd direkt
+System.Data.SqlClient direkt
+Microsoft.Data.SqlClient direkt
+direkte ConnectionString-Verarbeitung
+produktive SQL-Servernamen hardcoden
+produktive Datenbanknamen hardcoden
+grosse unübersichtliche SQL-Strings im PowerShell-Code
+Merge in MailboxPermissions
+History-Schreiben
+Delta-Berechnung
+
+Falls SqlGateway bereits sichere Funktionen bietet:
+
+Verwende diese.
+
+Falls SqlGateway keine Script-Datei-Ausführung bietet:
+
+Ergänze minimal und testbar eine Funktion in SqlGateway oder erstelle eine kleine gemeinsame Backfeed-Hilfsfunktion, aber keine grosse SQL-Abstraktionsarchitektur.
+
+Bevorzugt:
+
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+
+Nur wenn es zur bestehenden Architektur besser passt:
+
+infrastructure/SqlGateway.psm1 minimal erweitern.
+
+Wichtig:
+
+Keine produktiven Werte in appsettings.json einfügen.
+Keine produktiven Environment-Dateien ändern.
+SQL-Server und Datenbank müssen aus bestehender Runtime-Config kommen.
+
+────────────────────────────────────────
+
+E = Execution
+
+1. Bestehendes SqlGateway analysieren
+
+Prüfe zuerst:
+
+infrastructure/SqlGateway.psm1
+
+Suche nach vorhandenen Funktionen für:
+
+NonQuery-Ausführung
+Query-Ausführung
+parameterisierte SQL-Ausführung
+Script-Datei-Ausführung
+Transaktionen
+Bulk Copy
+sichere Fehlerbehandlung
+Config-basierte Verbindung
+
+Verwende vorhandene Funktionen, wenn sie passen.
+
+Ergänze nur minimal, wenn wirklich nötig.
+
+────────────────────────────────────────
+
+2. SQL-Dateien vorbereiten
+
+Erstelle, falls noch nicht vorhanden:
+
+sql/backfeed/mailbox-permission
+
+Erstelle in diesem Ordner nur stagingbezogene SQL-Dateien:
+
+truncate-stg-mailbox-permissions.sql
+insert-stg-mailbox-permission-row.sql
+
+oder falls Row-by-Row bewusst vermieden wird und der SqlGateway Batch unterstützt:
+
+stage-mailbox-permissions.sql
+
+Wichtig:
+
+Diese Phase schreibt nur stg_MailboxPermissions.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+Kein MERGE.
+Kein Delta.
+Keine Schemaänderung.
+
+SQL soll nur bekannte Spalten der bestehenden Tabelle stg_MailboxPermissions verwenden:
+
+Name
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+StagingInserted
+
+Wenn SourceSystem, PermissionType, MailboxKey, TrusteeKey oder RowHash nicht als Spalten existieren:
+
+Nicht in SQL einfügen.
+Im Code als TODO für spätere Schema-/Delta-Phase dokumentieren.
+Keine Spalten erfinden.
+
+────────────────────────────────────────
+
+3. BackfeedSqlScriptRunner oder SqlGateway minimal ergänzen
+
+Falls nötig, erstelle:
+
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+
+Mögliche Funktionen:
+
+Invoke-BackfeedSqlScript
+Invoke-BackfeedSqlNonQuery
+ConvertTo-BackfeedSqlParameters
+
+Aufgabe:
+
+SQL-Datei lesen
+Parameter anwenden
+über SqlGateway ausführen
+sauberes Result zurückgeben
+
+Wichtig:
+
+Keine eigene zweite SQL-Engine bauen.
+Keine eigene ConnectionString-Verwaltung.
+SqlGateway bleibt die technische Ausführungsschicht.
+Der Runner darf nur SQL-Scripts laden und Parameter vorbereiten.
+
+Falls SqlGateway bereits alles kann:
+
+Kein neuer Runner nötig.
+
+────────────────────────────────────────
+
+4. MailboxPermissionStagingWriter.psm1 erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+
+Funktion:
+
+Write-MailboxPermissionBackfeedStaging
+
+Erwartetes Verhalten:
+
+Wenn Rows leer sind:
+
+Kein SQL-Aufruf
+Success = true
+StagedCount = 0
+Message sinnvoll
+
+Wenn Rows vorhanden sind:
+
+Optional zuerst stg_MailboxPermissions leeren, wenn Config oder aktuelle Backfeed-Konvention das vorgibt.
+Dann jede Row oder Batch kontrolliert in stg_MailboxPermissions schreiben.
+SQL-Ausführung nur über SqlGateway oder BackfeedSqlScriptRunner.
+StagedCount = Anzahl erfolgreich geschriebener Rows.
+Fehler werden strukturiert zurückgegeben.
+
+Rückgabeobjekt mindestens:
+
+Success
+StagedCount
+FailedCount
+Message
+ErrorCode
+Errors
+
+Mapping auf stg_MailboxPermissions:
+
+Name = MailboxName
+TrusteeName = TrusteeName
+TrusteeDomain = TrusteeDomain
+ObjectClass = ObjectClass
+AcePermissions = AcePermissions
+DistinguishedName = DistinguishedName
+ExchHideFromAddressLists = ExchHideFromAddressLists
+AdReferenceObjectGuid = AdReferenceObjectGuid
+StagingInserted = aktueller SQL-Zeitpunkt oder vom SQL-Script gesetzter Wert
+
+Wichtig:
+
+Keine direkte SQL-Verbindung im Writer.
+Keine produktiven Werte.
+Keine MailboxPermissions-Zieltabelle.
+Keine History.
+Kein Delta/Merge.
+
+────────────────────────────────────────
+
+5. MailboxPermissionBackfeedService.psm1 prüfen
+
+Prüfe:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Erwartung:
+
+Der Service muss StagedCount aus dem StagingWriter übernehmen.
+ReadCount bleibt Anzahl RawPermissions.
+Delta-/Merge-Zähler bleiben 0.
+Fehler aus dem StagingWriter führen zu Status = Failed.
+Errors werden übernommen.
+
+Nur minimal anpassen, falls nötig.
+
+────────────────────────────────────────
+
+6. Tests erweitern
+
+Erweitere oder ergänze:
+
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+oder neu:
+
+tests/Pester/Backfeed/MailboxPermissionStagingWriter.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+Should Not Be
+
+Verwenden:
+
+Should -Be
+Should -Not -Be
+
+Mindesttests:
+
+SQL-Dateien / Struktur:
+
+1. sql/backfeed/mailbox-permission existiert.
+2. Staging-SQL-Datei existiert.
+3. SQL-Dateien enthalten keine MailboxPermissions-Zieltabellen-Schreiblogik.
+4. SQL-Dateien enthalten keine hist_MailboxPermissions-Schreiblogik.
+5. SQL-Dateien enthalten kein MERGE.
+6. SQL-Dateien enthalten keine produktiven Servernamen oder Datenbanknamen.
+
+StagingWriter:
+
+7. Leere Rows erzeugen keinen SQL-Aufruf und StagedCount = 0.
+8. Eine gültige Row führt zu genau einem mockbaren SQL-Aufruf oder einem Batch-Aufruf.
+9. Mehrere gültige Rows führen zu StagedCount = Anzahl Rows.
+10. SQL-Fehler führt zu Success = false.
+11. Fehler enthält ErrorCode und Message.
+12. Writer enthält kein Invoke-Sqlcmd.
+13. Writer enthält keine direkte SqlConnection.
+14. Writer schreibt nicht in MailboxPermissions.
+15. Writer schreibt nicht in hist_MailboxPermissions.
+16. Writer führt kein MERGE aus.
+
+Mapping:
+
+17. DTO-Felder werden korrekt auf stg_MailboxPermissions-Spalten abgebildet.
+18. SourceSystem, PermissionType, MailboxKey, TrusteeKey und RowHash werden nicht in SQL geschrieben, falls entsprechende Spalten nicht existieren.
+19. AdReferenceObjectGuid wird aus DTO übernommen.
+20. ExchHideFromAddressLists wird korrekt übernommen.
+
+Service:
+
+21. Service übernimmt StagedCount aus Writer.
+22. Writer-Fehler führt zu BackfeedResult Status = Failed.
+23. Delta-/Merge-Zähler bleiben 0.
+24. Backfeed-Slice bleibt OutputJson-kompatibel.
+
+Architektur:
+
+25. JobEngine.psm1 bleibt frei von Backfeed-Fachlogik.
+26. JobFileQueue.psm1 bleibt frei von Backfeed-Fachlogik.
+27. usecases.json enthält keine Backfeed-Einträge.
+28. Legacy-Skripte wurden nicht geändert.
+29. ExchangeOnPremGateway und ExchangeOnlineGateway wurden nicht geändert.
+30. Keine produktiven Environment-Dateien wurden geändert.
+
+Pester-Scope-Regeln:
+
+Keine using:-Variablen innerhalb InModuleScope.
+Falls InModuleScope nötig ist, InModuleScope -Parameters verwenden.
+Falls Runtime-Scope-Tests zu brüchig sind, darf für Struktur-/Architekturgrenzen source-basiert geprüft werden.
+Für reine Mapping-/Writer-Logik echte Unit-Tests verwenden.
+
+────────────────────────────────────────
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ExchangeOnlineGateway.psm1
+infrastructure/ActiveDirectoryGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+
+Nur falls nötig ändern:
+
+infrastructure/SqlGateway.psm1
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+tests/Pester/Backfeed/MailboxPermissionStagingWriter.Tests.ps1
+sql/backfeed/mailbox-permission
+
+────────────────────────────────────────
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue SQL-Dateien
+Ob SqlGateway erweitert wurde oder BackfeedSqlScriptRunner erstellt wurde
+Wie stg_MailboxPermissions geschrieben wird
+Wie leere Rows behandelt werden
+Wie Fehler beim SQL-Schreiben behandelt werden
+Wie StagedCount berechnet wird
+Welche DTO-Felder auf SQL-Spalten gemappt werden
+Welche DTO-Felder bewusst nicht geschrieben werden
+Welche Tests ergänzt wurden
+Bestätigung, dass kein Delta/Merge implementiert wurde
+Bestätigung, dass keine History-Logik implementiert wurde
+Bestätigung, dass keine MailboxPermissions-Zieltabelle beschrieben wird
+Bestätigung, dass keine Gateway-Dateien für Exchange/AD verändert wurden
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Baue nur die SQL-Staging-Anbindung für MailboxPermission.
+
+Noch kein Delta.
+Noch kein Merge.
+Noch keine History.
+Kein Refresh der Zieltabelle MailboxPermissions.
+Keine produktive Schemaänderung.
+
+Ziel ist:
+
+Read
+  → Map
+  → Stage in stg_MailboxPermissions
+  → Result.

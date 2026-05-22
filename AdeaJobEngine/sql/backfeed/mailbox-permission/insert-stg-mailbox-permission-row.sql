@@ -1,0 +1,24 @@
+INSERT INTO [dbo].[stg_MailboxPermissions]
+(
+    [Name],
+    [TrusteeName],
+    [TrusteeDomain],
+    [ObjectClass],
+    [AcePermissions],
+    [DistinguishedName],
+    [ExchHideFromAddressLists],
+    [AdReferenceObjectGuid],
+    [StagingInserted]
+)
+VALUES
+(
+    @Name,
+    @TrusteeName,
+    @TrusteeDomain,
+    @ObjectClass,
+    @AcePermissions,
+    @DistinguishedName,
+    @ExchHideFromAddressLists,
+    @AdReferenceObjectGuid,
+    GETDATE()
+);
