@@ -1,0 +1,645 @@
+R = Rolle
+
+Du bist ein sehr erfahrener SQL-Server-, PowerShell-, ETL-/Backfeed-, Delta-/Merge-, Datenmodellierungs-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map vorhanden
+OnPrem Gateway-Anbindung vorhanden
+ExchangeOnline Gateway-Anbindung vorhanden
+SQL-Staging in stg_MailboxPermissions_Backfeed vorhanden
+BackfeedRunId wird konsistent durch Context, Writer, Result und OutputJson geführt
+Delta-Ermittlung ohne Merge ist vorhanden
+Gesamtsuite zuletzt grün mit 601 Tests, 0 Failed
+
+Die Analyse zum Zielmodell hat ergeben:
+
+MailboxPermissions ist ein Legacy-Refresh-Modell und soll nicht direkt erweitert werden.
+Die empfohlene Zielarchitektur ist eine separate MailboxPermissionBackfeedState-Tabelle als moderner Current-State.
+Später kann daraus optional eine Legacy-kompatible Projection nach MailboxPermissions entstehen.
+Der nächste sichere Schritt ist eine Insert-only Initialisierung aus stg_MailboxPermissions_Backfeed in die neue State-Tabelle.
+
+Wichtig:
+Diese Phase baut nur den persistenten State-Grundstein.
+Kein vollständiges Merge.
+Kein Update.
+Kein Delete.
+Kein Reactivate.
+Keine History.
+Keine Projection nach MailboxPermissions.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue nur die neue State-Tabelle und eine Insert-only Initialisierung für MailboxPermission Backfeed.
+
+Ziel dieser Phase:
+
+Neue Tabelle MailboxPermissionBackfeedState erstellen.
+Neue SQL-Datei für Insert-only Initialisierung aus stg_MailboxPermissions_Backfeed erstellen.
+Neue SQL-Datei für Read-only State-Counts erstellen.
+MailboxPermissionDeltaService um State-Initialisierung erweitern.
+MailboxPermissionBackfeedService so erweitern, dass nach Stage und Delta optional die State-Initialisierung ausgeführt wird.
+BackfeedResult soll InsertedCount aus der State-Initialisierung übernehmen oder sauber konsistent halten.
+
+Noch nicht bauen:
+
+Kein Update bestehender State-Zeilen.
+Kein Delete / Soft-Delete.
+Kein Reactivate.
+Keine History-Tabelle.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+Keine Legacy-Projection.
+Keine Änderung am SQL-Hauptschema current-scripts/Schema KSBL_IAM.sql.
+Keine Änderung an Exchange-/AD-Gateways.
+Keine Scheduler-/Watermark-Logik.
+
+────────────────────────────────────────
+
+K = Kontext
+
+Aktuelle Pipeline:
+
+Read
+  → Map
+  → Stage
+  → Delta-Counts
+  → Result
+
+Ziel nach dieser Phase:
+
+Read
+  → Map
+  → Stage
+  → Delta-Counts
+  → State Insert-only Initialisierung
+  → Result
+
+Relevante bestehende SQL-Tabelle:
+
+stg_MailboxPermissions_Backfeed
+
+Relevante neue Ziel-State-Tabelle:
+
+MailboxPermissionBackfeedState
+
+Aktueller BusinessKey:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+
+RowHash dient später zur Update-Erkennung.
+
+BackfeedRunId dient zur Laufabgrenzung.
+
+Analyseentscheidung:
+
+Variante C als Zielbild:
+stg_MailboxPermissions_Backfeed
+  → MailboxPermissionBackfeedState
+  → später optional Legacy-Projection nach MailboxPermissions
+
+Der Einstieg erfolgt aber nur über Variante B/Option 2:
+separate State-Tabelle plus Insert-only Initialisierung. :contentReference[oaicite:0]{index=0}
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Neue SQL-Dateien liegen unter:
+
+sql/backfeed/mailbox-permission
+
+Neue Tabelle:
+
+MailboxPermissionBackfeedState
+
+Diese Tabelle ist ein Backfeed-Current-State, nicht die Legacy-Zieltabelle.
+
+MailboxPermissions bleibt unangetastet.
+hist_MailboxPermissions bleibt unangetastet.
+stg_MailboxPermissions bleibt unangetastet.
+
+Die State-Initialisierung darf nur neue BusinessKeys einfügen.
+
+Nicht erlaubt:
+
+Kein UPDATE auf bestehende State-Zeilen.
+Kein DELETE.
+Kein Soft-Delete.
+Kein Reactivate.
+Kein MERGE.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+Kein Schreiben in stg_MailboxPermissions.
+Keine Änderung an current-scripts/Schema KSBL_IAM.sql.
+Keine produktiven Servernamen oder Datenbanknamen.
+Keine direkte SqlConnection in Services.
+Kein Invoke-Sqlcmd direkt in Services.
+SQL-Ausführung nur über BackfeedSqlScriptRunner / SqlGateway.
+
+────────────────────────────────────────
+
+E = Execution
+
+1. SQL-DDL für State-Tabelle erstellen
+
+Erstelle:
+
+sql/backfeed/mailbox-permission/create-mailbox-permission-backfeed-state.sql
+
+Diese Datei erstellt die Tabelle nur, falls sie nicht existiert.
+
+Tabellenname:
+
+MailboxPermissionBackfeedState
+
+Mindestspalten:
+
+Id
+SourceSystem
+PermissionType
+MailboxKey
+MailboxName
+TrusteeKey
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+IsInherited
+Deny
+AccessRights
+RowHash
+FirstSeenBackfeedRunId
+LastSeenBackfeedRunId
+FirstSeenAt
+LastSeenAt
+IsDeleted
+DeletedAt
+DeletedBackfeedRunId
+ModifiedOn
+ModifiedBy
+
+Empfohlene Datentypen:
+
+Id bigint identity primary key
+SourceSystem nvarchar(50) not null
+PermissionType nvarchar(50) not null
+MailboxKey nvarchar(512) not null
+MailboxName nvarchar(512) null
+TrusteeKey nvarchar(512) not null
+TrusteeName nvarchar(512) null
+TrusteeDomain nvarchar(256) null
+ObjectClass nvarchar(128) null
+AcePermissions nvarchar(256) not null
+DistinguishedName nvarchar(2048) null
+ExchHideFromAddressLists bit null
+AdReferenceObjectGuid uniqueidentifier null
+IsInherited bit null
+Deny bit null
+AccessRights nvarchar(512) null
+RowHash char(64) not null
+FirstSeenBackfeedRunId uniqueidentifier not null
+LastSeenBackfeedRunId uniqueidentifier not null
+FirstSeenAt datetime2 not null default sysdatetime()
+LastSeenAt datetime2 not null default sysdatetime()
+IsDeleted bit not null default 0
+DeletedAt datetime2 null
+DeletedBackfeedRunId uniqueidentifier null
+ModifiedOn datetime2 not null default sysdatetime()
+ModifiedBy nvarchar(128) not null default N'AdeaJobEngine.Backfeed'
+
+Indexe:
+
+Unique Index auf:
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+
+Nicht einschliessen:
+IsDeleted
+
+Begründung:
+Reappeared Permissions werden später als Reactivate desselben Datensatzes modelliert, nicht als neuer Datensatz.
+
+Zusätzlicher Index:
+
+LastSeenBackfeedRunId
+
+Optional:
+
+DeletedBackfeedRunId
+
+Keine Foreign Keys in dieser Phase.
+
+────────────────────────────────────────
+
+2. SQL-Datei für Insert-only Initialisierung erstellen
+
+Erstelle:
+
+sql/backfeed/mailbox-permission/initialize-mailbox-permission-backfeed-state-insert-only.sql
+
+Zweck:
+
+Fügt aus stg_MailboxPermissions_Backfeed nur solche Zeilen in MailboxPermissionBackfeedState ein, deren BusinessKey dort noch nicht existiert.
+
+Parameter:
+
+BackfeedRunId
+ModifiedBy optional oder fester Default AdeaJobEngine.Backfeed
+
+Logik:
+
+Quelle:
+stg_MailboxPermissions_Backfeed
+gefiltert auf BackfeedRunId = @BackfeedRunId
+
+Ziel:
+MailboxPermissionBackfeedState
+
+Insert nur, wenn kein bestehender State-Datensatz existiert mit:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+
+Zu setzende Felder:
+
+SourceSystem
+PermissionType
+MailboxKey
+MailboxName
+TrusteeKey
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+IsInherited
+Deny
+AccessRights
+RowHash
+FirstSeenBackfeedRunId = @BackfeedRunId
+LastSeenBackfeedRunId = @BackfeedRunId
+FirstSeenAt = sysdatetime()
+LastSeenAt = sysdatetime()
+IsDeleted = 0
+DeletedAt = null
+DeletedBackfeedRunId = null
+ModifiedOn = sysdatetime()
+ModifiedBy = @ModifiedBy oder Default
+
+Die SQL-Datei soll am Ende eine einzelne Ergebniszeile liefern:
+
+InsertedCount
+UpdatedCount = 0
+DeletedCount = 0
+ReactivatedCount = 0
+UnchangedCount optional 0 oder Anzahl bereits vorhandener Keys, aber nur wenn sauber ableitbar
+
+Wichtig:
+
+Kein MERGE verwenden.
+Kein UPDATE.
+Kein DELETE.
+Kein Schreiben in MailboxPermissions.
+Kein Schreiben in hist_MailboxPermissions.
+
+Verwende INSERT INTO ... SELECT ... WHERE NOT EXISTS.
+
+────────────────────────────────────────
+
+3. SQL-Datei für State-Counts erstellen
+
+Erstelle:
+
+sql/backfeed/mailbox-permission/get-mailbox-permission-backfeed-state-counts.sql
+
+Zweck:
+
+Read-only Counts für Diagnose und Tests.
+
+Parameter:
+
+BackfeedRunId
+
+Ergebnisfelder mindestens:
+
+CurrentRunSeenCount
+TotalActiveCount
+TotalDeletedCount
+CurrentRunInsertedOrSeenCount
+
+Wichtig:
+
+Nur SELECT.
+Kein INSERT.
+Kein UPDATE.
+Kein DELETE.
+Kein MERGE.
+Kein TRUNCATE.
+Kein ALTER.
+
+────────────────────────────────────────
+
+4. DeltaService um State-Initialisierung erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionDeltaService.psm1
+
+Neue Funktion:
+
+Initialize-MailboxPermissionBackfeedStateInsertOnly
+
+Parameter:
+
+BackfeedContext
+BackfeedRunId
+
+Rückgabeobjekt:
+
+Success
+BackfeedRunId
+InsertedCount
+UpdatedCount
+DeletedCount
+ReactivatedCount
+UnchangedCount
+FailedCount
+Message
+ErrorCode
+Errors
+
+Verhalten:
+
+Bei ungültiger BackfeedRunId:
+Success = false
+ErrorCode = INVALID_BACKFEED_RUN_ID
+
+Bei erfolgreicher SQL-Ausführung:
+Success = true
+Counts aus SQL übernehmen
+
+Bei SQL-Fehler:
+Success = false
+ErrorCode = MAILBOX_PERMISSION_STATE_INITIALIZE_FAILED
+
+Wichtig:
+
+Die Funktion ruft SQL nur über BackfeedSqlScriptRunner / SqlGateway auf.
+Kein direkter SQL-Zugriff.
+Kein Merge.
+Kein Update.
+Kein Delete.
+Keine History.
+
+────────────────────────────────────────
+
+5. BackfeedService kontrolliert erweitern
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+Pipeline:
+
+Read
+  → Map
+  → Stage
+  → Delta-Counts
+  → State Insert-only Initialisierung
+  → Result
+
+Verhalten:
+
+Nach erfolgreicher Stage und Delta-Ermittlung:
+
+Initialize-MailboxPermissionBackfeedStateInsertOnly aufrufen.
+
+Bei Erfolg:
+
+BackfeedResult übernimmt InsertedCount aus State-Initialisierung.
+UpdatedCount bleibt 0.
+DeletedCount bleibt 0.
+UnchangedCount bleibt aus Delta oder 0, je nach bisheriger Konvention.
+FailedCount = 0.
+
+Bei Fehler:
+
+BackfeedResult Status = Failed.
+Errors enthält State-Initialisierungsfehler.
+BackfeedRunId bleibt erhalten.
+
+Wichtig:
+
+Kein Update/Delete/Reactivate in dieser Phase.
+Keine History.
+Keine Projection nach MailboxPermissions.
+
+────────────────────────────────────────
+
+6. Tests ergänzen
+
+Ergänze oder aktualisiere Tests unter:
+
+tests/Pester/Backfeed
+
+Empfohlene neue Datei:
+
+MailboxPermissionBackfeedState.Tests.ps1
+
+Mindesttests:
+
+SQL-DDL:
+
+1. create-mailbox-permission-backfeed-state.sql existiert.
+2. DDL enthält MailboxPermissionBackfeedState.
+3. DDL enthält SourceSystem, PermissionType, MailboxKey, TrusteeKey, RowHash.
+4. DDL enthält FirstSeenBackfeedRunId und LastSeenBackfeedRunId.
+5. DDL enthält IsDeleted, DeletedAt, DeletedBackfeedRunId.
+6. DDL enthält Unique Index auf BusinessKey.
+7. DDL nimmt IsDeleted nicht in den Unique BusinessKey auf.
+8. DDL schreibt nicht in MailboxPermissions.
+9. DDL schreibt nicht in hist_MailboxPermissions.
+
+Insert-only SQL:
+
+10. initialize-mailbox-permission-backfeed-state-insert-only.sql existiert.
+11. SQL verwendet INSERT INTO MailboxPermissionBackfeedState.
+12. SQL verwendet WHERE NOT EXISTS oder gleichwertige Insert-only-Logik.
+13. SQL enthält kein UPDATE.
+14. SQL enthält kein DELETE.
+15. SQL enthält kein MERGE.
+16. SQL schreibt nicht in MailboxPermissions.
+17. SQL schreibt nicht in hist_MailboxPermissions.
+18. SQL filtert auf BackfeedRunId.
+19. SQL liefert InsertedCount zurück.
+
+State Counts SQL:
+
+20. get-mailbox-permission-backfeed-state-counts.sql existiert.
+21. SQL enthält nur SELECT-Logik.
+22. SQL enthält kein INSERT.
+23. SQL enthält kein UPDATE.
+24. SQL enthält kein DELETE.
+25. SQL enthält kein MERGE.
+
+DeltaService / State Init:
+
+26. Initialize-MailboxPermissionBackfeedStateInsertOnly existiert.
+27. Ungültige BackfeedRunId führt zu Success = false und ErrorCode INVALID_BACKFEED_RUN_ID.
+28. Erfolgreiche SQL-Count-Rückgabe wird korrekt übernommen.
+29. SQL-Fehler führt zu Success = false und ErrorCode MAILBOX_PERMISSION_STATE_INITIALIZE_FAILED.
+30. Funktion enthält kein Invoke-Sqlcmd.
+31. Funktion enthält keine SqlConnection.
+32. Funktion enthält kein UPDATE/DELETE/MERGE im PowerShell-Code.
+
+Service:
+
+33. MailboxPermissionBackfeedService ruft State-Initialisierung nach Delta auf.
+34. BackfeedResult übernimmt InsertedCount aus State-Initialisierung.
+35. UpdatedCount und DeletedCount bleiben 0.
+36. Fehler in State-Initialisierung führt zu Status Failed.
+37. BackfeedRunId bleibt im Result erhalten.
+
+Architektur:
+
+38. JobEngine.psm1 unverändert frei von Backfeed-Fachlogik.
+39. JobFileQueue.psm1 unverändert frei von Backfeed-Fachlogik.
+40. usecases.json enthält keine Backfeed-Einträge.
+41. ExchangeOnPremGateway wurde nicht geändert.
+42. ExchangeOnlineGateway wurde nicht geändert.
+43. ActiveDirectoryGateway wurde nicht geändert.
+44. SqlGateway nur falls notwendig geändert.
+45. Legacy-Skripte wurden nicht geändert.
+46. Keine SQL-Datei schreibt in MailboxPermissions oder hist_MailboxPermissions.
+47. Keine History-Logik wurde implementiert.
+48. Keine Projection nach MailboxPermissions wurde implementiert.
+
+Pester-Regeln:
+
+Pester 5.7.1-kompatibel bleiben.
+Keine alte Syntax:
+Should Be
+Should Not Be
+
+Nur:
+Should -Be
+Should -Not -Be
+
+Keine using:-Variablen innerhalb InModuleScope.
+
+────────────────────────────────────────
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+MailboxPermissionSourceReader.psm1
+MailboxPermissionMapper.psm1
+MailboxPermissionStagingWriter.psm1
+
+Nur falls nötig ändern:
+
+MailboxPermissionDeltaService.psm1
+MailboxPermissionBackfeedService.psm1
+BackfeedSqlScriptRunner.psm1
+SqlGateway.psm1
+sql/backfeed/mailbox-permission
+tests/Pester/Backfeed
+
+────────────────────────────────────────
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Neue SQL-Dateien
+Name der neuen State-Tabelle
+Welche Spalten die State-Tabelle enthält
+Welcher Unique BusinessKey verwendet wird
+Wie Insert-only Initialisierung funktioniert
+Welche Counts zurückgegeben werden
+Wie State-Counts read-only ermittelt werden
+Wie MailboxPermissionDeltaService erweitert wurde
+Wie MailboxPermissionBackfeedService erweitert wurde
+Welche Tests ergänzt wurden
+Bestätigung, dass kein vollständiges Merge implementiert wurde
+Bestätigung, dass kein Update implementiert wurde
+Bestätigung, dass kein Delete implementiert wurde
+Bestätigung, dass kein Reactivate implementiert wurde
+Bestätigung, dass keine History implementiert wurde
+Bestätigung, dass keine Projection nach MailboxPermissions implementiert wurde
+Bestätigung, dass MailboxPermissions und hist_MailboxPermissions nicht beschrieben werden
+Bestätigung, dass Exchange-/AD-Gateways unverändert blieben
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Baue nur die State-Tabelle plus Insert-only Initialisierung.
+
+Kein vollständiges Merge.
+Kein Update.
+Kein Delete.
+Kein Reactivate.
+Keine History.
+Keine Projection nach MailboxPermissions.
+
+Ziel ist:
+
+stg_MailboxPermissions_Backfeed
+  → MailboxPermissionBackfeedState
+  → nur neue BusinessKeys einfügen
+  → Result.

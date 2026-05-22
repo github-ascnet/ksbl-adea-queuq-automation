@@ -11,6 +11,13 @@ function Get-MailboxPermissionDeltaSqlScriptPath {
     Join-Path -Path $engineRoot -ChildPath 'sql\backfeed\mailbox-permission\get-mailbox-permission-backfeed-delta-counts.sql'
 }
 
+function Get-MailboxPermissionStateSqlScriptPath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$ScriptName)
+
+    Join-Path -Path $engineRoot -ChildPath (Join-Path -Path 'sql\backfeed\mailbox-permission' -ChildPath $ScriptName)
+}
+
 function Resolve-MailboxPermissionDeltaBackfeedRunId {
     [CmdletBinding()]
     param(
@@ -59,6 +66,21 @@ function Invoke-MailboxPermissionBackfeedDeltaSql {
 
     $scriptPath = Get-MailboxPermissionDeltaSqlScriptPath
     Invoke-BackfeedSqlQueryScript -Context $BackfeedContext -ScriptPath $scriptPath -Parameters @{ BackfeedRunId = $BackfeedRunId }
+}
+
+function Invoke-MailboxPermissionBackfeedStateInitializationSql {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$BackfeedContext,
+        [Parameter(Mandatory = $true)][string]$BackfeedRunId,
+        [string]$ModifiedBy = 'AdeaJobEngine.Backfeed'
+    )
+
+    $createScriptPath = Get-MailboxPermissionStateSqlScriptPath -ScriptName 'create-mailbox-permission-backfeed-state.sql'
+    $initializeScriptPath = Get-MailboxPermissionStateSqlScriptPath -ScriptName 'initialize-mailbox-permission-backfeed-state-insert-only.sql'
+
+    $null = Invoke-BackfeedSqlScript -Context $BackfeedContext -ScriptPath $createScriptPath
+    Invoke-BackfeedSqlQueryScript -Context $BackfeedContext -ScriptPath $initializeScriptPath -Parameters @{ BackfeedRunId = $BackfeedRunId; ModifiedBy = $ModifiedBy }
 }
 
 function Get-MailboxPermissionBackfeedDelta {
@@ -123,9 +145,77 @@ function Get-MailboxPermissionBackfeedDelta {
     }
 }
 
+function Initialize-MailboxPermissionBackfeedStateInsertOnly {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$BackfeedContext,
+        [string]$BackfeedRunId
+    )
+
+    $resolvedBackfeedRunId = Resolve-MailboxPermissionDeltaBackfeedRunId -BackfeedContext $BackfeedContext -BackfeedRunId $BackfeedRunId
+    if ([string]::IsNullOrWhiteSpace($resolvedBackfeedRunId)) {
+        return [pscustomobject]@{
+            Success          = $false
+            BackfeedRunId    = [string]$BackfeedRunId
+            InsertedCount    = 0
+            UpdatedCount     = 0
+            DeletedCount     = 0
+            ReactivatedCount = 0
+            UnchangedCount   = 0
+            FailedCount      = 1
+            Message          = 'BackfeedRunId is missing or invalid.'
+            ErrorCode        = 'INVALID_BACKFEED_RUN_ID'
+            Errors           = @([pscustomobject]@{ Message = 'BackfeedRunId is missing or invalid.'; ErrorCode = 'INVALID_BACKFEED_RUN_ID'; BackfeedRunId = [string]$BackfeedRunId })
+        }
+    }
+
+    try {
+        $queryResult = @(Invoke-MailboxPermissionBackfeedStateInitializationSql -BackfeedContext $BackfeedContext -BackfeedRunId $resolvedBackfeedRunId)
+        $row = if ($queryResult.Count -gt 0) { $queryResult[0] } else { $null }
+        $isSimulated = $false
+        if ($null -ne $row -and $row.PSObject.Properties['Simulated'] -and [bool]$row.Simulated) {
+            $isSimulated = $true
+        }
+
+        [pscustomobject]@{
+            Success          = $true
+            Simulated        = $isSimulated
+            BackfeedRunId    = $resolvedBackfeedRunId
+            InsertedCount    = ConvertTo-DeltaIntCount -InputObject $row -PropertyName 'InsertedCount'
+            UpdatedCount     = ConvertTo-DeltaIntCount -InputObject $row -PropertyName 'UpdatedCount'
+            DeletedCount     = ConvertTo-DeltaIntCount -InputObject $row -PropertyName 'DeletedCount'
+            ReactivatedCount = ConvertTo-DeltaIntCount -InputObject $row -PropertyName 'ReactivatedCount'
+            UnchangedCount   = ConvertTo-DeltaIntCount -InputObject $row -PropertyName 'UnchangedCount'
+            FailedCount      = 0
+            Message          = if ($isSimulated) { 'State insert-only initialization simulated.' } else { 'State insert-only initialization completed.' }
+            ErrorCode        = $null
+            Errors           = @()
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        [pscustomobject]@{
+            Success          = $false
+            BackfeedRunId    = $resolvedBackfeedRunId
+            InsertedCount    = 0
+            UpdatedCount     = 0
+            DeletedCount     = 0
+            ReactivatedCount = 0
+            UnchangedCount   = 0
+            FailedCount      = 1
+            Message          = $errorMessage
+            ErrorCode        = 'MAILBOX_PERMISSION_STATE_INITIALIZE_FAILED'
+            Errors           = @([pscustomobject]@{ Message = $errorMessage; ErrorCode = 'MAILBOX_PERMISSION_STATE_INITIALIZE_FAILED'; BackfeedRunId = $resolvedBackfeedRunId })
+        }
+    }
+}
+
 Export-ModuleMember -Function @(
     'Get-MailboxPermissionBackfeedDelta',
     'Invoke-MailboxPermissionBackfeedDeltaSql',
     'Resolve-MailboxPermissionDeltaBackfeedRunId',
-    'Get-MailboxPermissionDeltaSqlScriptPath'
+    'Get-MailboxPermissionDeltaSqlScriptPath',
+    'Get-MailboxPermissionStateSqlScriptPath',
+    'Invoke-MailboxPermissionBackfeedStateInitializationSql',
+    'Initialize-MailboxPermissionBackfeedStateInsertOnly'
 )

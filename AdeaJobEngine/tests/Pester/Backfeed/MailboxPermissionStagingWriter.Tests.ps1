@@ -17,6 +17,7 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         Set-Variable -Scope Script -Name legacyInsertPath -Value (Join-Path -Path $script:sqlFolderPath -ChildPath 'insert-stg-mailbox-permission-row.sql')
 
         Set-Variable -Scope Script -Name writerPath -Value (Join-Path -Path $root -ChildPath 'backfeed\MailboxPermission\MailboxPermissionStagingWriter.psm1')
+        Set-Variable -Scope Script -Name deltaServicePath -Value (Join-Path -Path $root -ChildPath 'backfeed\MailboxPermission\MailboxPermissionDeltaService.psm1')
         Set-Variable -Scope Script -Name servicePath -Value (Join-Path -Path $root -ChildPath 'backfeed\MailboxPermission\MailboxPermissionBackfeedService.psm1')
         Set-Variable -Scope Script -Name contextPath -Value (Join-Path -Path $root -ChildPath 'shared\Backfeed\BackfeedContext.psm1')
         Set-Variable -Scope Script -Name resultPath -Value (Join-Path -Path $root -ChildPath 'shared\Backfeed\BackfeedResult.psm1')
@@ -41,6 +42,13 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         $writerScriptText = [regex]::Replace($writerScriptText, '(?m)^Import-Module\s+-Name\s+.*BackfeedSqlScriptRunner\.psm1.*$', '')
         $writerScriptText = [regex]::Replace($writerScriptText, '(?ms)^Export-ModuleMember\s+-Function\s+@\(.*?\)\s*$', '')
         . ([scriptblock]::Create($writerScriptText))
+
+        $deltaServiceScriptText = Get-Content -Path $script:deltaServicePath -Raw
+        $deltaServiceModuleRoot = Split-Path -Parent $script:deltaServicePath
+        $deltaServiceScriptText = $deltaServiceScriptText -replace [regex]::Escape('$moduleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path'), ('$moduleRoot = ''' + $deltaServiceModuleRoot + '''')
+        $deltaServiceScriptText = [regex]::Replace($deltaServiceScriptText, '(?m)^Import-Module\s+-Name\s+.*BackfeedSqlScriptRunner\.psm1.*$', '')
+        $deltaServiceScriptText = [regex]::Replace($deltaServiceScriptText, '(?ms)^Export-ModuleMember\s+-Function\s+@\(.*?\)\s*$', '')
+        . ([scriptblock]::Create($deltaServiceScriptText))
 
         $serviceScriptText = Get-Content -Path $script:servicePath -Raw
         $serviceModuleRoot = Split-Path -Parent $script:servicePath
@@ -217,6 +225,9 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         Mock Get-MailboxPermissionBackfeedDelta {
             [pscustomobject]@{ Success = $true; BackfeedRunId = 'ffffffff-ffff-ffff-ffff-ffffffffffff'; InsertedCount = 3; UpdatedCount = 0; DeletedCount = 0; UnchangedCount = 0; FailedCount = 0; Message = 'Delta counts resolved.'; ErrorCode = $null; Errors = @() }
         }
+        Mock Initialize-MailboxPermissionBackfeedStateInsertOnly {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = 'ffffffff-ffff-ffff-ffff-ffffffffffff'; InsertedCount = 3; UpdatedCount = 0; DeletedCount = 0; ReactivatedCount = 0; UnchangedCount = 0; FailedCount = 0; Message = 'State initialized.'; ErrorCode = $null; Errors = @() }
+        }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-1' -BackfeedType 'MailboxPermission' -Mode 'Full' -BackfeedRunId 'ffffffff-ffff-ffff-ffff-ffffffffffff'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
@@ -227,7 +238,7 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         $result.BackfeedRunId | Should -Be 'ffffffff-ffff-ffff-ffff-ffffffffffff'
     }
 
-    It 'service applies delta counts from delta service' {
+    It 'service applies InsertedCount from state initialization' {
         Mock Read-MailboxPermissionBackfeedSources { @([pscustomobject]@{ PermissionType = 'SendAs'; SourceSystem = 'ExchangeOnline' }) }
         Mock ConvertTo-MailboxPermissionBackfeedRows { @([pscustomobject]@{ MailboxName = 'M'; TrusteeName = 'U' }) }
         Mock Write-MailboxPermissionBackfeedStaging {
@@ -236,13 +247,16 @@ Describe 'MailboxPermission StagingWriter Backfeed delta-ready staging' {
         Mock Get-MailboxPermissionBackfeedDelta {
             [pscustomobject]@{ Success = $true; BackfeedRunId = '11111111-aaaa-bbbb-cccc-111111111111'; InsertedCount = 1; UpdatedCount = 2; DeletedCount = 3; UnchangedCount = 4; FailedCount = 0; Message = 'Delta counts resolved.'; ErrorCode = $null; Errors = @() }
         }
+        Mock Initialize-MailboxPermissionBackfeedStateInsertOnly {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = '11111111-aaaa-bbbb-cccc-111111111111'; InsertedCount = 7; UpdatedCount = 0; DeletedCount = 0; ReactivatedCount = 0; UnchangedCount = 4; FailedCount = 0; Message = 'State initialized.'; ErrorCode = $null; Errors = @() }
+        }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-bf-2' -BackfeedType 'MailboxPermission' -Mode 'Delta'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
 
-        $result.InsertedCount | Should -Be 1
-        $result.UpdatedCount | Should -Be 2
-        $result.DeletedCount | Should -Be 3
+        $result.InsertedCount | Should -Be 7
+        $result.UpdatedCount | Should -Be 0
+        $result.DeletedCount | Should -Be 0
         $result.UnchangedCount | Should -Be 4
     }
 

@@ -81,6 +81,41 @@ function Invoke-MailboxPermissionBackfeed {
             return New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount $insertedCount -UpdatedCount $updatedCount -DeletedCount $deletedCount -UnchangedCount $unchangedCount -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors $deltaErrors
         }
 
+        $stateInitializationResult = Initialize-MailboxPermissionBackfeedStateInsertOnly -BackfeedContext $Context -BackfeedRunId $resultBackfeedRunId
+        $stateInitializationIsSimulated = $false
+        if ($null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'Simulated') {
+            $stateInitializationIsSimulated = [bool]$stateInitializationResult.Simulated
+        }
+        if ($null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'BackfeedRunId' -and -not [string]::IsNullOrWhiteSpace([string]$stateInitializationResult.BackfeedRunId)) {
+            $resultBackfeedRunId = [string]$stateInitializationResult.BackfeedRunId
+        }
+        if (-not $stateInitializationIsSimulated -and $null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'InsertedCount') { $insertedCount = [int]$stateInitializationResult.InsertedCount }
+        if (-not $stateInitializationIsSimulated -and $null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'UpdatedCount') { $updatedCount = [int]$stateInitializationResult.UpdatedCount }
+        if (-not $stateInitializationIsSimulated -and $null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'DeletedCount') { $deletedCount = [int]$stateInitializationResult.DeletedCount }
+        if (-not $stateInitializationIsSimulated -and $unchangedCount -eq 0 -and $null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'UnchangedCount') {
+            $unchangedCount = [int]$stateInitializationResult.UnchangedCount
+        }
+
+        if ($null -eq $stateInitializationResult -or -not $stateInitializationResult.Success) {
+            $completedAt = Get-Date
+            $stateErrors = @()
+            if ($null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'Errors') {
+                $stateErrors = @($stateInitializationResult.Errors)
+            }
+            if ($stateErrors.Count -eq 0) {
+                $stateMessage = if ($null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'Message') { [string]$stateInitializationResult.Message } else { 'State initialization failed.' }
+                $stateErrorCode = if ($null -ne $stateInitializationResult -and $stateInitializationResult.PSObject.Properties.Name -contains 'ErrorCode') { [string]$stateInitializationResult.ErrorCode } else { 'MAILBOX_PERMISSION_STATE_INITIALIZE_FAILED' }
+                $stateErrors = @([pscustomobject]@{
+                        Message       = $stateMessage
+                        ErrorCode     = $stateErrorCode
+                        CorrelationId = [string]$Context.CorrelationId
+                        BackfeedRunId = $resultBackfeedRunId
+                    })
+            }
+
+            return New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount $insertedCount -UpdatedCount $updatedCount -DeletedCount $deletedCount -UnchangedCount $unchangedCount -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors $stateErrors
+        }
+
         $completedAt = Get-Date
         New-BackfeedResult -BackfeedRunId $resultBackfeedRunId -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Succeeded' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount $insertedCount -UpdatedCount $updatedCount -DeletedCount $deletedCount -UnchangedCount $unchangedCount -FailedCount 0 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors @()
     }

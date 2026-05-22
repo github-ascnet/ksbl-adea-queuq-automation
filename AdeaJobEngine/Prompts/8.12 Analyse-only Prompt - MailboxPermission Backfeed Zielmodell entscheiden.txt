@@ -1,0 +1,524 @@
+R = Rolle
+
+Du bist ein sehr erfahrener SQL-Server-, PowerShell-, ETL-/Backfeed-, Delta-/Merge-, Datenmodellierungs-, IAM-/AD-/Exchange- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map vorhanden
+OnPrem Gateway-Anbindung vorhanden
+ExchangeOnline Gateway-Anbindung vorhanden
+SQL-Staging in stg_MailboxPermissions_Backfeed vorhanden
+BackfeedRunId wird konsistent durch Context, Writer, Result und OutputJson geführt
+Delta-Ermittlung ohne Merge ist vorhanden
+Gesamtsuite zuletzt grün mit 601 Tests, 0 Failed
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine Dateien.
+Ändere keine SQL-Dateien.
+Ändere keine Config.
+Ändere keine Tests.
+Führe keine Refactorings aus.
+Antworte nur mit Analyse, Variantenbewertung und klarer Empfehlung.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Entscheide fachlich und technisch, welches Zielmodell für den echten MailboxPermission Backfeed Delta-/Merge-Betrieb verwendet werden soll.
+
+Aktueller Stand:
+
+Die neue deltafähige Stage-Tabelle stg_MailboxPermissions_Backfeed enthält bereits moderne Felder wie:
+
+BackfeedRunId
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+IsInherited
+Deny
+AccessRights
+
+Die bestehende Zieltabelle MailboxPermissions enthält diese modernen Delta-Felder aktuell nicht zuverlässig.
+
+Deshalb kann die aktuelle Delta-Ermittlung nur sichere Teilcounts liefern:
+
+InsertedCount = Anzahl Stage-Zeilen des aktuellen BackfeedRunId
+UpdatedCount = 0
+DeletedCount = 0
+UnchangedCount = 0
+
+Jetzt soll entschieden werden:
+
+Soll MailboxPermissions selbst deltafähig erweitert werden?
+
+Oder soll eine separate Backfeed-State-/Current-State-Tabelle eingeführt werden?
+
+Oder soll vorerst ein Legacy-kompatibler Refresh mit moderner Stage beibehalten werden?
+
+────────────────────────────────────────
+
+K = Kontext
+
+Relevante Dateien:
+
+current-scripts/Schema KSBL_IAM.sql
+current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionDeltaService.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+infrastructure/SqlGateway.psm1
+
+sql/backfeed/mailbox-permission/create-stg-mailbox-permissions-backfeed.sql
+sql/backfeed/mailbox-permission/insert-stg-mailbox-permission-backfeed-row.sql
+sql/backfeed/mailbox-permission/get-mailbox-permission-backfeed-delta-counts.sql
+
+Bestehende Tabellen:
+
+stg_MailboxPermissions
+stg_MailboxPermissions_Backfeed
+MailboxPermissions
+hist_MailboxPermissions
+
+Moderne Delta-Schlüsselfelder:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+BackfeedRunId
+
+Fachlicher BusinessKey:
+
+SourceSystem + PermissionType + MailboxKey + TrusteeKey
+
+RowHash dient zur Update-Erkennung.
+
+BackfeedRunId dient zur Laufabgrenzung.
+
+────────────────────────────────────────
+
+A = Analysefokus
+
+Prüfe und vergleiche mindestens diese Varianten:
+
+────────────────────────────────────────
+
+Variante A: MailboxPermissions direkt deltafähig erweitern
+
+Beschreibung:
+
+Die bestehende Tabelle MailboxPermissions wird um moderne Delta-Felder erweitert, z. B.:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+LastSeenBackfeedRunId
+LastSeenAt
+IsDeleted oder ValidFrom / ValidTo
+
+Delta/Merge läuft direkt gegen MailboxPermissions.
+
+Bewerte:
+
+Vorteile
+Nachteile
+Risiko für bestehende Applikationen
+Risiko für Legacy-Skripte
+Migrationsaufwand
+Abwärtskompatibilität
+Indexbedarf
+Auditfähigkeit
+Eignung für OnPrem + ExchangeOnline
+Eignung für häufige Läufe
+
+────────────────────────────────────────
+
+Variante B: Separate Backfeed-State-Tabelle einführen
+
+Beispiel:
+
+MailboxPermissionBackfeedState
+
+oder:
+
+bf_MailboxPermissionState
+
+Diese Tabelle enthält den aktuellen, deltafähigen Backfeed-Zustand.
+
+Mögliche Spalten:
+
+Id
+SourceSystem
+PermissionType
+MailboxKey
+MailboxName
+TrusteeKey
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+IsInherited
+Deny
+AccessRights
+RowHash
+FirstSeenBackfeedRunId
+LastSeenBackfeedRunId
+FirstSeenAt
+LastSeenAt
+IsDeleted
+DeletedAt
+DeletedBackfeedRunId
+ModifiedOn
+ModifiedBy
+
+Delta/Merge läuft gegen diese State-Tabelle.
+
+Die bestehende MailboxPermissions-Tabelle bleibt zunächst unangetastet oder wird später kontrolliert daraus aktualisiert.
+
+Bewerte:
+
+Vorteile
+Nachteile
+Parallelbetrieb
+Legacy-Risiko
+Abfrage-/Reporting-Komplexität
+Auditfähigkeit
+technische Sauberkeit
+Performance
+Migrationsaufwand
+spätere Ablösung der Legacy-Tabelle
+
+────────────────────────────────────────
+
+Variante C: Separate Backfeed-State-Tabelle plus späterer Legacy-Projection
+
+Beschreibung:
+
+Backfeed schreibt und merged zuerst in eine neue State-Tabelle.
+Daraus wird optional später eine Legacy-kompatible Projektion in MailboxPermissions erzeugt.
+
+Beispiel:
+
+stg_MailboxPermissions_Backfeed
+  → MailboxPermissionBackfeedState
+  → optional MailboxPermissions Projection
+
+Bewerte:
+
+Vorteile
+Nachteile
+Sicherheitsgewinn
+Migrationspfad
+Komplexität
+Eignung für schrittweisen Parallelbetrieb
+Möglichkeit, Legacy-Output stabil zu halten
+Eignung für Audit und Reporting
+
+────────────────────────────────────────
+
+Variante D: Bestehendes MailboxPermissions-Schema beibehalten und Legacy-kompatibel refreshen
+
+Beschreibung:
+
+Die neue Backfeed-Pipeline nutzt moderne Stage, aber aktualisiert MailboxPermissions weiterhin legacy-kompatibel per Refresh oder kontrolliertem Replace.
+
+Kein echter persistenter Delta-State.
+
+Bewerte:
+
+Vorteile
+Nachteile
+Risiko bei häufigen Läufen
+Auditfähigkeit
+Datenverlust-/Race-Condition-Risiko
+Eignung für kurzfristige Brücke
+technische Schuld
+
+────────────────────────────────────────
+
+Variante E: Delta rein im Lauf berechnen, ohne persistenten State
+
+Beschreibung:
+
+Die Stage des aktuellen Runs wird gegen MailboxPermissions oder andere temporäre Daten verglichen.
+Es gibt keinen dauerhaften State mit BusinessKey / RowHash.
+
+Bewerte:
+
+Performance
+Komplexität
+Fehleranfälligkeit
+Lösch-Erkennung
+Auditfähigkeit
+Wiederholbarkeit
+Eignung für grosse Datenmengen
+
+────────────────────────────────────────
+
+SQL-Schema-Analyse
+
+Analysiere current-scripts/Schema KSBL_IAM.sql.
+
+Prüfe konkret:
+
+1. Struktur von MailboxPermissions
+2. Struktur von hist_MailboxPermissions
+3. Struktur von stg_MailboxPermissions
+4. Struktur der neuen SQL-Datei create-stg-mailbox-permissions-backfeed.sql
+5. vorhandene Primary Keys
+6. vorhandene Unique Keys
+7. vorhandene Indizes
+8. ModifiedBy / ModifiedOn
+9. fachliche Pflichtfelder
+10. ob SourceSystem, PermissionType, MailboxKey, TrusteeKey, RowHash irgendwo bereits vorhanden sind
+11. ob bestehende Applikationen vermutlich MailboxPermissions direkt lesen
+12. welche Felder für eine Legacy-kompatible Projection nötig wären
+
+────────────────────────────────────────
+
+Legacy-Analyse
+
+Analysiere current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1.
+
+Prüfe konkret:
+
+1. Wie MailboxPermissions aktuell befüllt wird.
+2. Ob MailboxPermissions komplett geleert wird.
+3. Ob hist_MailboxPermissions verwendet wird.
+4. Ob bestehende Logik ModifiedBy / ModifiedOn setzt.
+5. Welche Annahmen bestehende Prozesse über MailboxPermissions haben könnten.
+6. Ob ein Parallelbetrieb möglich ist.
+7. Welche Risiken entstehen, wenn MailboxPermissions direkt erweitert wird.
+8. Welche Risiken entstehen, wenn eine separate State-Tabelle eingeführt wird.
+
+────────────────────────────────────────
+
+Schlüssel- und Indexstrategie
+
+Bewerte den empfohlenen BusinessKey:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+
+Prüfe:
+
+1. Ob der BusinessKey als Unique Index geeignet ist.
+2. Ob IsDeleted Teil des Unique Index sein soll oder nicht.
+3. Ob RowHash separat indiziert werden soll.
+4. Ob BackfeedRunId separat indiziert werden soll.
+5. Ob LastSeenBackfeedRunId nötig ist.
+6. Ob FirstSeenBackfeedRunId nötig ist.
+7. Wie Deletes erkannt werden.
+8. Wie Reappeared Permissions behandelt werden sollen.
+9. Wie OnPrem und ExchangeOnline getrennt bleiben.
+10. Wie FullAccess und SendAs getrennt bleiben.
+
+────────────────────────────────────────
+
+History- und Auditstrategie
+
+Bewerte:
+
+1. Soll hist_MailboxPermissions weiterverwendet werden?
+2. Soll eine neue Backfeed-History-Tabelle eingeführt werden?
+3. Soll History nur bei Update/Delete geschrieben werden?
+4. Soll Insert ebenfalls historisiert werden?
+5. Soll eine vollständige Laufhistorie geführt werden?
+6. Reicht ModifiedOn / ModifiedBy?
+7. Soll BackfeedRunId in History stehen?
+8. Soll OldRowHash / NewRowHash gespeichert werden?
+9. Soll ModificationType Insert / Update / Delete / Reactivate enthalten?
+
+────────────────────────────────────────
+
+Migrationsstrategie
+
+Bewerte:
+
+1. Wie kann die neue Backfeed-State-Tabelle initial befüllt werden?
+2. Soll der erste Lauf alle Stage-Zeilen als Insert behandeln?
+3. Wie kann man bestehende MailboxPermissions übernehmen?
+4. Soll man Legacy und neuen Backfeed parallel laufen lassen?
+5. Wie verhindert man doppelte oder widersprüchliche Daten?
+6. Wann könnte MailboxPermissions aus dem neuen State ersetzt oder projiziert werden?
+7. Welche Rollback-Strategie wäre sinnvoll?
+
+────────────────────────────────────────
+
+Empfohlene nächste technische Phase
+
+Am Ende soll eine klare Empfehlung stehen:
+
+Beispieloptionen:
+
+Option 1:
+Neue Tabelle MailboxPermissionBackfeedState erstellen, aber noch kein Merge bauen.
+
+Option 2:
+Neue Tabelle MailboxPermissionBackfeedState plus einfache Insert-only Initialisierung bauen.
+
+Option 3:
+MailboxPermissions direkt erweitern.
+
+Option 4:
+Noch keine Umsetzung, zuerst Datenmodell fachlich abnehmen lassen.
+
+Die Empfehlung soll exakt sagen:
+
+Welche Dateien im nächsten Schritt erstellt werden sollen.
+Welche Dateien im nächsten Schritt geändert werden sollen.
+Welche Dateien nicht geändert werden dürfen.
+Welche SQL-Dateien nötig sind.
+Welche Pester-Tests nötig sind.
+Welche Risiken vor Umsetzung geklärt werden müssen.
+
+────────────────────────────────────────
+
+Ausgabeformat
+
+Gib die Analyse strukturiert aus:
+
+1. Zusammenfassung
+
+5 bis 10 Sätze mit klarer Tendenz.
+
+2. Variantenvergleich
+
+Tabelle:
+
+Variante
+Beschreibung
+Vorteile
+Nachteile
+Risiko
+Empfehlung
+
+3. Zielmodell-Empfehlung
+
+Tabelle:
+
+Feld
+Datentyp
+Pflicht
+Zweck
+Begründung
+
+4. BusinessKey- und Indexstrategie
+
+Tabelle:
+
+Element
+Empfehlung
+Begründung
+
+5. History-/Auditstrategie
+
+Tabelle:
+
+Option
+Empfehlung
+Begründung
+
+6. Migrationsstrategie
+
+Tabelle:
+
+Schritt
+Beschreibung
+Risiko
+Empfehlung
+
+7. Minimaler nächster Implementierungsschritt
+
+Exakte Liste:
+
+Neue Dateien
+Zu ändernde Dateien
+Nicht zu ändernde Dateien
+
+8. Testplan
+
+Konkrete Pester-Tests für die nächste Phase.
+
+9. Risiken und offene Punkte
+
+Tabelle:
+
+Risiko
+Schweregrad
+Ursache
+Empfehlung
+
+10. Klare Abschlussentscheidung
+
+Formuliere:
+
+Ich empfehle als nächste Phase: ...
+
+mit kurzer Begründung.
+
+────────────────────────────────────────
+
+Harte Grenzen
+
+Nimm keine Änderungen vor.
+Erstelle keine Dateien.
+Ändere keine Dateien.
+Ändere keine SQL-Dateien.
+Ändere keine Tests.
+Ändere keine Config.
+Ändere keine produktiven Environment-Dateien.
+Antworte nur mit Analyse und Designempfehlung.
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+SqlGateway.psm1
+BackfeedSqlScriptRunner.psm1
+MailboxPermissionBackfeedService.psm1
+MailboxPermissionDeltaService.psm1
+MailboxPermissionStagingWriter.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+
+Erwartete Abschlussaussage:
+
+Ich empfehle als nächste Phase: ...
+
+Dabei soll klar werden, ob du:
+
+MailboxPermissions direkt erweitern würdest,
+
+oder eine separate MailboxPermissionBackfeedState-Tabelle empfiehlst,
+
+oder zuerst eine fachliche Datenmodellfreigabe einholen würdest.

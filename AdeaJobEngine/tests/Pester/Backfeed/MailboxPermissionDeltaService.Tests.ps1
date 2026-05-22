@@ -13,6 +13,8 @@ Describe 'MailboxPermission DeltaService and Delta SQL' {
         Set-Variable -Scope Script -Name deltaServicePath -Value (Join-Path -Path $root -ChildPath 'backfeed\MailboxPermission\MailboxPermissionDeltaService.psm1')
         Set-Variable -Scope Script -Name servicePath -Value (Join-Path -Path $root -ChildPath 'backfeed\MailboxPermission\MailboxPermissionBackfeedService.psm1')
         Set-Variable -Scope Script -Name deltaSqlPath -Value (Join-Path -Path $root -ChildPath 'sql\backfeed\mailbox-permission\get-mailbox-permission-backfeed-delta-counts.sql')
+        Set-Variable -Scope Script -Name stateCreateSqlPath -Value (Join-Path -Path $root -ChildPath 'sql\backfeed\mailbox-permission\create-mailbox-permission-backfeed-state.sql')
+        Set-Variable -Scope Script -Name stateInitializeSqlPath -Value (Join-Path -Path $root -ChildPath 'sql\backfeed\mailbox-permission\initialize-mailbox-permission-backfeed-state-insert-only.sql')
 
         Set-Variable -Scope Script -Name backfeedSqlRunnerPath -Value (Join-Path -Path $root -ChildPath 'shared\Backfeed\BackfeedSqlScriptRunner.psm1')
         Set-Variable -Scope Script -Name sqlGatewayPath -Value (Join-Path -Path $root -ChildPath 'infrastructure\SqlGateway.psm1')
@@ -117,6 +119,11 @@ Describe 'MailboxPermission DeltaService and Delta SQL' {
         $content -match 'Get-MailboxPermissionBackfeedDelta' | Should -Be $true
     }
 
+    It 'service contains state initialization call after delta' {
+        $content = Get-Content -Path $script:servicePath -Raw
+        $content -match 'Initialize-MailboxPermissionBackfeedStateInsertOnly' | Should -Be $true
+    }
+
     It 'service maps delta counts into BackfeedResult' {
         Mock -ModuleName MailboxPermissionBackfeedService -CommandName Read-MailboxPermissionBackfeedSources {
             @([pscustomobject]@{ PermissionType = 'FullAccess'; SourceSystem = 'OnPrem' })
@@ -130,14 +137,17 @@ Describe 'MailboxPermission DeltaService and Delta SQL' {
         Mock -ModuleName MailboxPermissionBackfeedService -CommandName Get-MailboxPermissionBackfeedDelta {
             [pscustomobject]@{ Success = $true; BackfeedRunId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'; InsertedCount = 11; UpdatedCount = 12; DeletedCount = 13; UnchangedCount = 14; FailedCount = 0; Message = 'Delta counts resolved.'; ErrorCode = $null; Errors = @() }
         }
+        Mock -ModuleName MailboxPermissionBackfeedService -CommandName Initialize-MailboxPermissionBackfeedStateInsertOnly {
+            [pscustomobject]@{ Success = $true; BackfeedRunId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'; InsertedCount = 5; UpdatedCount = 0; DeletedCount = 0; ReactivatedCount = 0; UnchangedCount = 14; FailedCount = 0; Message = 'State initialized.'; ErrorCode = $null; Errors = @() }
+        }
 
         $context = New-BackfeedContext -Environment 'Test' -Config ([pscustomobject]@{}) -Logger ([pscustomobject]@{}) -StartedAt (Get-Date) -CorrelationId 'svc-delta-1' -BackfeedType 'MailboxPermission' -Mode 'Delta'
         $result = Invoke-MailboxPermissionBackfeed -Context $context
 
         $result.Status | Should -Be 'Succeeded'
-        $result.InsertedCount | Should -Be 11
-        $result.UpdatedCount | Should -Be 12
-        $result.DeletedCount | Should -Be 13
+        $result.InsertedCount | Should -Be 5
+        $result.UpdatedCount | Should -Be 0
+        $result.DeletedCount | Should -Be 0
         $result.UnchangedCount | Should -Be 14
         $result.BackfeedRunId | Should -Be 'cccccccc-cccc-cccc-cccc-cccccccccccc'
     }
@@ -167,6 +177,12 @@ Describe 'MailboxPermission DeltaService and Delta SQL' {
     It 'BackfeedSqlScriptRunner and SqlGateway support query execution for delta' {
         (Get-Content -Path $script:backfeedSqlRunnerPath -Raw) -match 'Invoke-BackfeedSqlQueryScript' | Should -Be $true
         (Get-Content -Path $script:sqlGatewayPath -Raw) -match 'Invoke-SqlQueryParameterizedSafe' | Should -Be $true
+    }
+
+    It 'state SQL files do not write to MailboxPermissions or hist_MailboxPermissions' {
+        $stateSql = (Get-Content -Path $script:stateCreateSqlPath -Raw) + "`n" + (Get-Content -Path $script:stateInitializeSqlPath -Raw)
+        $stateSql -match '\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE\s+TABLE)\s+\[?dbo\]?\.?\[?MailboxPermissions\]?\b' | Should -Be $false
+        $stateSql -match '\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE\s+TABLE)\s+\[?dbo\]?\.?\[?hist_MailboxPermissions\]?\b' | Should -Be $false
     }
 
     It 'JobEngine and JobFileQueue remain free of Backfeed implementation details' {
