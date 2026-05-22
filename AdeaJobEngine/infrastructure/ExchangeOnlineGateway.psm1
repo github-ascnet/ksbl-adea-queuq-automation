@@ -815,6 +815,119 @@ function Set-ExoMailboxManagerSafe {
     }.GetNewClosure()
 }
 
+function Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        $mailboxes = Get-EXOMailbox -ResultSize Unlimited -ErrorAction Stop
+        $mailboxes | Select-Object Identity, Name, DistinguishedName, Guid, PrimarySmtpAddress, HiddenFromAddressListsEnabled, ExternalDirectoryObjectId, RecipientTypeDetails
+    }
+}
+
+function Get-ExchangeOnlineMailboxFullAccessPermissionsSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $capturedIdentity = $Identity
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        $mailbox = Get-EXOMailbox -Identity $capturedIdentity -ErrorAction Stop
+        $permissions = @(Get-EXOMailboxPermission -Identity $capturedIdentity -ResultSize Unlimited -ErrorAction Stop)
+
+        $rows = foreach ($permission in $permissions) {
+            if ($null -eq $permission) { continue }
+
+            $accessRightsText = @($permission.AccessRights) -join ','
+            if ([string]::IsNullOrWhiteSpace($accessRightsText)) { continue }
+            if ($accessRightsText -notmatch 'FullAccess') { continue }
+
+            $trusteeIdentity = [string]$permission.User
+            $trusteeName = $trusteeIdentity
+            $trusteeDomain = ''
+            if ($trusteeIdentity -match '^(?<Domain>[^\\]+)\\(?<Name>.+)$') {
+                $trusteeDomain = [string]$Matches.Domain
+                $trusteeName = [string]$Matches.Name
+            }
+
+            [pscustomobject]@{
+                MailboxIdentity                      = [string]$mailbox.Identity
+                MailboxName                          = [string]$mailbox.Name
+                MailboxDistinguishedName             = [string]$mailbox.DistinguishedName
+                MailboxGuid                          = [string]$mailbox.Guid
+                MailboxHiddenFromAddressListsEnabled = $mailbox.HiddenFromAddressListsEnabled
+                TrusteeIdentity                      = $trusteeIdentity
+                TrusteeName                          = $trusteeName
+                TrusteeDomain                        = $trusteeDomain
+                TrusteeDistinguishedName             = $null
+                TrusteeSid                           = $null
+                TrusteeObjectClass                   = $null
+                AccessRights                         = $accessRightsText
+                IsInherited                          = [bool]$permission.IsInherited
+                Deny                                 = [bool]$permission.Deny
+            }
+        }
+
+        @($rows)
+    }.GetNewClosure()
+}
+
+function Get-ExchangeOnlineMailboxSendAsPermissionsSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [hashtable]$Config = $null,
+        [object]$Context = $null
+    )
+
+    $capturedIdentity = $Identity
+    Invoke-ExchangeOnlineCommand -Config $Config -Context $Context -ScriptBlock {
+        $mailbox = Get-EXOMailbox -Identity $capturedIdentity -ErrorAction Stop
+        $permissions = @(Get-EXORecipientPermission -Identity $capturedIdentity -ResultSize Unlimited -ErrorAction Stop)
+
+        $rows = foreach ($permission in $permissions) {
+            if ($null -eq $permission) { continue }
+
+            $accessRightsText = @($permission.AccessRights) -join ','
+            if ([string]::IsNullOrWhiteSpace($accessRightsText)) { continue }
+            if ($accessRightsText -notmatch 'SendAs') { continue }
+
+            $trusteeIdentity = if ($permission.PSObject.Properties['Trustee']) { [string]$permission.Trustee } else { [string]$permission.User }
+            $trusteeName = $trusteeIdentity
+            $trusteeDomain = ''
+            if ($trusteeIdentity -match '^(?<Domain>[^\\]+)\\(?<Name>.+)$') {
+                $trusteeDomain = [string]$Matches.Domain
+                $trusteeName = [string]$Matches.Name
+            }
+
+            [pscustomobject]@{
+                MailboxIdentity                      = [string]$mailbox.Identity
+                MailboxName                          = [string]$mailbox.Name
+                MailboxDistinguishedName             = [string]$mailbox.DistinguishedName
+                MailboxGuid                          = [string]$mailbox.Guid
+                MailboxHiddenFromAddressListsEnabled = $mailbox.HiddenFromAddressListsEnabled
+                TrusteeIdentity                      = $trusteeIdentity
+                TrusteeName                          = $trusteeName
+                TrusteeDomain                        = $trusteeDomain
+                TrusteeDistinguishedName             = $null
+                TrusteeSid                           = $null
+                TrusteeObjectClass                   = $null
+                AccessRights                         = $accessRightsText
+                IsInherited                          = [bool]$permission.IsInherited
+                Deny                                 = [bool]$permission.Deny
+            }
+        }
+
+        @($rows)
+    }.GetNewClosure()
+}
+
 Export-ModuleMember -Function @(
     'Set-ExchangeOnlineRuntimeConfig',
     'Get-ExchangeOnlineRemotePowerShellConfig',
@@ -830,6 +943,9 @@ Export-ModuleMember -Function @(
     'Get-ExoMailboxSafe',
     'Set-ExoMailboxSafe',
     'Get-ExoRecipientSafe',
+    'Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes',
+    'Get-ExchangeOnlineMailboxFullAccessPermissionsSafe',
+    'Get-ExchangeOnlineMailboxSendAsPermissionsSafe',
     'Add-ExoMailboxPermissionSafe',
     'Remove-ExoMailboxPermissionSafe',
     'Add-ExoSendAsPermissionSafe',

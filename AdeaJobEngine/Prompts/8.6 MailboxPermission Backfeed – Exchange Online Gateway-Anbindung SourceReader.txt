@@ -1,0 +1,485 @@
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-Online-, Microsoft-365-Hybrid-, Exchange-OnPrem-, Active-Directory-, ETL-/Backfeed-, Gateway-, Pester-5.7.1- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map-Skeleton vorhanden
+OnPrem-Gateway-Anbindung für MailboxPermission SourceReader vorhanden
+Gesamtsuite zuletzt grün mit 518 Tests, 0 Failed
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nur gelesen, nicht verändert.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Baue nur die Exchange-Online-Gateway-Anbindung für den MailboxPermission SourceReader.
+
+Ziel dieser Phase:
+
+Exchange Online Mailbox-Liste über ExchangeOnlineGateway lesen
+Exchange Online FullAccess Permissions über ExchangeOnlineGateway lesen
+Exchange Online SendAs Permissions über ExchangeOnlineGateway lesen
+Die bestehenden SourceReader-Collector-Platzhalter für ExchangeOnline fachlich anbinden
+Rohdaten weiterhin als RawPermission-Objekte an den bestehenden Mapper liefern
+Bestehende OnPrem-Anbindung nicht verändern
+Mapper, StagingWriter und Service möglichst unverändert weiterverwenden
+Pester-Tests mit gemockten ExchangeOnlineGateway-Funktionen ergänzen
+
+Noch nicht bauen:
+
+Delta
+Merge
+History
+produktive SQL-Refresh-Logik
+Bulk Copy
+SQL-Schemaänderungen
+direkte Exchange-/EXO-/AD-/SQL-Cmdlet-Aufrufe im SourceReader
+neue UseCases
+Queue-Integration
+Änderungen an OnPrem-Gateway-Logik, ausser ein Test zeigt zwingend einen Fehler
+
+────────────────────────────────────────
+
+K = Kontext
+
+Vorhandene Dateien:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+infrastructure/ExchangeOnlineGateway.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+tests/Pester/Backfeed/MailboxPermissionOnPremReader.Tests.ps1
+
+Bereits umgesetzt:
+
+OnPrem FullAccess über ExchangeOnPremGateway
+OnPrem SendAs über ExchangeOnPremGateway
+RawPermission DTO
+Mapper-Normalisierung
+deterministischer RowHash
+Service-Pipeline Read → Map → Stage → Result
+
+Jetzt sollen nur die ExchangeOnline-Pfade produktiv über ExchangeOnlineGateway vorbereitet werden.
+
+Fachliche Zielwerte:
+
+SourceSystem = ExchangeOnline
+PermissionType = FullAccess oder SendAs
+
+────────────────────────────────────────
+
+A = Architekturvorgaben
+
+Zielkette für Exchange Online FullAccess:
+
+MailboxPermissionSourceReader
+  → ExchangeOnlineGateway
+  → Exchange Online PowerShell / ExchangeOnlineManagement
+  → RawPermission DTO
+
+Zielkette für Exchange Online SendAs:
+
+MailboxPermissionSourceReader
+  → ExchangeOnlineGateway
+  → Exchange Online Permission Reads
+  → RawPermission DTO
+
+Der SourceReader darf nur Gateway-Funktionen aufrufen.
+
+Nicht erlaubt im SourceReader:
+
+Get-EXOMailbox
+Get-EXOMailboxPermission
+Get-MailboxPermission
+Get-RecipientPermission
+Get-EXORecipient
+Get-Recipient
+Connect-ExchangeOnline
+Disconnect-ExchangeOnline
+Get-ADUser
+Get-ADObject
+New-PSSession
+Invoke-Sqlcmd
+
+Falls Gateway-Funktionen fehlen:
+
+Ergänze minimale, klar benannte, mockbare Gateway-Funktionen in ExchangeOnlineGateway.psm1.
+Keine grosse Gateway-Refaktorierung.
+Keine bestehende Gateway-Logik brechen.
+Bestehende Zertifikat-/AppId-/Organization-Konfiguration im ExchangeOnlineGateway beibehalten.
+Keine OnPrem-Logik in ExchangeOnlineGateway einbauen.
+Keine produktiven Werte hardcoden.
+Keine Config-Werte verändern.
+
+────────────────────────────────────────
+
+E = Execution
+
+1. Bestehende ExchangeOnlineGateway-Funktionen analysieren
+
+Prüfe zuerst infrastructure/ExchangeOnlineGateway.psm1.
+
+Suche nach bestehenden Funktionen für:
+
+EXO Mailbox-Liste
+EXO MailboxPermission
+EXO RecipientPermission
+EXO Recipient Lookup
+Connect-ExchangeOnline
+Assert-ExchangeOnlineConnection
+Invoke-ExchangeOnlineCommand oder vergleichbare Wrapper
+Get-Exo...Safe
+Set-Exo...Safe
+
+Verwende vorhandene Funktionen, wenn sie passen.
+Ergänze nur minimal, wenn wirklich nötig.
+
+────────────────────────────────────────
+
+2. ExchangeOnlineGateway minimal erweitern
+
+Falls passende Funktionen fehlen, ergänze maximal diese Gateway-Funktionen:
+
+Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes
+
+Zweck:
+Liefert die EXO-Mailboxen, für die Berechtigungen gelesen werden sollen.
+
+Rückgabe pro Mailbox mindestens:
+
+Identity
+Name
+DistinguishedName
+Guid
+PrimarySmtpAddress
+HiddenFromAddressListsEnabled
+ExternalDirectoryObjectId
+RecipientTypeDetails
+
+Get-ExchangeOnlineMailboxFullAccessPermissionsSafe
+
+Zweck:
+Liefert FullAccess-Berechtigungen für eine EXO-Mailbox.
+
+Parameter:
+
+Identity
+
+Rückgabe pro Permission mindestens:
+
+MailboxIdentity
+MailboxName
+MailboxDistinguishedName
+MailboxGuid
+MailboxHiddenFromAddressListsEnabled
+TrusteeIdentity
+TrusteeName
+TrusteeDomain
+TrusteeDistinguishedName
+TrusteeSid
+TrusteeObjectClass
+AccessRights
+IsInherited
+Deny
+
+Get-ExchangeOnlineMailboxSendAsPermissionsSafe
+
+Zweck:
+Liefert SendAs-Berechtigungen für eine EXO-Mailbox.
+
+Parameter:
+
+Identity
+
+Rückgabe pro Permission mindestens gleiche Felder wie oben.
+
+Wichtig:
+
+Gateway-Funktionen dürfen intern ExchangeOnlineManagement-Cmdlets kapseln.
+SourceReader darf diese Cmdlets nicht direkt enthalten.
+Gateway-Funktionen müssen mockbar sein.
+Keine OnPrem-Logik in ExchangeOnlineGateway einbauen.
+Keine New-PSSession-Logik in ExchangeOnlineGateway einbauen.
+Keine produktiven Werte hardcoden.
+Keine Config-Werte verändern.
+Keine direkte Abhängigkeit auf TenantState.
+
+Wenn eine EXO-Verbindung benötigt wird, muss die bestehende ExchangeOnlineGateway-Verbindungslogik verwendet werden.
+
+────────────────────────────────────────
+
+3. MailboxPermissionSourceReader ExchangeOnline anbinden
+
+Erweitere:
+
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+
+Die vorhandenen ExchangeOnline-Pfade sollen jetzt die Gateway-Funktionen nutzen:
+
+Read-ExchangeOnlineMailboxFullAccessPermissions
+  → Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes
+  → Get-ExchangeOnlineMailboxFullAccessPermissionsSafe pro Mailbox
+  → RawPermission-Objekte mit SourceSystem = ExchangeOnline und PermissionType = FullAccess
+
+Read-ExchangeOnlineMailboxSendAsPermissions
+  → Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes
+  → Get-ExchangeOnlineMailboxSendAsPermissionsSafe pro Mailbox
+  → RawPermission-Objekte mit SourceSystem = ExchangeOnline und PermissionType = SendAs
+
+RawPermission-Objekte müssen weiterhin das bestehende Schema erfüllen:
+
+SourceSystem
+PermissionType
+MailboxIdentity
+MailboxName
+MailboxDistinguishedName
+MailboxGuid
+MailboxHiddenFromAddressListsEnabled
+TrusteeIdentity
+TrusteeName
+TrusteeDomain
+TrusteeDistinguishedName
+TrusteeSid
+TrusteeObjectClass
+AccessRights
+IsInherited
+Deny
+
+Wichtig:
+
+Keine direkten Cmdlets im SourceReader.
+OnPrem-Pfade nicht umbauen.
+OnPrem-Tests müssen grün bleiben.
+Kein Delta/Merge.
+Kein SQL-Refresh.
+
+────────────────────────────────────────
+
+4. Mapper nur minimal anfassen
+
+MailboxPermissionMapper.psm1 soll möglichst unverändert bleiben.
+
+Nur wenn durch echte ExchangeOnline-Gateway-Rückgaben minimale Feldnormalisierung nötig wird:
+
+kleine robuste Null-/Fallback-Behandlung ergänzen
+keine neue Mapping-Architektur
+keine Änderung der DTO-Zielstruktur
+
+Wichtige Erwartung:
+
+SourceSystem = ExchangeOnline muss sauber erhalten bleiben.
+PermissionType = FullAccess oder SendAs muss sauber erhalten bleiben.
+MailboxKey-Fallback bleibt:
+  MailboxGuid
+  MailboxDistinguishedName
+  MailboxIdentity
+
+TrusteeKey-Fallback bleibt:
+  TrusteeSid
+  TrusteeDistinguishedName
+  TrusteeDomain + TrusteeName
+
+────────────────────────────────────────
+
+5. Service nicht unnötig ändern
+
+MailboxPermissionBackfeedService.psm1 soll möglichst unverändert bleiben.
+
+Nur falls durch ExchangeOnline-SourceReader-Rückgaben Zählerlogik angepasst werden muss:
+
+ReadCount korrekt setzen
+StagedCount unverändert vom StagingWriter übernehmen
+Delta-/Merge-Zähler bleiben 0
+
+────────────────────────────────────────
+
+6. Tests erweitern
+
+Erweitere:
+
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+
+oder ergänze eine separate Datei:
+
+tests/Pester/Backfeed/MailboxPermissionExchangeOnlineReader.Tests.ps1
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+Should Not Be
+
+Verwenden:
+
+Should -Be
+Should -Not -Be
+
+Mindesttests:
+
+SourceReader / ExchangeOnline:
+
+1. ExchangeOnline FullAccess-Pfad ruft Gateway-Mailboxliste und FullAccess-Gateway auf.
+2. ExchangeOnline SendAs-Pfad ruft Gateway-Mailboxliste und SendAs-Gateway auf.
+3. FullAccess-Pfad liefert RawPermission mit SourceSystem = ExchangeOnline und PermissionType = FullAccess.
+4. SendAs-Pfad liefert RawPermission mit SourceSystem = ExchangeOnline und PermissionType = SendAs.
+5. Mehrere EXO-Mailboxen werden verarbeitet.
+6. EXO-Mailbox ohne Permissions erzeugt keine Permission-Zeile.
+7. Gateway-Fehler in einer EXO-Mailbox wird kontrolliert behandelt oder als Fehler gemäss bestehender SourceReader-Konvention weitergegeben.
+8. SourceReader enthält weiterhin keine direkten verbotenen Cmdlets:
+   Get-EXOMailbox
+   Get-EXOMailboxPermission
+   Get-MailboxPermission
+   Get-RecipientPermission
+   Get-EXORecipient
+   Get-Recipient
+   Connect-ExchangeOnline
+   Disconnect-ExchangeOnline
+   New-PSSession
+   Get-ADUser
+   Get-ADObject
+   Invoke-Sqlcmd
+
+Gateway:
+
+9. Neue ExchangeOnline-Gateway-Funktionen sind exportiert, falls sie extern vom SourceReader benötigt werden.
+10. Gateway-Funktionen sind mockbar.
+11. ExchangeOnlineGateway enthält in den neuen Funktionen keine OnPrem-Remote-PowerShell-Logik.
+12. ExchangeOnlineGateway enthält keine New-PSSession-Logik.
+13. Keine produktiven Werte im Gateway.
+14. Bestehende Connect-ExchangeOnline-Konfiguration wird verwendet und nicht neu hardcodiert.
+
+Mapper / Pipeline:
+
+15. Gateway-Rohdaten aus ExchangeOnline FullAccess werden vom Mapper korrekt normalisiert.
+16. Gateway-Rohdaten aus ExchangeOnline SendAs werden vom Mapper korrekt normalisiert.
+17. Service-Pipeline mit gemockten EXO-Gateway-Daten liefert Succeeded.
+18. ReadCount und StagedCount stimmen.
+19. OnPrem-Reader-Tests bleiben unverändert grün.
+
+Architektur:
+
+20. JobEngine.psm1 unverändert frei von Backfeed-Fachlogik.
+21. JobFileQueue.psm1 unverändert frei von Backfeed-Fachlogik.
+22. usecases.json enthält keine Backfeed-Einträge.
+23. Legacy-Skripte wurden nicht geändert.
+24. ExchangeOnPremGateway wurde nicht geändert, ausser ein bestehender Test zeigt zwingend einen Fehler.
+25. ActiveDirectoryGateway wurde nicht geändert.
+26. SqlGateway wurde nicht geändert.
+
+Pester-Scope-Regeln:
+
+Keine using:-Variablen innerhalb InModuleScope.
+Falls InModuleScope nötig ist, InModuleScope -Parameters verwenden.
+Falls Runtime-Scope-Tests zu brüchig sind, darf für Struktur-/Architekturgrenzen source-basiert geprüft werden.
+Für Mapper-Tests echte Unit-Tests verwenden.
+
+────────────────────────────────────────
+
+7. Nicht ändern
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+infrastructure/ExchangeOnPremGateway.psm1
+infrastructure/ActiveDirectoryGateway.psm1
+infrastructure/SqlGateway.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+backfeed/Invoke-BackfeedProcessor.ps1, ausser absolut zwingend
+
+Nur falls notwendig ändern:
+
+infrastructure/ExchangeOnlineGateway.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+tests/Pester/Backfeed/MailboxPermissionBackfeed.Tests.ps1
+tests/Pester/Backfeed/MailboxPermissionExchangeOnlineReader.Tests.ps1
+
+────────────────────────────────────────
+
+8. Pester ausführen
+
+Zuerst Backfeed-Slice:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester\Backfeed'"
+
+Danach vollständige Suite:
+
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path '.\tests\Pester'"
+
+Erwartetes Ergebnis:
+
+Alle Tests Passed
+0 Failed
+
+────────────────────────────────────────
+
+Abschlussbericht
+
+Gib am Ende aus:
+
+Geänderte Dateien
+Welche ExchangeOnlineGateway-Funktionen ergänzt oder wiederverwendet wurden
+Wie ExchangeOnline Mailboxliste gelesen wird
+Wie ExchangeOnline FullAccess gelesen wird
+Wie ExchangeOnline SendAs gelesen wird
+Wie SourceReader RawPermission-Objekte erzeugt
+Ob Mapper oder Service angepasst wurden
+Welche Tests ergänzt wurden
+Bestätigung, dass ExchangeOnPremGateway nicht geändert wurde
+Bestätigung, dass ActiveDirectoryGateway nicht geändert wurde
+Bestätigung, dass SqlGateway nicht geändert wurde
+Bestätigung, dass kein Delta/Merge implementiert wurde
+Bestätigung, dass keine History-Logik implementiert wurde
+Bestätigung, dass keine SQL-Refresh-Logik implementiert wurde
+Bestätigung, dass JobEngine.psm1, JobFileQueue.psm1 und usecases.json unverändert blieben
+Backfeed-Slice Pester-Ergebnis
+Gesamtsuite Pester-Ergebnis
+Verbleibende Risiken oder TODOs
+
+────────────────────────────────────────
+
+Wichtigste Zielregel
+
+Baue nur die Exchange-Online-Gateway-Anbindung für MailboxPermission SourceReader.
+
+Kein OnPrem-Umbau.
+Kein Delta.
+Kein Merge.
+Keine History.
+Keine produktive SQL-Refresh-Logik.
+
+Ziel ist:
+
+Exchange Online Mailbox Permissions über Gateway-Funktionen lesen
+  → RawPermission-Objekte erzeugen
+  → bestehenden Mapper nutzen
+  → mockbar testen
+  → BackfeedResult bleibt stabil.

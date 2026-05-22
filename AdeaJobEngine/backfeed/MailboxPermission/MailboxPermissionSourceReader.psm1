@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 $moduleRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $engineRoot = Split-Path -Parent (Split-Path -Parent $moduleRoot)
 Import-Module -Name (Join-Path -Path $engineRoot -ChildPath 'infrastructure\ExchangeOnPremGateway.psm1') -Force -DisableNameChecking
+Import-Module -Name (Join-Path -Path $engineRoot -ChildPath 'infrastructure\ExchangeOnlineGateway.psm1') -Force -DisableNameChecking
 
 function Get-MailboxPermissionConfiguredSources {
     [CmdletBinding()]
@@ -141,14 +142,63 @@ function Get-ExchangeOnlineMailboxFullAccessPermissionRecords {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$Context)
 
-    @()
+    $mailboxes = @(Invoke-ExchangeOnlineMailboxPermissionBackfeedMailboxesGatewayRead -Context $Context)
+    $records = @()
+
+    foreach ($mailbox in $mailboxes) {
+        if ($null -eq $mailbox) { continue }
+        $mailboxIdentity = [string]$mailbox.Identity
+        if ([string]::IsNullOrWhiteSpace($mailboxIdentity)) { continue }
+
+        $records += @(Invoke-ExchangeOnlineMailboxFullAccessGatewayRead -Identity $mailboxIdentity -Context $Context)
+    }
+
+    @($records)
 }
 
 function Get-ExchangeOnlineMailboxSendAsPermissionRecords {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$Context)
 
-    @()
+    $mailboxes = @(Invoke-ExchangeOnlineMailboxPermissionBackfeedMailboxesGatewayRead -Context $Context)
+    $records = @()
+
+    foreach ($mailbox in $mailboxes) {
+        if ($null -eq $mailbox) { continue }
+        $mailboxIdentity = [string]$mailbox.Identity
+        if ([string]::IsNullOrWhiteSpace($mailboxIdentity)) { continue }
+
+        $records += @(Invoke-ExchangeOnlineMailboxSendAsGatewayRead -Identity $mailboxIdentity -Context $Context)
+    }
+
+    @($records)
+}
+
+function Invoke-ExchangeOnlineMailboxPermissionBackfeedMailboxesGatewayRead {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    Get-ExchangeOnlineMailboxPermissionBackfeedMailboxes -Context $Context
+}
+
+function Invoke-ExchangeOnlineMailboxFullAccessGatewayRead {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][object]$Context
+    )
+
+    Get-ExchangeOnlineMailboxFullAccessPermissionsSafe -Identity $Identity -Context $Context
+}
+
+function Invoke-ExchangeOnlineMailboxSendAsGatewayRead {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Identity,
+        [Parameter(Mandatory = $true)][object]$Context
+    )
+
+    Get-ExchangeOnlineMailboxSendAsPermissionsSafe -Identity $Identity -Context $Context
 }
 
 function Read-OnPremMailboxFullAccessPermissions {
