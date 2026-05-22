@@ -1,0 +1,1 @@
+Get-ChildItem -Path "C:\Data\Projekte\KSBL\GUI Tool\ADEA-Automation\AdeaJobEngine\Prompts" -Filter *.txt | ForEach-Object { [PSCustomObject]@{ Datei = $_.Name; Zeilen = (Get-Content $_.FullName).Count } } | Sort-Object Zeilen -Descending

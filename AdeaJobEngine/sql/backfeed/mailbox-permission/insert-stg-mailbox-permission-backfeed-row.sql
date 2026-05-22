@@ -1,0 +1,42 @@
+INSERT INTO [dbo].[stg_MailboxPermissions_Backfeed]
+(
+    [BackfeedRunId],
+    [SourceSystem],
+    [PermissionType],
+    [MailboxKey],
+    [MailboxName],
+    [TrusteeKey],
+    [TrusteeName],
+    [TrusteeDomain],
+    [ObjectClass],
+    [AcePermissions],
+    [DistinguishedName],
+    [ExchHideFromAddressLists],
+    [AdReferenceObjectGuid],
+    [IsInherited],
+    [Deny],
+    [AccessRights],
+    [RowHash],
+    [StagingInserted]
+)
+VALUES
+(
+    @BackfeedRunId,
+    @SourceSystem,
+    @PermissionType,
+    @MailboxKey,
+    @MailboxName,
+    @TrusteeKey,
+    @TrusteeName,
+    @TrusteeDomain,
+    @ObjectClass,
+    @AcePermissions,
+    @DistinguishedName,
+    @ExchHideFromAddressLists,
+    TRY_CONVERT(uniqueidentifier, NULLIF(@AdReferenceObjectGuid, '')),
+    @IsInherited,
+    @Deny,
+    @AccessRights,
+    @RowHash,
+    SYSDATETIME()
+);

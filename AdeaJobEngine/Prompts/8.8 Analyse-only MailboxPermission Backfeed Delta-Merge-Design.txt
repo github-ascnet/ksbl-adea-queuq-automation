@@ -1,0 +1,465 @@
+R = Rolle
+
+Du bist ein sehr erfahrener SQL-Server-, PowerShell-, Exchange-OnPrem-, Exchange-Online-, ETL-/Backfeed-, Delta-/Merge-, Datenmodellierungs- und Enterprise-Automation-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Der aktuelle Stand ist stabil:
+
+Backfeed-Fundament vorhanden
+MailboxPermission Backfeed Read/Map vorhanden
+OnPrem Gateway-Anbindung vorhanden
+ExchangeOnline Gateway-Anbindung vorhanden
+SQL-Staging in stg_MailboxPermissions vorhanden
+BackfeedSqlScriptRunner vorhanden
+Gesamtsuite zuletzt grün mit 569 Tests, 0 Failed
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine Dateien.
+Ändere keine SQL-Dateien.
+Ändere keine Config.
+Führe keine Refactorings aus.
+Antworte nur mit Analyse, Delta-/Merge-Design, Variantenbewertung und Umsetzungsempfehlung.
+
+────────────────────────────────────────
+
+O = Ziel
+
+Analysiere das geeignete Delta-/Merge-Design für den MailboxPermission Backfeed.
+
+Es soll entschieden werden, wie aus den gestagten MailboxPermission-Daten später kontrolliert die Zielstruktur aktualisiert wird.
+
+Aktueller Pipeline-Stand:
+
+Read
+  → Map
+  → Stage
+  → Result
+
+Nächste Zielarchitektur:
+
+Read
+  → Map
+  → Stage
+  → Delta
+  → Merge
+  → Result
+
+In dieser Analyse soll noch nichts implementiert werden.
+
+Ziel ist eine klare Empfehlung, welche Delta-/Merge-Strategie für die bestehende Datenbankstruktur fachlich und technisch am sinnvollsten ist.
+
+────────────────────────────────────────
+
+K = Kontext
+
+Relevante aktuelle Backfeed-Dateien:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+shared/Backfeed/BackfeedSqlScriptRunner.psm1
+infrastructure/SqlGateway.psm1
+sql/backfeed/mailbox-permission/truncate-stg-mailbox-permissions.sql
+sql/backfeed/mailbox-permission/insert-stg-mailbox-permission-row.sql
+
+Relevante Legacy-/Schema-Dateien:
+
+current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+current-scripts/Schema KSBL_IAM.sql
+
+Aktuelle Staging-Tabelle:
+
+stg_MailboxPermissions
+
+Aktuelle Ziel-/History-Tabellen:
+
+MailboxPermissions
+hist_MailboxPermissions
+
+Aktuell in stg_MailboxPermissions geschriebene Spalten:
+
+Name
+TrusteeName
+TrusteeDomain
+ObjectClass
+AcePermissions
+DistinguishedName
+ExchHideFromAddressLists
+AdReferenceObjectGuid
+StagingInserted
+
+Aktuelle DTO-Felder, die für Delta/Merge relevant wären, aber noch nicht in SQL geschrieben werden:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+IsInherited
+Deny
+AccessRights
+
+Wichtig:
+Diese Felder dürfen nicht einfach als Spalten angenommen werden, wenn sie im SQL-Schema nicht existieren.
+
+────────────────────────────────────────
+
+A = Analysefokus
+
+Prüfe und bewerte mindestens diese Varianten:
+
+Variante A: Bestehendes Schema beibehalten und Full-Refresh weiterführen
+
+Beschreibung:
+stg_MailboxPermissions wird wie heute gefüllt.
+MailboxPermissions wird weiterhin per Refresh aus stg_MailboxPermissions aktualisiert.
+Kein echtes Delta.
+hist_MailboxPermissions bleibt ungenutzt oder nur optional.
+
+Bewerte:
+Einfachheit
+Risiko
+Datenverlust-/Audit-Risiko
+Performance
+Kompatibilität mit bestehendem Schema
+Eignung für häufigere Läufe
+
+────────────────────────────────────────
+
+Variante B: Neue dedizierte Delta-Staging-Tabelle einführen
+
+Beispiel:
+
+stg_MailboxPermissions_Backfeed
+
+oder:
+
+stg_MailboxPermissions_Delta
+
+Mögliche zusätzliche Spalten:
+
+SourceSystem
+PermissionType
+MailboxKey
+TrusteeKey
+RowHash
+IsInherited
+Deny
+AccessRights
+BackfeedRunId
+BackfeedInserted
+BackfeedHash
+
+Beschreibung:
+Bestehende Legacy-Staging-Tabelle bleibt unangetastet.
+Neue Backfeed-Staging-Tabelle unterstützt Delta-/Merge-Schlüssel sauber.
+MailboxPermissions wird später aus der neuen Backfeed-Staging-Tabelle gemerged.
+
+Bewerte:
+Sauberkeit
+Eingriff ins Schema
+Parallelbetrieb mit Legacy
+Delta-Fähigkeit
+Testbarkeit
+Migrationsrisiko
+
+────────────────────────────────────────
+
+Variante C: Bestehende stg_MailboxPermissions erweitern
+
+Beschreibung:
+stg_MailboxPermissions wird um SourceSystem, PermissionType, MailboxKey, TrusteeKey, RowHash usw. erweitert.
+
+Bewerte:
+Kompatibilität mit Legacy-Skripten
+Risiko für bestehende Jobs
+Einfachheit
+Delta-Fähigkeit
+Rückwärtskompatibilität
+Schemaänderungsrisiko
+
+────────────────────────────────────────
+
+Variante D: Delta in PowerShell berechnen
+
+Beschreibung:
+PowerShell liest Zielbestand aus MailboxPermissions und vergleicht gegen DTOs vor oder nach dem Staging.
+SQL wird nur für resultierende Inserts/Updates/Deletes verwendet.
+
+Bewerte:
+Performance bei grossen Datenmengen
+Speicherverbrauch
+Komplexität
+Transaktionssicherheit
+Fehleranfälligkeit
+Eignung für häufige Läufe
+
+────────────────────────────────────────
+
+Variante E: SQL-basierte Delta-/Merge-Logik mit SQL-Dateien
+
+Beschreibung:
+Stage bleibt SQL-basiert.
+Delta/Merge wird als versionierte SQL-Datei unter sql/backfeed/mailbox-permission abgelegt.
+PowerShell orchestriert nur:
+
+stage
+run delta script
+run merge script
+read result counts
+
+Bewerte:
+Wartbarkeit
+Performance
+Transaktionsfähigkeit
+Testbarkeit
+Kompatibilität mit SqlGateway/BackfeedSqlScriptRunner
+Notwendige SQL-Result-Outputs
+
+────────────────────────────────────────
+
+Fachliche Schlüsselfragen
+
+Beantworte konkret:
+
+1. Welcher fachliche Schlüssel ist für MailboxPermissions am stabilsten?
+
+Prüfe:
+
+MailboxName
+DistinguishedName
+AdReferenceObjectGuid
+TrusteeName
+TrusteeDomain
+Trustee SID
+PermissionType
+SourceSystem
+AcePermissions
+
+2. Reicht das bestehende Schema für echten Delta/Merge aus?
+
+Falls nein:
+Welche Felder fehlen zwingend?
+
+3. Wie soll OnPrem und ExchangeOnline zusammengeführt werden?
+
+Optionen:
+
+Beide Quellen in dieselbe Zielmenge mit SourceSystem als Schlüsselbestandteil.
+OnPrem und EXO getrennt halten.
+EXO- und OnPrem-Identitäten später konsolidieren.
+
+4. Wie sollen gelöschte Permissions erkannt werden?
+
+Optionen:
+
+Full snapshot pro Quelle und Lauf.
+Soft-delete über Missing-in-Source.
+Delete aus MailboxPermissions.
+History-Eintrag erzeugen.
+
+5. Wie soll hist_MailboxPermissions genutzt werden?
+
+Optionen:
+
+weiterhin nicht verwenden.
+nur Änderungen historisieren.
+jede Löschung/Änderung historisieren.
+komplette Vorher-/Nachher-Snapshots vermeiden.
+
+6. Wie soll RowHash verwendet werden?
+
+Prüfe:
+Welche Felder gehören in den Hash?
+Muss RowHash in SQL gespeichert werden?
+Ist RowHash nur für Delta hilfreich oder auch für Auditing?
+
+7. Wie soll BackfeedRunId oder CorrelationId verwendet werden?
+
+Prüfe:
+Ob BackfeedRunId notwendig ist, um Snapshot-Läufe sauber zu trennen.
+Ob CorrelationId aus dem BackfeedContext reicht.
+Ob ein Run-Protokoll in SQL notwendig wäre.
+
+────────────────────────────────────────
+
+SQL-Analyse
+
+Prüfe current-scripts/Schema KSBL_IAM.sql.
+
+Ermittle:
+
+1. Exakte Struktur von stg_MailboxPermissions
+2. Exakte Struktur von MailboxPermissions
+3. Exakte Struktur von hist_MailboxPermissions
+4. vorhandene Primary Keys
+5. vorhandene Indizes
+6. vorhandene Constraints
+7. vorhandene Pflichtfelder
+8. vorhandene Spalten für ModifiedBy / ModifiedOn
+9. ob SourceSystem oder PermissionType bereits irgendwo vorhanden ist
+10. ob RowHash oder vergleichbare Hash-/Checksum-Spalten existieren
+
+Leite daraus ab:
+
+Welche Schemaänderung wäre minimal?
+Welche Schemaänderung wäre fachlich sauber?
+Welche Schemaänderung sollte vermieden werden?
+
+────────────────────────────────────────
+
+Legacy-Analyse
+
+Prüfe current-scripts/Import-MailboxPermissions-Into-Staging-Update-Model.ps1.
+
+Ermittle:
+
+1. Wie stg_MailboxPermissions befüllt wird.
+2. Wie MailboxPermissions aktualisiert wird.
+3. Ob MailboxPermissions komplett geleert wird.
+4. Ob hist_MailboxPermissions verwendet wird.
+5. Wie ModifiedBy / ModifiedOn gesetzt werden.
+6. Ob Löschungen erkennbar sind.
+7. Ob Permission-Änderungen historisiert werden.
+8. Welche Annahmen im Legacy-Skript für die neue Backfeed-Struktur gefährlich wären.
+
+────────────────────────────────────────
+
+Empfohlene Zielarchitektur
+
+Formuliere am Ende eine konkrete Empfehlung für die nächste technische Phase.
+
+Die Empfehlung soll beantworten:
+
+1. Soll zuerst Full-Refresh sauber als SQL-Datei nachgebaut werden?
+2. Oder soll direkt eine neue Delta-fähige Staging-Tabelle eingeführt werden?
+3. Soll die bestehende stg_MailboxPermissions erweitert werden?
+4. Soll hist_MailboxPermissions jetzt schon aktiviert werden?
+5. Soll Delta/Merge zuerst nur für OnPrem oder direkt für OnPrem + EXO gebaut werden?
+6. Welche SQL-Dateien sollten in der nächsten Phase erstellt werden?
+7. Welche PowerShell-Dateien müssten in der nächsten Phase angepasst werden?
+8. Welche Tests müssten zwingend ergänzt werden?
+
+────────────────────────────────────────
+
+Ausgabeformat
+
+Gib die Analyse strukturiert aus.
+
+1. Zusammenfassung
+
+Kurze Empfehlung in 5 bis 10 Sätzen.
+
+2. Variantenvergleich
+
+Tabelle:
+
+Variante
+Beschreibung
+Vorteile
+Nachteile
+Risiko
+Empfehlung
+
+3. SQL-Schema-Bewertung
+
+Tabelle:
+
+Tabelle
+Aktuelle Eignung für Delta/Merge
+Fehlende Felder
+Empfehlung
+
+4. Schlüsselstrategie
+
+Tabelle:
+
+Feld
+Rolle im Delta-Schlüssel
+Stabilität
+Empfehlung
+
+5. History-Strategie
+
+Tabelle:
+
+Option
+Beschreibung
+Vorteil
+Nachteil
+Empfehlung
+
+6. Empfohlene Zielarchitektur
+
+Beschreibe die empfohlene Architektur für Delta/Merge.
+
+7. Minimaler nächster Implementierungsschritt
+
+Liste exakt:
+
+Dateien, die erstellt werden sollen.
+Dateien, die geändert werden sollen.
+Dateien, die nicht geändert werden dürfen.
+
+8. Testplan
+
+Liste konkrete Pester-Tests für die nächste Implementierungsphase.
+
+9. Risiken und offene Punkte
+
+Tabelle:
+
+Risiko
+Schweregrad
+Ursache
+Empfehlung
+
+10. Klare Abschlussentscheidung
+
+Formuliere am Ende:
+
+Ich empfehle als nächste Phase: ...
+
+und begründe dies kurz.
+
+────────────────────────────────────────
+
+Harte Grenzen
+
+Nimm keine Änderungen vor.
+Erstelle keine Dateien.
+Ändere keine Dateien.
+Ändere keine SQL-Dateien.
+Ändere keine Tests.
+Ändere keine Config.
+Ändere keine produktiven Environment-Dateien.
+Antworte nur mit Analyse und Designempfehlung.
+
+Nicht ändern:
+
+core/JobEngine.psm1
+core/JobFileQueue.psm1
+Invoke-JobProcessor.ps1
+config/usecases.json
+usecases
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+SqlGateway.psm1
+BackfeedSqlScriptRunner.psm1
+current-scripts
+SQL-Schema
+produktive Environment-Dateien
+
+Erwartete Abschlussaussage:
+Ich empfehle als nächste Phase entweder:
+A: bestehenden Full-Refresh kontrolliert als SQL-Datei nachzubauen
+oder
+B: eine neue Delta-fähige Backfeed-Staging-Tabelle vorzubereiten
+oder
+C: zuerst das Datenmodell / Schema für Delta final zu entscheiden, bevor Code gebaut wird.

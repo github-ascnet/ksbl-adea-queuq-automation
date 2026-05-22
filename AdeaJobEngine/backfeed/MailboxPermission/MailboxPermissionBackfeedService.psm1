@@ -32,7 +32,12 @@ function Invoke-MailboxPermissionBackfeed {
                 $stageErrors = @($stageResult.Errors)
             }
             if ($stageErrors.Count -eq 0) {
-                $stageErrors = @([pscustomobject]@{ Message = [string]$stageResult.Message; ErrorCode = [string]$stageResult.ErrorCode })
+                $stageErrors = @([pscustomobject]@{
+                        Message       = [string]$stageResult.Message
+                        ErrorCode     = [string]$stageResult.ErrorCode
+                        CorrelationId = [string]$Context.CorrelationId
+                        BackfeedRunId = if ($stageResult.PSObject.Properties.Name -contains 'BackfeedRunId') { [string]$stageResult.BackfeedRunId } else { $null }
+                    })
             }
 
             return New-BackfeedResult -BackfeedType 'MailboxPermission' -Mode ([string]$Context.Mode) -Status 'Failed' -ReadCount $rawPermissions.Count -StagedCount $stagedCount -InsertedCount 0 -UpdatedCount 0 -DeletedCount 0 -UnchangedCount 0 -FailedCount 1 -StartedAt $startedAt -CompletedAt $completedAt -DurationSeconds ([math]::Round(($completedAt - $startedAt).TotalSeconds, 3)) -Errors $stageErrors

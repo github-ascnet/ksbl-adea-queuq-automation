@@ -29,10 +29,18 @@ function Get-MailboxPermissionBackfeedPropertyValue {
 
 function ConvertTo-MailboxPermissionStagingSqlParameters {
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][object]$Row)
+    param(
+        [Parameter(Mandatory = $true)][object]$Row,
+        [Parameter(Mandatory = $true)][string]$BackfeedRunId
+    )
 
     @{
-        Name                    = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'MailboxName' -DefaultValue '')
+        BackfeedRunId           = $BackfeedRunId
+        SourceSystem            = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'SourceSystem' -DefaultValue '')
+        PermissionType          = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'PermissionType' -DefaultValue '')
+        MailboxKey              = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'MailboxKey' -DefaultValue '')
+        MailboxName             = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'MailboxName' -DefaultValue '')
+        TrusteeKey              = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'TrusteeKey' -DefaultValue '')
         TrusteeName             = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'TrusteeName' -DefaultValue '')
         TrusteeDomain           = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'TrusteeDomain' -DefaultValue '')
         ObjectClass             = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'ObjectClass' -DefaultValue '')
@@ -40,48 +48,70 @@ function ConvertTo-MailboxPermissionStagingSqlParameters {
         DistinguishedName       = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'DistinguishedName' -DefaultValue '')
         ExchHideFromAddressLists = Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'ExchHideFromAddressLists'
         AdReferenceObjectGuid   = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'AdReferenceObjectGuid' -DefaultValue '')
+        IsInherited             = Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'IsInherited'
+        Deny                    = Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'Deny'
+        AccessRights            = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'AccessRights' -DefaultValue '')
+        RowHash                 = [string](Get-MailboxPermissionBackfeedPropertyValue -InputObject $Row -Name 'RowHash' -DefaultValue '')
     }
 }
 
-function Get-ShouldTruncateMailboxPermissionStaging {
+function Resolve-MailboxPermissionBackfeedRunId {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][object]$Context)
+
+    $candidate = ''
+    if ($Context.PSObject.Properties['BackfeedRunId']) {
+        $candidate = [string]$Context.BackfeedRunId
+    }
+
+    if ([string]::IsNullOrWhiteSpace($candidate) -and $Context.PSObject.Properties['CorrelationId']) {
+        $candidate = [string]$Context.CorrelationId
+    }
+
+    $parsed = [guid]::Empty
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and [guid]::TryParse($candidate, [ref]$parsed)) {
+        return $parsed.ToString()
+    }
+
+    [guid]::NewGuid().ToString()
+}
+
+function Get-ShouldEnsureMailboxPermissionBackfeedTable {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][object]$Context)
 
     $config = $Context.Config
-    if ($null -eq $config) { return $false }
-
-    if ($config.PSObject.Properties['Backfeed'] -and $config.Backfeed.PSObject.Properties['TruncateMailboxPermissionStaging']) {
-        return [bool]$config.Backfeed.TruncateMailboxPermissionStaging
-    }
+    if ($null -eq $config) { return $true }
 
     if ($config.PSObject.Properties['BackfeedTypes'] -and $config.BackfeedTypes.PSObject.Properties['MailboxPermission']) {
         $mailboxPermission = $config.BackfeedTypes.MailboxPermission
-        if ($mailboxPermission.PSObject.Properties['TruncateStagingBeforeInsert']) {
-            return [bool]$mailboxPermission.TruncateStagingBeforeInsert
+        if ($mailboxPermission.PSObject.Properties['EnsureBackfeedStagingTable']) {
+            return [bool]$mailboxPermission.EnsureBackfeedStagingTable
         }
     }
 
-    $false
+    $true
 }
 
 function Invoke-MailboxPermissionBackfeedSqlWrite {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][object]$Context,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows,
+        [Parameter(Mandatory = $true)][string]$BackfeedRunId
     )
 
-    $insertScriptPath = Get-MailboxPermissionStagingSqlScriptPath -ScriptName 'insert-stg-mailbox-permission-row.sql'
-    $truncateScriptPath = Get-MailboxPermissionStagingSqlScriptPath -ScriptName 'truncate-stg-mailbox-permissions.sql'
+    $createScriptPath = Get-MailboxPermissionStagingSqlScriptPath -ScriptName 'create-stg-mailbox-permissions-backfeed.sql'
+    $insertScriptPath = Get-MailboxPermissionStagingSqlScriptPath -ScriptName 'insert-stg-mailbox-permission-backfeed-row.sql'
 
-    if (Get-ShouldTruncateMailboxPermissionStaging -Context $Context) {
-        $null = Invoke-MailboxPermissionBackfeedSqlScript -Context $Context -ScriptPath $truncateScriptPath
+    if (Get-ShouldEnsureMailboxPermissionBackfeedTable -Context $Context) {
+        $null = Invoke-MailboxPermissionBackfeedSqlScript -Context $Context -ScriptPath $createScriptPath
     }
 
     $stagedCount = 0
     foreach ($row in @($Rows)) {
         if ($null -eq $row) { continue }
-        $parameters = ConvertTo-MailboxPermissionStagingSqlParameters -Row $row
+        $parameters = ConvertTo-MailboxPermissionStagingSqlParameters -Row $row -BackfeedRunId $BackfeedRunId
         $null = Invoke-MailboxPermissionBackfeedSqlScript -Context $Context -ScriptPath $insertScriptPath -Parameters $parameters
         $stagedCount++
     }
@@ -97,20 +127,23 @@ function Write-MailboxPermissionBackfeedStaging {
     )
 
     $rowCount = @($Rows).Count
+    $backfeedRunId = Resolve-MailboxPermissionBackfeedRunId -Context $BackfeedContext
+
     if ($rowCount -eq 0) {
         return [pscustomobject]@{
-            Success     = $true
-            StagedCount = 0
-            FailedCount = 0
-            Message     = 'No rows to stage.'
-            ErrorCode   = $null
-            Errors      = @()
+            Success       = $true
+            BackfeedRunId = $backfeedRunId
+            StagedCount   = 0
+            FailedCount   = 0
+            Message       = "No rows to stage. BackfeedRunId=$backfeedRunId"
+            ErrorCode     = $null
+            Errors        = @()
         }
     }
 
     $stagedCount = 0
     try {
-        $writeResult = Invoke-MailboxPermissionBackfeedSqlWrite -Context $BackfeedContext -Rows $Rows
+        $writeResult = Invoke-MailboxPermissionBackfeedSqlWrite -Context $BackfeedContext -Rows $Rows -BackfeedRunId $backfeedRunId
         if ($null -ne $writeResult -and $writeResult.PSObject.Properties.Name -contains 'StagedCount') {
             $stagedCount = [int]$writeResult.StagedCount
         }
@@ -119,12 +152,13 @@ function Write-MailboxPermissionBackfeedStaging {
         }
 
         [pscustomobject]@{
-            Success     = $true
-            StagedCount = $stagedCount
-            FailedCount = 0
-            Message     = 'Rows staged.'
-            ErrorCode   = $null
-            Errors      = @()
+            Success       = $true
+            BackfeedRunId = $backfeedRunId
+            StagedCount   = $stagedCount
+            FailedCount   = 0
+            Message       = "Rows staged. BackfeedRunId=$backfeedRunId"
+            ErrorCode     = $null
+            Errors        = @()
         }
     }
     catch {
@@ -133,12 +167,13 @@ function Write-MailboxPermissionBackfeedStaging {
         if ($failedCount -lt 1) { $failedCount = 1 }
 
         [pscustomobject]@{
-            Success     = $false
-            StagedCount = $stagedCount
-            FailedCount = $failedCount
-            Message     = $errorMessage
-            ErrorCode   = 'MAILBOX_PERMISSION_STAGE_FAILED'
-            Errors      = @([pscustomobject]@{ Message = $errorMessage; ErrorCode = 'MAILBOX_PERMISSION_STAGE_FAILED' })
+            Success       = $false
+            BackfeedRunId = $backfeedRunId
+            StagedCount   = $stagedCount
+            FailedCount   = $failedCount
+            Message       = "BackfeedRunId=$backfeedRunId; $errorMessage"
+            ErrorCode     = 'MAILBOX_PERMISSION_STAGE_FAILED'
+            Errors        = @([pscustomobject]@{ Message = $errorMessage; ErrorCode = 'MAILBOX_PERMISSION_STAGE_FAILED'; BackfeedRunId = $backfeedRunId })
         }
     }
 }
@@ -158,5 +193,6 @@ Export-ModuleMember -Function @(
     'Write-MailboxPermissionBackfeedStaging',
     'Invoke-MailboxPermissionBackfeedSqlWrite',
     'ConvertTo-MailboxPermissionStagingSqlParameters',
-    'Invoke-MailboxPermissionBackfeedSqlScript'
+    'Invoke-MailboxPermissionBackfeedSqlScript',
+    'Resolve-MailboxPermissionBackfeedRunId'
 )
