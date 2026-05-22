@@ -47,4 +47,4 @@ function New-BackfeedContext {
     }
 }
 
-Export-ModuleMember -Function @('Resolve-BackfeedRunId','New-BackfeedContext')
+Export-ModuleMember -Function @('Resolve-BackfeedRunId', 'New-BackfeedContext')
