@@ -1,0 +1,146 @@
+Baue nur das minimale technische Backfeed-Fundament in die bestehende AdeaJobEngine ein. Keine fachliche Backfeed-Logik implementieren.
+
+Grundlage:
+Die Analyse-only-Runde hat User, Group und MailboxPermission Backfeed als getrennte Prozesse bestätigt. Jetzt soll nur die technische Basis entstehen.
+
+Ziel:
+Backfeed wird als eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine vorbereitet.
+Es darf keine zweite Engine entstehen.
+Backfeed darf nicht in usecases.json, usecases, JobEngine oder JobFileQueue gemischt werden.
+
+Erstelle nur:
+
+config/backfeed.json
+
+backfeed/Invoke-BackfeedProcessor.ps1
+
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+
+backfeed/User/UserBackfeedService.psm1
+backfeed/Group/GroupBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+
+tests/Pester/Backfeed/BackfeedStructure.Tests.ps1
+tests/Pester/Backfeed/BackfeedConfig.Tests.ps1
+tests/Pester/Backfeed/BackfeedProcessor.Tests.ps1
+
+Anforderungen:
+
+1. config/backfeed.json
+Muss User, Group und MailboxPermission enthalten.
+Muss parsebar sein.
+Muss Enabled, DefaultMode, DefaultEnvironment, BatchSize, UseHashComparison, UseWatermark und WriteHistory enthalten.
+Tabellen und Keys nur dort eintragen, wo sie aus der Analyse eindeutig sind.
+Unsichere Werte als TODO markieren, aber keine erfundenen produktiven Werte einfügen.
+
+2. Invoke-BackfeedProcessor.ps1
+Parameter:
+BackfeedType mit User, Group, MailboxPermission
+Mode mit Full, Delta
+Environment
+OutputJson
+CorrelationId
+
+Der Processor soll:
+Config laden.
+BackfeedContext erstellen.
+Den passenden BackfeedService aufrufen.
+BackfeedResult zurückgeben.
+Bei OutputJson ausschliesslich valides JSON nach stdout schreiben.
+Keine dekorativen Logs in stdout schreiben.
+
+3. BackfeedContext
+Einheitliches Context-Objekt mit:
+Environment
+Config
+Logger
+StartedAt
+CorrelationId
+BackfeedType
+Mode
+
+Noch keine echten Gateway-Instanzen erzwingen.
+
+4. BackfeedResult
+Einheitliches Result-Objekt mit:
+BackfeedType
+Mode
+Status
+ReadCount
+StagedCount
+InsertedCount
+UpdatedCount
+DeletedCount
+UnchangedCount
+FailedCount
+StartedAt
+CompletedAt
+DurationSeconds
+Errors
+
+5. Service-Skelette
+Die drei Services dürfen nur ein minimales Result zurückgeben.
+Keine AD-, Exchange-, EXO- oder SQL-Abfragen implementieren.
+Die Funktionen heissen:
+Invoke-UserBackfeed
+Invoke-GroupBackfeed
+Invoke-MailboxPermissionBackfeed
+
+Jede Funktion nimmt einen BackfeedContext und gibt ein BackfeedResult zurück.
+
+6. Tests
+Tests müssen prüfen:
+backfeed/Invoke-BackfeedProcessor.ps1 existiert.
+config/backfeed.json existiert und ist parsebar.
+backfeed.json enthält User, Group, MailboxPermission.
+BackfeedType-Werte sind User, Group, MailboxPermission.
+Mode-Werte sind Full, Delta.
+Service-Dateien existieren.
+shared/Backfeed/BackfeedContext.psm1 existiert.
+shared/Backfeed/BackfeedResult.psm1 existiert.
+Backfeed ist nicht in usecases.json eingetragen.
+Es gibt keinen usecases/Backfeed Ordner.
+JobEngine.psm1 enthält keine Backfeed-Fachlogik.
+JobFileQueue.psm1 wird nicht für Backfeed verwendet.
+OutputJson des BackfeedProcessors ist valides JSON.
+
+7. Nicht ändern:
+JobEngine.psm1
+JobFileQueue.psm1
+usecases.json
+Invoke-JobProcessor.ps1
+bestehende UseCases
+ExchangeOnPremGateway
+ExchangeOnlineGateway
+ActiveDirectoryGateway
+SqlGateway
+Legacy-Skripte
+SQL-Schema
+produktive Environment-Dateien
+
+8. Keine produktiven Werte hardcoden.
+Keine zweite Engine bauen.
+Keine Queue-Statusordner für Backfeed verwenden.
+Keine fachliche Legacy-Migration in diesem Schritt.
+
+Danach ausführen:
+powershell -ExecutionPolicy Bypass -Command "Set-Location '.\AdeaJobEngine'; Invoke-Pester -Path .\tests\Pester"
+
+Erwartetes Ergebnis:
+Alle Tests Passed
+0 Failed
+
+Abschlussbericht:
+Geänderte Dateien
+Neue Ordnerstruktur
+Neue Backfeed-Config
+Neue Processor-Datei
+Neue Context-/Result-Module
+Neue Service-Skelette
+Neue Tests
+Bestätigung, dass JobEngine.psm1 unverändert blieb
+Bestätigung, dass JobFileQueue.psm1 unverändert blieb
+Bestätigung, dass usecases.json unverändert blieb
+Pester-Ergebnis
+Verbleibende Risiken

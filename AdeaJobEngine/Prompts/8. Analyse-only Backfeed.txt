@@ -1,0 +1,75 @@
+Analysiere den Workspace für den neuen Backfeed-Bereich. Nimm keine Codeänderungen vor.
+
+Ziel:
+Erstelle nur einen technischen Implementierungsplan für Backfeed innerhalb der bestehenden AdeaJobEngine.
+
+Wichtig:
+Keine Dateien erstellen.
+Keine Dateien ändern.
+Keine Ordner erstellen.
+Keine Tests erstellen.
+Keine Config ändern.
+Keine Runtime-Logik ändern.
+
+Prüfe vorhandene Dateien:
+current-scripts\Import-Users-Into-Staging-Update-Model.ps1
+current-scripts\Import-Groups-Into-Staging-Update-Model.ps1
+current-scripts\Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+current-scripts\Schema KSBL_IAM.sql
+infrastructure\ActiveDirectoryGateway.psm1
+infrastructure\ExchangeOnPremGateway.psm1
+infrastructure\ExchangeOnlineGateway.psm1
+infrastructure\SqlGateway.psm1
+core\Logging.psm1
+core\ErrorHandling.psm1
+config\appsettings.json
+config\environments.onprem.json
+config\environments.hybrid.json
+tests\Pester
+
+Analysiere:
+1. Welche Quellen verwendet User Backfeed?
+2. Welche Zieltabellen und Staging-Tabellen verwendet User Backfeed?
+3. Welche Schlüssel sind eindeutig erkennbar?
+4. Welche Quellen verwendet Group Backfeed?
+5. Welche Zieltabellen und Staging-Tabellen verwendet Group Backfeed?
+6. Welche Schlüssel sind eindeutig erkennbar?
+7. Welche Quellen verwendet Mailbox Permission Backfeed?
+8. Welche Zieltabellen, History-Tabellen und Staging-Tabellen verwendet Mailbox Permission Backfeed?
+9. Welche Schlüssel sind eindeutig erkennbar?
+10. Welche bestehenden Gateway-Funktionen können wiederverwendet werden?
+11. Welche Gateway-Funktionen fehlen?
+12. Welche SQL-Operationen sollten später als SQL-Dateien statt als PowerShell-String abgelegt werden?
+13. Welche Minimalstruktur ist für den ersten technischen Backfeed-Grundstein ausreichend?
+14. Welche Dateien würdest du im ersten Umsetzungs-Prompt erstellen?
+15. Welche bestehenden Dateien würdest du anfassen?
+16. Welche Dateien dürfen ausdrücklich nicht geändert werden?
+
+Harte Grenzen:
+Keine zweite Engine bauen.
+Backfeed nicht in usecases.json eintragen.
+Backfeed nicht unter usecases ablegen.
+JobEngine.psm1 nicht verändern.
+JobFileQueue.psm1 nicht verändern.
+Invoke-JobProcessor.ps1 nicht verändern.
+Legacy-Skripte nicht verändern.
+SQL-Schema nicht verändern.
+Keine produktiven Werte hardcoden.
+
+Gib das Ergebnis als Review-/Planungsmatrix aus:
+
+Bereich
+Gefundene Quelle
+Zieltabellen
+Schlüssel
+Bestehende Gateway-Unterstützung
+Fehlende Bausteine
+Empfehlung
+Risiko
+
+Danach:
+Vorschlag für Phase 2 mit exakt den Dateien, die erstellt oder geändert werden sollen.
+
+Wichtig:
+Nimm keine Änderungen vor.
+Antworte nur mit Analyse und Plan.

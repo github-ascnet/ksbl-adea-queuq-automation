@@ -1,0 +1,409 @@
+Analysiere den Workspace für den nächsten Ausbau des Backfeed-Bereichs.
+
+Wichtig:
+Nimm keine Codeänderungen vor.
+Erstelle keine Dateien.
+Lösche keine Dateien.
+Führe keine Refactorings aus.
+Ändere keine Tests.
+Ändere keine Config.
+Antworte nur mit Analyse, konkretem Implementierungsplan und Risikobewertung.
+
+Kontext:
+Das minimale Backfeed-Fundament ist bereits erstellt und grün getestet.
+
+Vorhanden sind:
+
+backfeed/Invoke-BackfeedProcessor.ps1
+config/backfeed.json
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+backfeed/User/UserBackfeedService.psm1
+backfeed/Group/GroupBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+tests/Pester/Backfeed
+
+Die vollständige Pester-Suite war zuletzt grün mit 472 Tests und 0 Failed.
+
+Ziel dieser Analyse:
+Plane den fachlichen Ausbau von MailboxPermission Backfeed als ersten echten Backfeed-Prozess.
+
+Es soll noch nichts implementiert werden.
+
+R = Rolle
+
+Du bist ein sehr erfahrener PowerShell-, Exchange-OnPrem-, Exchange-Online-, Active-Directory-, SQL-Server-, ETL-/Backfeed-, Delta-/Merge- und Pester-5.7.1-Architekt.
+
+Du arbeitest im bestehenden Projekt:
+
+AdeaJobEngine
+
+Die bestehende Architektur bleibt verbindlich:
+
+Backfeed ist ein eigener Processor-Bereich innerhalb der bestehenden AdeaJobEngine.
+Es wird keine zweite Engine gebaut.
+Backfeed wird nicht in usecases.json eingetragen.
+Backfeed wird nicht unter usecases abgelegt.
+JobEngine.psm1 bleibt unverändert.
+JobFileQueue.psm1 bleibt unverändert.
+Invoke-JobProcessor.ps1 bleibt unverändert.
+Legacy-Skripte werden nur gelesen, nicht verändert.
+
+O = Ziel
+
+Analysiere und plane den nächsten Umsetzungsschritt für:
+
+MailboxPermission Backfeed
+
+Der Prozess soll später mailboxbezogene Berechtigungen aus Exchange SE OnPrem und Exchange Online / M365 in die SQL-Datenbank zurückführen.
+
+Fachliche Zielrichtung:
+
+Exchange OnPrem lesen
+Exchange Online lesen
+Berechtigungen normalisieren
+in stg_MailboxPermissions schreiben
+Delta oder Refresh bestimmen
+MailboxPermissions aktualisieren
+optional hist_MailboxPermissions berücksichtigen
+
+In dieser Analyse soll geklärt werden:
+
+Welche Legacy-Logik existiert?
+Welche Tabellen existieren?
+Welche Schlüssel existieren?
+Welche Permission-Typen werden verarbeitet?
+Welche Gateway-Funktionen sind bereits vorhanden?
+Welche Gateway-Funktionen fehlen?
+Welche SQL-Logik soll später als Datei ausgelagert werden?
+Welche minimale Phase-Implementierung ist sicher?
+
+
+K = Fachlicher Kontext
+
+Legacy-Referenz:
+
+current-scripts\Import-MailboxPermissions-Into-Staging-Update-Model.ps1
+
+SQL-Schema:
+
+current-scripts\Schema KSBL_IAM.sql
+
+Erwartete Tabellen:
+
+stg_MailboxPermissions
+MailboxPermissions
+hist_MailboxPermissions
+
+Erwartete Berechtigungstypen:
+
+FullAccess
+SendAs
+
+Mögliche Quellen:
+
+Exchange SE OnPrem
+Exchange Online / M365
+Active Directory für Objektauflösung und Identitätsmapping
+
+Die alte Logik nutzt offenbar eher Full-Refresh beziehungsweise TRUNCATE + INSERT.
+Die neue Struktur soll deltafähig vorbereitet werden, aber nicht alles auf einmal umbauen.
+
+
+A = Architekturvorgaben
+
+Die spätere Zielpipeline für MailboxPermission Backfeed lautet:
+
+Read
+  → Map
+  → Stage
+  → Delta
+  → Merge
+  → Result
+
+Der nächste Umsetzungsschritt soll aber erst geplant werden, nicht implementiert.
+
+Zielstruktur für MailboxPermission Backfeed:
+
+backfeed/MailboxPermission/MailboxPermissionBackfeedService.psm1
+backfeed/MailboxPermission/MailboxPermissionSourceReader.psm1
+backfeed/MailboxPermission/MailboxPermissionMapper.psm1
+backfeed/MailboxPermission/MailboxPermissionStagingWriter.psm1
+backfeed/MailboxPermission/MailboxPermissionDeltaService.psm1
+backfeed/MailboxPermission/MailboxPermissionMergeService.psm1
+
+SQL-Dateien später unter:
+
+sql/backfeed/mailbox-permission
+
+Gemeinsame Backfeed-Module:
+
+shared/Backfeed/BackfeedContext.psm1
+shared/Backfeed/BackfeedResult.psm1
+
+Bestehende Gateways sollen verwendet oder minimal ergänzt werden:
+
+ExchangeOnPremGateway.psm1
+ExchangeOnlineGateway.psm1
+ActiveDirectoryGateway.psm1
+SqlGateway.psm1
+
+Nicht erlaubt:
+
+Keine direkte Exchange-Logik im Processor.
+Keine direkte SQL-Logik im Processor.
+Keine direkte AD-Logik im Processor.
+Keine grosse SQL-Merge-Logik als unübersichtlicher PowerShell-String.
+Keine Änderung an JobEngine.psm1.
+Keine Änderung an JobFileQueue.psm1.
+Keine Änderung an usecases.json.
+Keine Änderung an Legacy-Skripten.
+Keine produktiven Werte hardcoden.
+
+E = Analyseaufgaben
+
+Analysiere zuerst:
+
+1. Legacy-Skript
+
+Prüfe current-scripts\Import-MailboxPermissions-Into-Staging-Update-Model.ps1.
+
+Ermittle:
+
+Welche Berechtigungstypen werden gelesen?
+Werden FullAccess und SendAs verarbeitet?
+Wie werden Mailboxen gelesen?
+Wie werden Trustees gelesen?
+Wie werden AD-Objekte aufgelöst?
+Welche Felder werden in stg_MailboxPermissions geschrieben?
+Wird MailboxPermissions per TRUNCATE + INSERT, MERGE oder anderem Verfahren aktualisiert?
+Wird hist_MailboxPermissions verwendet oder nur im Schema vorgehalten?
+Welche Fehlerbehandlung existiert?
+Welche Performance-/Batching-Logik existiert?
+
+2. SQL-Schema
+
+Prüfe current-scripts\Schema KSBL_IAM.sql.
+
+Ermittle:
+
+Struktur von stg_MailboxPermissions
+Struktur von MailboxPermissions
+Struktur von hist_MailboxPermissions
+Primärschlüssel oder eindeutige fachliche Schlüssel
+relevante Indizes
+Pflichtfelder
+Datentypen
+mögliche Delta-Schlüssel
+mögliche History-Strategie
+
+3. Schlüssel und Identitätslogik
+
+Ermittle den fachlich sinnvollen Schlüssel für Permission-Deltas.
+
+Prüfe mindestens:
+
+Mailbox Identity
+Mailbox DistinguishedName
+Mailbox GUID
+Trustee Identity
+Trustee DistinguishedName
+Trustee SID
+PermissionType
+SourceSystem, falls später OnPrem und EXO kombiniert werden
+Inherited / Deny / AccessRights, falls vorhanden
+
+Gib eine Empfehlung ab, welcher Schlüssel für Delta und Merge stabil ist.
+
+4. OnPrem Exchange Quelle
+
+Prüfe, welche bestehenden Funktionen in ExchangeOnPremGateway.psm1 wiederverwendet werden können.
+
+Ermittle, ob Wrapper fehlen für:
+
+Mailbox-Liste lesen
+FullAccess Permissions lesen
+SendAs Permissions lesen
+Trustee / Recipient Lookup
+ResultSize unlimited
+Invoke-Command-basierte Ausführung
+
+5. Exchange Online Quelle
+
+Prüfe, welche bestehenden Funktionen in ExchangeOnlineGateway.psm1 wiederverwendet werden können.
+
+Ermittle, ob Wrapper fehlen für:
+
+EXO Mailbox-Liste lesen
+EXO FullAccess Permissions lesen
+EXO SendAs Permissions lesen
+EXO Recipient / Trustee Lookup
+Connect-ExchangeOnline-Kontext
+Certificate-basierte Authentisierung über bestehende Config
+
+6. Active Directory Lookup
+
+Prüfe, ob ActiveDirectoryGateway.psm1 bereits Funktionen für Objektauflösung bereitstellt.
+
+Benötigt werden potenziell:
+
+Lookup nach DistinguishedName
+Lookup nach SID
+Lookup nach SamAccountName
+Lookup nach GUID
+Mapping von Trustee zu Account / Group
+Mapping von Mailbox zu Account
+
+7. SQL Gateway
+
+Prüfe SqlGateway.psm1.
+
+Ermittle, ob vorhanden:
+
+Execute NonQuery
+Execute Query
+Execute Script File
+Bulk Insert oder Bulk Copy
+Parametrisierte SQL-Ausführung
+
+Bewerte, welche Funktion für stg_MailboxPermissions geeignet ist.
+
+8. SQL-Auslagerung
+
+Definiere, welche SQL-Logik später als Datei unter sql/backfeed/mailbox-permission liegen soll.
+
+Beispiele:
+
+truncate-stg-mailbox-permissions.sql
+merge-mailbox-permissions.sql
+refresh-mailbox-permissions.sql
+update-mailbox-permission-history.sql
+
+Keine Dateien erstellen, nur Vorschlag machen.
+
+9. Minimaler Umsetzungsplan
+
+Schlage einen sicheren nächsten Implementierungsschritt vor.
+
+Der nächste Schritt soll nicht die komplette Produktivlogik bauen, sondern eine kontrollierte erste Stufe.
+
+Mögliche erste Stufe:
+
+MailboxPermissionSourceReader-Skeleton
+MailboxPermissionMapper-Skeleton
+MailboxPermissionStagingWriter-Skeleton
+MailboxPermissionBackfeedService ruft Read → Map → Stage → Result
+Noch kein echtes Merge
+Noch keine produktive SQL-Schreiblogik ohne Tests
+
+10. Tests
+
+Plane Pester-Tests für die nächste Implementierung.
+
+Tests müssen Pester 5.7.1-kompatibel sein.
+
+Nicht verwenden:
+
+Should Be
+
+Verwenden:
+
+Should -Be
+
+Tests dürfen keine echten Zielsysteme aufrufen.
+
+Mocken:
+
+ExchangeOnPremGateway
+ExchangeOnlineGateway
+ActiveDirectoryGateway
+SqlGateway
+
+Prüfen:
+
+SourceReader ruft keine echten Exchange-Cmdlets direkt auf.
+Mapper normalisiert OnPrem- und EXO-Permissions in gleiches DTO.
+StagingWriter ruft SqlGateway auf.
+Service führt Read → Map → Stage → Result aus.
+OutputJson des BackfeedProcessors bleibt maschinenlesbar.
+Keine Änderung an JobEngine, JobFileQueue oder usecases.json.
+
+Ausgabeformat
+
+Gib das Ergebnis als strukturierte Analyse aus.
+
+1. Zusammenfassung
+
+Kurze Einschätzung, ob MailboxPermission Backfeed als nächster Prozess geeignet ist.
+
+2. Legacy-Analyse
+
+Tabelle:
+
+Bereich
+Gefundene Logik
+Datei / Stelle
+Bewertung
+Risiko
+
+3. SQL-Analyse
+
+Tabelle:
+
+Tabelle
+Zweck
+Relevante Spalten
+Schlüssel
+Bemerkung
+
+4. Quellenanalyse
+
+Tabelle:
+
+Quelle
+Permission-Typ
+Bestehender Gateway-Support
+Fehlender Gateway-Support
+Risiko
+
+5. Delta-/Merge-Empfehlung
+
+Beschreibe den empfohlenen fachlichen Schlüssel und die empfohlene Strategie.
+
+6. Minimaler nächster Implementierungsschritt
+
+Liste exakt die Dateien, die im nächsten Umsetzungs-Prompt erstellt oder geändert werden sollen.
+
+7. Dateien, die nicht geändert werden dürfen
+
+Liste ausdrücklich die gesperrten Dateien.
+
+8. Testplan
+
+Liste die konkreten Pester-Tests für die nächste Umsetzungsphase.
+
+9. Risiken und offene Punkte
+
+Tabelle:
+
+Risiko
+Schweregrad
+Ursache
+Empfehlung
+
+10. Empfehlung
+
+Klare Empfehlung für die nächste Phase.
+
+Wichtig:
+Nimm keine Änderungen vor.
+Antworte nur mit Analyse und Plan.
+
+
+Erwartete Abschlussaussage
+
+Am Ende gib bitte eine klare Empfehlung:
+
+„Ich empfehle für die nächste Umsetzungsphase nur den MailboxPermission Backfeed Skeleton mit SourceReader, Mapper, StagingWriter und Tests zu bauen – noch ohne produktives Merge.“
+
+Oder begründe, falls du eine andere Reihenfolge empfiehlst.

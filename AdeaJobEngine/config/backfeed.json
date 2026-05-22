@@ -1,0 +1,61 @@
+{
+  "Enabled": true,
+  "DefaultMode": "Delta",
+  "DefaultEnvironment": "TODO",
+  "BatchSize": 1000,
+  "UseHashComparison": false,
+  "UseWatermark": false,
+  "WriteHistory": false,
+  "BackfeedTypes": {
+    "User": {
+      "Enabled": true,
+      "Sources": ["AD", "HOSPIS_STAGING"],
+      "StagingTable": "stg_UsersBackfeed_AccountsDelta",
+      "DeletedStagingTable": "stg_UsersBackfeed_Deleted",
+      "TargetTable": "Accounts",
+      "HistoryTable": "PersonsHistory",
+      "Key": {
+        "Primary": "AdReferenceObjectGuid",
+        "Secondary": "TODO"
+      }
+    },
+    "Group": {
+      "Enabled": true,
+      "Sources": ["AD", "ExchangeOnPrem", "SQL"],
+      "StagingTables": {
+        "Groups": "stg_Groups",
+        "Members": "stg_GroupMembers",
+        "Managers": "stg_GroupManagers",
+        "VlsspGroups": "vlssp_stg_DistributionGroups",
+        "VlsspMembers": "vlssp_stg_DistributionGroupMembers",
+        "VlsspOwners": "vlssp_stg_DistributionGroupOwners",
+        "VlsspDirectoryUsers": "vlssp_stg_DirectoryUsers"
+      },
+      "TargetTables": {
+        "Groups": "Groups",
+        "AccountsToGroups": "AccountsToGroups",
+        "ManagersToGroups": "ManagersToGroups",
+        "VlsspGroups": "vlssp_DistributionGroups",
+        "VlsspMembers": "vlssp_DistributionGroupMembers",
+        "VlsspOwners": "vlssp_DistributionGroupOwners",
+        "VlsspDirectoryUsers": "vlssp_DirectoryUsers"
+      },
+      "Key": {
+        "Primary": "AdReferenceObjectGuid",
+        "Membership": "GroupDistinguishedName + MemberDistinguishedName",
+        "Owner": "GroupId + OwnerUserId"
+      }
+    },
+    "MailboxPermission": {
+      "Enabled": true,
+      "Sources": ["AD", "ExchangeOnPrem"],
+      "StagingTable": "stg_MailboxPermissions",
+      "TargetTable": "MailboxPermissions",
+      "HistoryTable": "hist_MailboxPermissions",
+      "Key": {
+        "Primary": "AdReferenceObjectGuid",
+        "Secondary": "TODO"
+      }
+    }
+  }
+}
